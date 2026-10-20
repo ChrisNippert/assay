@@ -73,6 +73,23 @@ installed version (0.40.x) before building UI for it.
   same family, draft token count. If not, record that and drop it or
   revisit later.
 
+### 3. Design ideas (proposed 2026-10-20, not yet chosen)
+
+In the order I'd suggest:
+
+1. **Downloads in the app bar.** A progress indicator beside the memory
+   pills, with a popover for details, replacing the sidebar list.
+2. **Model switcher card.** A searchable popover instead of the plain
+   `<select>`, showing size, fit, context, and presets with a ★.
+3. **Message actions.** Copy a whole reply, regenerate, and edit and resend
+   the last message.
+4. **Chat sidebar.** Group chats by Today, Yesterday and Earlier; rename and
+   delete on hover; search.
+5. **Empty chat screen.** Show the loaded model, suggested prompts, and
+   recent presets.
+6. **Library as rows instead of a table,** each with a GPU-fit bar at the
+   current context.
+
 ## Later
 
 - **Check split quants and vision (`mmproj`) downloads.** A normal
@@ -98,6 +115,12 @@ installed version (0.40.x) before building UI for it.
 - **Chat search** across saved chats. (M)
 
 ## Done
+
+- App bar on every page, with loaded models as pills (size, context, eject).
+  Tune is restyled like GNOME/libadwaita, with collapsible Sampling and More
+  settings groups. Code blocks get a copy button. Models that share a digest
+  (an alias and its hf.co name) show as one row. Discover keeps its filters
+  visible beside the panel. (2026-10-20)
 
 - Auto context. When nothing sets `num_ctx`, ollamui picks the largest context
   (8k–256k) that keeps the model fully on the GPU:
