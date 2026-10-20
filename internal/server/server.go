@@ -334,7 +334,7 @@ var templateFuncs = template.FuncMap{
 		b, err := json.Marshal(v)
 		return string(b), err
 	},
-	"deref":     func(b *bool) bool { return b != nil && *b },
+	"deref": func(b *bool) bool { return b != nil && *b },
 	"lower": func(s string) string {
 		if s == "" {
 			return s
