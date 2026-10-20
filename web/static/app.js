@@ -452,4 +452,30 @@
   document.getElementById('nav-backdrop')?.addEventListener('click', () => set(false));
   document.getElementById('sidebar')?.addEventListener('click', (e) => { if (e.target.closest('a')) set(false); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') set(false); });
+
+  // Swipes: right opens the menu (or closes Tune), left closes the menu (or
+  // opens Tune on the chat page). Ignored on fields and scrollable code.
+  const phone = matchMedia('(max-width: 760px)');
+  const tune = document.getElementById('tune');
+  let start = null;
+  document.addEventListener('touchstart', (e) => {
+    const t = e.touches[0];
+    start = e.touches.length === 1 && !e.target.closest('input, textarea, select, pre, .code, .katex-display')
+      ? { x: t.clientX, y: t.clientY, at: Date.now() } : null;
+  }, { passive: true });
+  document.addEventListener('touchend', (e) => {
+    if (!start) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.x, dy = t.clientY - start.y;
+    const quick = Date.now() - start.at < 700;
+    start = null;
+    if (!quick || Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    const navOpen = root.classList.contains('nav-open');
+    const tuneOpen = tune?.classList.contains('open');
+    if (dx > 0) {
+      if (tuneOpen) document.getElementById('tune-close')?.click();
+      else if (!navOpen && phone.matches) set(true);
+    } else if (navOpen) set(false);
+    else if (tune && !tuneOpen) document.getElementById('tune-btn')?.click();
+  }, { passive: true });
 })();
