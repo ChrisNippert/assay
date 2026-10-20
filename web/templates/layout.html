@@ -12,7 +12,7 @@
 </head>
 <body>
 <div class="shell">
-<nav class="sidebar" aria-label="Main">
+<nav class="sidebar" id="sidebar" aria-label="Main">
   <div class="brand">ollamui</div>
   <a href="/chat" class="nav-item{{if eq .Active "chat"}} active{{end}}">{{template "icon-chat"}}Chat</a>
   <a href="/library" class="nav-item{{if eq .Active "library"}} active{{end}}">{{template "icon-library"}}Library<span class="grow"></span><span class="count">{{len .ModelGroups}}</span></a>
@@ -33,8 +33,10 @@
 
   <button type="button" class="nav-item theme-toggle" id="theme-toggle">{{template "icon-moon"}}<span>Dark mode</span></button>
 </nav>
+<div class="nav-backdrop" id="nav-backdrop"></div>
 <main class="content content-{{.Active}}">
   <header class="appbar">
+    <button type="button" class="icon-btn nav-toggle" id="nav-toggle" aria-label="Menu" aria-controls="sidebar" aria-expanded="false"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
     <div class="appbar-start">{{block "appbar" .}}<h1 class="appbar-title">{{.Title}}</h1>{{end}}</div>
     <div class="dl-wrap" id="downloads" hidden>
       <button type="button" class="dl-btn" id="dl-btn" aria-expanded="false" aria-controls="dl-pop" aria-label="Downloads" title="Downloads">

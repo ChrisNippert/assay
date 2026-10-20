@@ -97,6 +97,7 @@ code, pre, .mono { font-family: "IBM Plex Mono", ui-monospace, "JetBrains Mono",
 .btn.subtle { border-color: transparent; color: var(--muted); }
 .btn.danger { color: var(--bad); }
 .btn.danger:hover { background: var(--bad-soft); }
+.nav-toggle, .nav-backdrop { display: none; }
 .icon-btn { display: inline-flex; padding: 6px; border: none; border-radius: 5px; background: none; color: var(--muted); cursor: pointer; }
 .icon-btn:hover { background: var(--soft); color: var(--text); }
 select, textarea, input { font: inherit; color: var(--text); }
@@ -458,14 +459,30 @@ input.switch:checked::after { transform: translateX(20px); }
 
 /* ---- small screens ---- */
 @media (max-width: 760px) {
-  .shell { flex-direction: column; }
-  .sidebar { width: auto; height: auto; position: static; flex-direction: row; flex-wrap: wrap; border-right: none; border-bottom: 1px solid var(--border); }
-  .sidebar .section-label, .chat-list, .sidebar > .grow { display: none; }
+  /* The sidebar becomes a drawer behind the app bar's menu button. */
+  .sidebar {
+    position: fixed; left: 0; top: 0; bottom: 0; height: 100dvh; width: min(280px, 85vw); z-index: 30;
+    transform: translateX(-100%); transition: transform .2s ease; visibility: hidden;
+  }
+  .nav-open .sidebar { transform: none; visibility: visible; box-shadow: 8px 0 24px rgba(0, 0, 0, .25); }
+  .nav-open .nav-backdrop { display: block; position: fixed; inset: 0; z-index: 25; background: rgba(0, 0, 0, .35); }
+  .nav-toggle { display: inline-flex; margin-left: calc(-1 * var(--s2)); }
+  .appbar { padding: var(--s2) var(--s3); gap: var(--s2); }
+  .switcher-btn { max-width: 100%; }
+  #model-meta { display: none; }
+  .switcher { flex: 0 1 auto; }
+  .switcher-btn { width: 100%; }
+  #switcher-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mem-list { flex: 0 1 auto; min-width: 0; }
+  .mem-pill { min-width: 0; }
+  .mem-name { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .discover .r-side { flex-basis: 100%; }
+  .discover:not(.filters-open) .filters { display: none; }
+  #filters-toggle { display: inline-flex; }
   .appbar { height: auto; flex-wrap: wrap; }
   .mem-detail { display: none; }
   .dl-wrap { position: static; }
   .dl-pop { position: fixed; top: auto; left: 8px; right: 8px; width: auto; max-width: none; margin-top: 6px; }
-  .theme-toggle { margin: 0; border: none; padding-top: 5px; }
   .chat { height: auto; min-height: 0; flex: 1; }
   .tune.open { position: fixed; inset: 0 0 0 auto; width: min(380px, 100vw); z-index: 10; box-shadow: -8px 0 24px rgba(0, 0, 0, .25); }
   .tune > * { min-width: 0; }

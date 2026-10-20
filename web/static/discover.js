@@ -355,13 +355,16 @@
     saveURL();
   }
 
+  const phone = matchMedia('(max-width: 760px)');
+  phone.addEventListener('change', () => setToggle());
   function setToggle() {
     const t = $('filters-toggle');
-    t.hidden = !openId;
+    t.hidden = !openId && !phone.matches;
     t.setAttribute('aria-expanded', String(root.classList.contains('filters-open')));
   }
   new MutationObserver(setToggle).observe(root, { attributes: true, attributeFilter: ['class'] });
   $('filters-toggle').addEventListener('click', () => root.classList.toggle('filters-open'));
+  setToggle();
 
   panel.addEventListener('click', (e) => { if (e.target.closest('[data-close-panel]')) closePanel(); });
   panelBody.addEventListener('change', (e) => {

@@ -442,3 +442,14 @@
 
   window.ollamui = { addSidebarChat, post, errorText, refreshLoaded, setLoadButton, el, fmtBytes, pollDownloads };
 })();
+
+// Phone layout: the sidebar is a drawer opened from the app bar.
+(() => {
+  const root = document.documentElement;
+  const btn = document.getElementById('nav-toggle');
+  const set = (open) => { root.classList.toggle('nav-open', open); btn?.setAttribute('aria-expanded', String(open)); };
+  btn?.addEventListener('click', () => set(!root.classList.contains('nav-open')));
+  document.getElementById('nav-backdrop')?.addEventListener('click', () => set(false));
+  document.getElementById('sidebar')?.addEventListener('click', (e) => { if (e.target.closest('a')) set(false); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') set(false); });
+})();
