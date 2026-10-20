@@ -108,10 +108,12 @@
 
     if (btn.dataset.delete) {
       const name = btn.dataset.delete;
-      if (!confirm(`Delete ${name} from disk?\n\nOther apps using Ollama will lose it too.`)) return;
+      const all = (btn.closest('tr')?.dataset.names || name).split(' ');
+      const label = all.length > 1 ? `${name}\n(also ${all.slice(1).join(', ')})` : name;
+      if (!confirm(`Delete ${label} from disk?\n\nOther apps using Ollama will lose it too.`)) return;
       btn.disabled = true;
       try {
-        await post('/api/models/delete', { name });
+        await post('/api/models/delete', { names: all });
         btn.closest('tr')?.remove();
         refreshLoaded();
       } catch (err) {
@@ -140,8 +142,10 @@
     const names = new Set(e.detail.map((m) => m.name));
     for (const row of document.querySelectorAll('tr[data-model]')) {
       if (!row.querySelector('.status')) continue;
-      const name = row.dataset.model;
-      const loaded = names.has(name);
+      const rowNames = (row.dataset.names || row.dataset.model).split(' ');
+      const loadedAs = rowNames.find((n) => names.has(n));
+      const loaded = !!loadedAs;
+      const name = loadedAs || row.dataset.model;
       const status = row.querySelector('.status');
       const sb = el('button', 'status-btn ' + (loaded ? 'good' : 'muted'), loaded ? '● Loaded' : '—');
       sb.type = 'button';

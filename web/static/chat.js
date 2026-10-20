@@ -83,7 +83,9 @@
     const base = baseOf(selectedOption());
     loadBtn.hidden = true; // the chip below does the same job
     if (!base) { loadState.textContent = ''; loadState.hidden = true; return; }
-    const loaded = loadedNames.has(base);
+    const names = (selectedOption()?.dataset.names || base).split(' ');
+    const loadedAs = names.find((n) => loadedNames.has(n));
+    const loaded = !!loadedAs;
     loadState.hidden = false;
     loadState.disabled = false;
     loadState.textContent = loaded ? '● Loaded' : '○ Not loaded';
@@ -91,7 +93,7 @@
     loadState.title = loaded ? 'Click to eject' : 'Click to load';
     delete loadState.dataset.load;
     delete loadState.dataset.eject;
-    loadState.dataset[loaded ? 'eject' : 'load'] = base;
+    loadState.dataset[loaded ? 'eject' : 'load'] = loadedAs || base;
   }
 
   function syncPicker() {

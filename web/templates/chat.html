@@ -7,7 +7,7 @@
         {{range .Presets}}<option value="preset:{{.Name}}" data-base="{{.Base}}"{{if eq .Name $.Data.Preset}} selected{{end}}>{{.Name}}</option>{{end}}
       </optgroup>{{end}}
       <optgroup label="Models">
-        {{range .Models}}<option value="{{.Name}}" data-base="{{.Name}}" data-meta="{{.Details.Family}} · {{.Details.ParameterSize}} · {{.Details.QuantizationLevel}}"{{if and (not $.Data.Preset) (eq .Name $.Data.Model)}} selected{{end}}>{{.Name}}</option>{{end}}
+        {{range .ModelGroups}}{{$g := .}}{{with .Primary}}<option value="{{.Name}}" data-base="{{.Name}}" data-names="{{$g.NamesJoined}}" data-meta="{{.Details.Family}} · {{.Details.ParameterSize}} · {{.Details.QuantizationLevel}}"{{if and (not $.Data.Preset) ($g.Has $.Data.Model)}} selected{{end}}>{{.Name}}</option>{{end}}{{end}}
       </optgroup>
       {{if not .Models}}<option value="">No models installed</option>{{end}}
     </select>

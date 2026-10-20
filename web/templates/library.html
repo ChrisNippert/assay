@@ -2,7 +2,7 @@
 <div class="page">
   <header class="page-head">
     <h1>Library</h1>
-    <span class="muted">{{len .Models}} installed</span>
+    <span class="muted">{{len .ModelGroups}} installed</span>
   </header>
 
   {{if .Models}}
@@ -12,22 +12,23 @@
         <tr><th>Model</th><th>Family</th><th>Params</th><th>Quant</th><th>Size</th><th>Modified</th><th>Memory</th><th><span class="sr-only">Actions</span></th></tr>
       </thead>
       <tbody>
-      {{range .Models}}
-        {{$loaded := $.IsLoaded .Name}}{{$n := .Name}}
-        <tr data-model="{{.Name}}">
-          <td class="name">{{with hfRepo .Name}}<a class="row-link" href="/discover/{{.}}" title="Open on Discover">{{$n}}</a>{{else}}<a class="row-link" href="/chat?model={{.Name}}" title="Chat with {{.Name}}">{{.Name}}</a>{{end}}</td>
+      {{range .ModelGroups}}
+        {{$g := .}}{{with .Primary}}
+        <tr data-model="{{.Name}}" data-names="{{$g.NamesJoined}}">
+          <td class="name">{{if $g.HFRepo}}<a class="row-link" href="/discover?author={{$g.Owner}}&amp;open={{$g.HFRepo}}" title="Open on Discover">{{.Name}}</a>{{else}}<a class="row-link" href="/chat?model={{.Name}}" title="Chat with {{.Name}}">{{.Name}}</a>{{end}}{{with $g.Others}}<div class="muted small">also: {{range $i, $o := .}}{{if $i}}, {{end}}{{$o}}{{end}}</div>{{end}}</td>
           <td>{{.Details.Family}}</td>
           <td>{{.Details.ParameterSize}}</td>
           <td class="mono">{{.Details.QuantizationLevel}}</td>
           <td>{{bytes .Size}}</td>
           <td class="muted">{{ago .ModifiedAt}}</td>
-          <td class="status">{{if $loaded}}<button type="button" class="status-btn good" data-eject="{{.Name}}" title="Click to eject">● Loaded</button>{{else}}<button type="button" class="status-btn muted" data-load="{{.Name}}" title="Click to load">—</button>{{end}}</td>
+          <td class="status">{{if $g.Loaded}}<button type="button" class="status-btn good" data-eject="{{$g.EjectName}}" title="Click to eject">● Loaded</button>{{else}}<button type="button" class="status-btn muted" data-load="{{.Name}}" title="Click to load">—</button>{{end}}</td>
           <td><div class="actions">
-            {{if $loaded}}<button type="button" class="btn" data-eject="{{.Name}}">Eject</button>{{else}}<button type="button" class="btn" data-load="{{.Name}}">Load</button>{{end}}
+            {{if $g.Loaded}}<button type="button" class="btn" data-eject="{{$g.EjectName}}">Eject</button>{{else}}<button type="button" class="btn" data-load="{{.Name}}">Load</button>{{end}}
             <a class="btn" href="/chat?model={{.Name}}">Chat</a>
             <button type="button" class="btn danger" data-delete="{{.Name}}">Delete</button>
           </div></td>
         </tr>
+        {{end}}
       {{end}}
       </tbody>
     </table>

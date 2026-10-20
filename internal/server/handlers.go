@@ -125,17 +125,27 @@ func (s *Server) handleEject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteModel(w http.ResponseWriter, r *http.Request) {
-	var req nameRequest
+	var req struct {
+		Name  string   `json:"name"`
+		Names []string `json:"names"`
+	}
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if req.Name == "" {
+	names := req.Names
+	if req.Name != "" {
+		names = append([]string{req.Name}, names...)
+	}
+	if len(names) == 0 {
 		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
-	if err := s.ollama.Delete(r.Context(), req.Name); err != nil {
-		writeError(w, ollamaStatus(err), err.Error())
-		return
+	// Every name shares the blobs; the disk is only freed once all are gone.
+	for _, name := range names {
+		if err := s.ollama.Delete(r.Context(), name); err != nil {
+			writeError(w, ollamaStatus(err), err.Error())
+			return
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

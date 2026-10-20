@@ -15,7 +15,7 @@
 <nav class="sidebar" aria-label="Main">
   <div class="brand">ollamui</div>
   <a href="/chat" class="nav-item{{if eq .Active "chat"}} active{{end}}">{{template "icon-chat"}}Chat</a>
-  <a href="/library" class="nav-item{{if eq .Active "library"}} active{{end}}">{{template "icon-library"}}Library<span class="grow"></span><span class="count">{{len .Models}}</span></a>
+  <a href="/library" class="nav-item{{if eq .Active "library"}} active{{end}}">{{template "icon-library"}}Library<span class="grow"></span><span class="count">{{len .ModelGroups}}</span></a>
   <a href="/discover" class="nav-item{{if eq .Active "discover"}} active{{end}}">{{template "icon-search"}}Discover</a>
   <span class="nav-item disabled" title="Coming in M4">{{template "icon-chart"}}Compare</span>
   <a href="/presets" class="nav-item{{if eq .Active "presets"}} active{{end}}">{{template "icon-sliders"}}Presets<span class="grow"></span><span class="count">{{len .Presets}}</span></a>
