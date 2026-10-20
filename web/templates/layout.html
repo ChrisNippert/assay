@@ -7,7 +7,7 @@
 <script src="/static/theme.js"></script>
 <link rel="stylesheet" href="/static/app.css">
 <script src="/static/app.js" defer></script>
-{{if eq .Active "chat"}}<script src="/static/tune.js" defer></script><script src="/static/chat.js" defer></script>{{end}}
+{{if eq .Active "chat"}}<link rel="stylesheet" href="/static/katex/katex.min.css"><script src="/static/katex/katex.min.js" defer></script><script src="/static/tune.js" defer></script><script src="/static/chat.js" defer></script>{{end}}
 {{if eq .Active "discover"}}<script src="/static/discover.js" defer></script>{{end}}
 </head>
 <body>

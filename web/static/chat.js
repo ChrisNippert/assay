@@ -66,6 +66,29 @@
       `<pre><code>${esc(code)}</code></pre></div>`;
   }
 
+  // Math: $$…$$ and \[…\] as blocks, $…$ and \(…\) inline. Inline code
+  // spans are matched first so `$x` in code stays as typed. A single $ needs
+  // no space inside it and no digit after it, so "$5 and $10" stays text.
+  const MATH = /(`[^`\n]*`)|\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$(?!\s)([^$\n`]+?)(?<!\s)\$(?!\d)/g;
+
+  // Swaps math for placeholders the markdown pass leaves alone, renders the
+  // prose, then puts KaTeX output in their place.
+  function proseWithMath(text) {
+    if (!window.katex) return blocks(text);
+    const parts = [];
+    const masked = text.replace(MATH, (m, code, d1, d2, i1, i2) => {
+      if (code) return m;
+      const display = d1 != null || d2 != null;
+      const tex = d1 ?? d2 ?? i1 ?? i2;
+      let html;
+      try { html = katex.renderToString(tex, { displayMode: display, throwOnError: false }); }
+      catch { return m; }
+      parts.push(html);
+      return `\u0000${parts.length - 1}\u0000`;
+    });
+    return blocks(masked).replace(/\u0000(\d+)\u0000/g, (_, i) => parts[i]);
+  }
+
   // Splits out ``` fences; the rest is prose. An unclosed fence (mid-stream)
   // still renders as code.
   function renderMarkdown(src) {
@@ -74,7 +97,7 @@
     let code = null;
     let lang = '';
     const flushProse = () => {
-      if (prose.length) html += blocks(prose.join('\n'));
+      if (prose.length) html += proseWithMath(prose.join('\n'));
       prose = [];
     };
     for (const line of src.split('\n')) {
