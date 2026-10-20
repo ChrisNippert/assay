@@ -43,3 +43,15 @@ func TestGoodLine(t *testing.T) {
 		}
 	}
 }
+
+func TestVoiceLabel(t *testing.T) {
+	if got, ok := voiceLabel("bf_emma"); !ok || got != "Emma · British, female" {
+		t.Errorf("bf_emma: %q %v", got, ok)
+	}
+	if got, ok := voiceLabel("am_michael"); !ok || got != "Michael · American, male" {
+		t.Errorf("am_michael: %q %v", got, ok)
+	}
+	if _, ok := voiceLabel("jf_alpha"); ok {
+		t.Error("Japanese voice offered")
+	}
+}

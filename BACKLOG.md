@@ -9,9 +9,6 @@ big it is (S = an hour or two, M = a session, L = several sessions).
 
 Voice mode shipped 2026-10-20 (see Done). Open:
 
-- **Talker and voice pickers.** The talker is auto-picked (largest chat model
-  under 3 GB) and `/api/chat` already takes `talker` ("off" or a name); add a
-  control for it, plus the Kokoro voice and speed, e.g. on Settings. (S)
 - **Phone over HTTPS.** The mic needs a secure context. Document or automate
   `tailscale serve --bg 8484` (and `-allow-host <machine>.<tailnet>.ts.net`). (S)
 - **Gemma 4 hears audio natively.** Ollama lists `audio` in its capabilities,
@@ -131,6 +128,11 @@ Most of the 2026-10-20 list is done (see Done). Still open:
 - **Chat search** across saved chats. (M)
 
 ## Done
+
+- Settings → Voice (2026-10-20): filler model, voice + preview, speed,
+  sentence pause, Whisper model, detection sensitivity, prose prompt; saved
+  in `voice.json`. Also: the app bar fits half-width windows, and Flash
+  attention reads On/Off.
 
 - Voice mode (2026-10-20). Mic button in chat: hands-free conversation with
   live transcription, sentence-by-sentence speech, talking over the reply to

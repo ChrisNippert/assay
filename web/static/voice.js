@@ -23,7 +23,7 @@
   const MAX_FRAMES = 1500; // 30 s
   const PARTIAL_MS = 900;
   // Silence between spoken clips (ms), by how the clip ended.
-  const SENTENCE_PAUSE = 450;
+  let SENTENCE_PAUSE = 450; // from the Voice settings
   const CLAUSE_PAUSE = 200;
   const WORD_PAUSE = 120;
 
@@ -68,6 +68,9 @@
     }
     await checkStatus(chat.model());
     if (!status.available) { setState('error', status.error); return; }
+    const st = status.settings || {};
+    if (st.pauseMs >= 0) SENTENCE_PAUSE = st.pauseMs;
+    [START_VOICED, LOUDNESS] = SENSITIVITY[st.sensitivity] || SENSITIVITY.normal;
     if (!chat.ready()) { setState('error', 'Choose a model first.'); return; }
     active = true;
     btn.setAttribute('aria-pressed', 'true');
@@ -136,7 +139,11 @@
   // the last 300 ms was voice. Typing is short bursts with gaps; speech is
   // sustained.
   const WINDOW = 15;
-  const START_VOICED = 11; // of the last WINDOW frames
+  // From the Voice settings' speech detection: frames of the last WINDOW
+  // that must be voice, and a multiplier on the loudness threshold.
+  const SENSITIVITY = { low: [13, 1.6], normal: [11, 1], high: [8, 0.7] };
+  let START_VOICED = 11;
+  let LOUDNESS = 1;
   const MAX_CREST = 7; // peak / RMS; voiced speech is ~3–5, clicks are far higher
   let floor = 0.002; // running estimate of background noise (RMS)
   let recent = []; // voice flags for the last WINDOW frames
@@ -153,7 +160,7 @@
     }
     const rms = Math.sqrt(sum / f.length);
     const playing = speaker?.busy();
-    const threshold = Math.max(floor * 3, 0.006) * (playing ? 2.5 : 1);
+    const threshold = Math.max(floor * 3, 0.006) * LOUDNESS * (playing ? 2.5 : 1);
     const loud = rms > threshold;
     const voiced = loud && peak / rms < MAX_CREST;
 

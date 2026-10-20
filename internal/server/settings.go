@@ -59,13 +59,14 @@ func (s *Server) kvFactor(ctx context.Context) float64 {
 // serverSetting is one row on the settings page: an Ollama environment
 // variable, what it's set to, and what it means.
 type serverSetting struct {
-	Key     string   // environment variable
-	Title   string   // what the UI calls it
-	Help    string   // one-line explanation
-	Value   string   // raw value, "" if unset
-	Shown   string   // value as the UI shows it (default spelled out if unset)
-	Choices []string // values the editor offers; nil for free text
-	Default string   // what Ollama does when unset
+	Key     string            // environment variable
+	Title   string            // what the UI calls it
+	Help    string            // one-line explanation
+	Value   string            // raw value, "" if unset
+	Shown   string            // value as the UI shows it (default spelled out if unset)
+	Choices []string          // values the editor offers; nil for free text
+	Labels  map[string]string // how some choices read, e.g. "1" → "On"
+	Default string            // what Ollama does when unset
 }
 
 // settingsData is what the settings page renders.
@@ -76,6 +77,7 @@ type settingsData struct {
 	KVType   string // effective K/V cache type
 	Settings []serverSetting
 	Memory   hw.Memory
+	Voice    voicePage
 }
 
 // knownSettings are the server variables worth showing, in display order.
@@ -109,6 +111,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	d.Version, _ = s.ollama.Version(ctx)
 	for _, st := range knownSettings {
 		st.Value = env.Vars[st.Key]
+		st.Labels = choiceLabels[st.Key]
 		st.Shown = st.Value
 		if l, ok := choiceLabels[st.Key][st.Value]; ok {
 			st.Shown = l
@@ -118,6 +121,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		}
 		d.Settings = append(d.Settings, st)
 	}
+	d.Voice = s.voicePage(ctx)
 	p.Data = d
 	s.render(w, "settings", p)
 }

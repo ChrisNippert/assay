@@ -365,6 +365,15 @@ table.models { width: 100%; border-collapse: collapse; }
 .settings-cell .tag { margin: 1px 0; }
 .publish { display: inline-flex; gap: 6px; align-items: center; }
 
+.settings-warn { color: var(--warn); }
+.settings .row-ctrl select { max-width: 280px; }
+@media (max-width: 760px) {
+  /* The control goes under its label, so the description gets the width. */
+  .settings .row:has(select, input[type="text"]) { flex-wrap: wrap; }
+  .settings .row:has(select, input[type="text"]) .row-ctrl { flex: 1 1 100%; justify-content: flex-end; }
+  .settings .row-ctrl select { max-width: 100%; }
+}
+
 /* ---- app bar ---- */
 .appbar {
   position: sticky; top: 0; z-index: 5; flex: none; height: var(--appbar-h);

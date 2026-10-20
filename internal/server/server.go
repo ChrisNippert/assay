@@ -40,8 +40,10 @@ type Options struct {
 	// Scores is optional; without it nothing is rated.
 	Scores *scores.Store
 	// Voice is the speech service for voice mode; nil turns it off.
-	Voice  *voice.Client
-	Memory hw.Memory
+	Voice *voice.Client
+	// VoiceSettings are voice mode's preferences. Required.
+	VoiceSettings *voice.SettingsStore
+	Memory        hw.Memory
 	// AllowHosts are extra hostnames (besides localhost and IP addresses)
 	// the UI may be reached by, e.g. a Tailscale machine name.
 	AllowHosts []string
@@ -57,6 +59,7 @@ type Server struct {
 	pulls   *pulls.Manager
 	scores  *scores.Store
 	voice   *voice.Client
+	voiceSt *voice.SettingsStore
 	search  searchCache
 	env     envCache
 	ctxBase sync.Map // model name → measured weight memory, for picking context
@@ -76,8 +79,11 @@ type Server struct {
 func New(opts Options) (*Server, error) {
 	s := &Server{
 		ollama: opts.Ollama, chats: opts.Chats, presets: opts.Presets,
-		hf: opts.HF, pulls: opts.Pulls, scores: opts.Scores, voice: opts.Voice, memory: opts.Memory, log: opts.Logger,
+		hf: opts.HF, pulls: opts.Pulls, scores: opts.Scores, voice: opts.Voice, voiceSt: opts.VoiceSettings, memory: opts.Memory, log: opts.Logger,
 		vramUsed: hw.VRAMUsed,
+	}
+	if s.voiceSt == nil {
+		s.voiceSt, _ = voice.OpenSettings("") // in memory
 	}
 	s.env.read = func(ctx context.Context) ollama.ServerEnv { return ollama.ReadServerEnv(ctx, s.ollama.Port()) }
 	if s.log == nil {
@@ -116,6 +122,8 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("GET /api/voice", s.handleVoiceStatus)
 	mux.HandleFunc("POST /api/voice/transcribe", s.handleTranscribe)
 	mux.HandleFunc("POST /api/voice/speak", s.handleSpeak)
+	mux.HandleFunc("GET /api/voice/settings", s.handleVoiceSettings)
+	mux.HandleFunc("PUT /api/voice/settings", s.handleVoiceSettingsSave)
 
 	mux.HandleFunc("GET /api/hf/search", s.handleSearch)
 	mux.HandleFunc("GET /api/pulls", s.handlePullList)

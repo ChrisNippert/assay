@@ -45,21 +45,35 @@ CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "ollamu
 args = None
 app = FastAPI()
 _stt = None
+_stt_name = None
 _tts = None
 _stt_lock = threading.Lock()
 _tts_lock = threading.Lock()
 
 
-def stt():
-    global _stt
+def stt(name=None):
+    """The whisper model called name (default --whisper). Asking for another
+    one swaps it in; the first use of a model downloads it."""
+    global _stt, _stt_name
+    name = name or args.whisper
     with _stt_lock:
-        if _stt is None:
+        if _stt is None or name != _stt_name:
             from faster_whisper import WhisperModel
 
             t = time.time()
-            _stt = WhisperModel(args.whisper, device="cpu", compute_type="int8", cpu_threads=args.threads)
-            print(f"whisper {args.whisper} ready in {time.time() - t:.1f}s", flush=True)
+            _stt = None  # free the old one first
+            _stt = WhisperModel(name, device="cpu", compute_type="int8", cpu_threads=args.threads)
+            _stt_name = name
+            print(f"whisper {name} ready in {time.time() - t:.1f}s", flush=True)
         return _stt
+
+
+def whisper_name(model):
+    """A faster-whisper model name from a request, or None for the default.
+    OpenAI clients send "whisper-1", which means "whatever you have"."""
+    from faster_whisper.utils import available_models
+
+    return model if model in available_models() else None
 
 
 def fetch(name):
@@ -105,7 +119,13 @@ def decode(data: bytes):
 
 @app.get("/health")
 def health():
-    return {"ok": True, "whisper": args.whisper, "voice": args.voice}
+    return {"ok": True, "whisper": _stt_name or args.whisper, "voice": args.voice}
+
+
+@app.get("/v1/audio/voices")
+async def voices():
+    names = await run_in_threadpool(lambda: sorted(tts().get_voices()))
+    return {"voices": names, "default": args.voice}
 
 
 @app.post("/v1/audio/transcriptions")
@@ -113,6 +133,7 @@ async def transcribe(request: Request):
     ctype = request.headers.get("content-type", "")
     language = request.query_params.get("language")
     prompt = request.query_params.get("prompt")
+    model_name = request.query_params.get("model")
     if ctype.startswith("multipart/"):
         form = await request.form()
         f = form.get("file")
@@ -121,14 +142,17 @@ async def transcribe(request: Request):
         data = await f.read()
         language = form.get("language") or language
         prompt = form.get("prompt") or prompt
+        model_name = form.get("model") or model_name
     else:
         data = await request.body()
     if not data:
         raise HTTPException(400, "empty audio")
     t = time.time()
 
+    name = whisper_name(model_name)
+
     def run():
-        model = stt()
+        model = stt(name)
         with _stt_lock:  # one transcription at a time; they'd only fight for cores
             segments, _ = model.transcribe(
                 decode(data), language=language or None, initial_prompt=prompt or None,

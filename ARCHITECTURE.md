@@ -184,6 +184,11 @@ transcript ─► /api/chat {voice: true} ─► main model on the GPU (thinks, 
   `voice.SpeechText` spells out decimals ("1 point 6 7"), money, percents,
   multipliers, ranges and a few abbreviations before synthesis.
 - What was said aloud is saved with the reply (`spoken`) and shown above it.
+- **Settings → Voice** (`voice.json`, so every device shares them): filler
+  model (Auto / Off / any model), Kokoro voice with a preview, speed, pause
+  after a sentence, Whisper model (the service swaps models on request and
+  downloads on first use), speech-detection sensitivity, and the prose
+  prompt. The bundled service lists its voices at `/v1/audio/voices`.
 
 ### internal/chats
 
@@ -218,6 +223,7 @@ No database. Plain files under XDG directories:
 ~/.config/ollamui/
   config.toml            listen address, Ollama URL, HF token        (M2)
   presets/<name>.toml    one preset per file                         (M3)
+  voice.json             voice mode settings (Settings → Voice)
 ~/.local/share/ollamui/
   chats/<id>.json        one conversation per file
   scores.json            cached intelligence scores, refreshed daily

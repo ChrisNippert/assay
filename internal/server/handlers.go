@@ -317,7 +317,7 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 		return nil, false
 	}
 
-	if req.Voice {
+	if req.Voice && s.voiceSt.Get().Prose {
 		system = strings.TrimSpace(system + "\n\n" + voiceSystem)
 	}
 	msgs := toOllama(c.Messages)

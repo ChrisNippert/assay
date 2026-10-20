@@ -38,7 +38,7 @@ func run() error {
 	listen := flag.String("listen", "127.0.0.1:8484", "address to serve the UI on")
 	ollamaURL := flag.String("ollama", ollama.ResolveHost(os.Getenv("OLLAMA_HOST")), "Ollama server URL")
 	dataDir := flag.String("data", defaultDir("XDG_DATA_HOME", ".local/share"), "where chats are stored")
-	configDir := flag.String("config", defaultDir("XDG_CONFIG_HOME", ".config"), "where presets are stored")
+	configDir := flag.String("config", defaultDir("XDG_CONFIG_HOME", ".config"), "where presets and settings are stored")
 	voiceURL := flag.String("voice", envOr("OLLAMUI_VOICE", "http://127.0.0.1:8485"), "speech service for voice mode (OpenAI audio API); empty turns voice off")
 	sttModel := flag.String("stt-model", "", "speech-to-text model name to ask the speech service for")
 	ttsVoice := flag.String("tts-voice", "", "voice to ask the speech service for")
@@ -78,17 +78,22 @@ func run() error {
 		}
 		speech.STTModel, speech.TTSVoice = *sttModel, *ttsVoice
 	}
+	voiceSettings, err := voice.OpenSettings(filepath.Join(*configDir, "voice.json"))
+	if err != nil {
+		return fmt.Errorf("voice settings: %w", err)
+	}
 	srv, err := server.New(server.Options{
-		Ollama:     client,
-		Chats:      store,
-		Presets:    presetStore,
-		HF:         hf.New(hf.DefaultBaseURL, os.Getenv("HF_TOKEN")),
-		Pulls:      pulls.New(client, log),
-		Scores:     scoreStore,
-		Voice:      speech,
-		Memory:     mem,
-		AllowHosts: allowHosts,
-		Logger:     log,
+		Ollama:        client,
+		Chats:         store,
+		Presets:       presetStore,
+		HF:            hf.New(hf.DefaultBaseURL, os.Getenv("HF_TOKEN")),
+		Pulls:         pulls.New(client, log),
+		Scores:        scoreStore,
+		Voice:         speech,
+		VoiceSettings: voiceSettings,
+		Memory:        mem,
+		AllowHosts:    allowHosts,
+		Logger:        log,
 	})
 	if err != nil {
 		return err

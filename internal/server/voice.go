@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -75,10 +76,12 @@ type voiceStatus struct {
 	// Talker is the small model that talks while the chat model thinks
 	// ("" if none is installed).
 	Talker string `json:"talker"`
+	// Settings carries what the browser needs: pause and sensitivity.
+	Settings voice.Settings `json:"settings"`
 }
 
 func (s *Server) handleVoiceStatus(w http.ResponseWriter, r *http.Request) {
-	var st voiceStatus
+	st := voiceStatus{Settings: s.voiceSt.Get()}
 	if m := r.URL.Query().Get("model"); m != "" {
 		st.Talker = s.warmTalker(m)
 	}
@@ -112,7 +115,7 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 	} else if strings.Contains(ct, "mp4") {
 		name = "speech.m4a"
 	}
-	text, err := s.voice.Transcribe(r.Context(), audio, name, "")
+	text, err := s.voice.Transcribe(r.Context(), audio, name, "", s.voiceSt.Get().STTModel)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -126,8 +129,11 @@ func (s *Server) handleSpeak(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "no speech service configured")
 		return
 	}
+	// Voice and Speed override the saved settings, for previews.
 	var req struct {
-		Text string `json:"text"`
+		Text  string  `json:"text"`
+		Voice string  `json:"voice"`
+		Speed float64 `json:"speed"`
 	}
 	if !readJSON(w, r, &req) {
 		return
@@ -137,7 +143,14 @@ func (s *Server) handleSpeak(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "text must be 1–4000 characters")
 		return
 	}
-	body, ctype, err := s.voice.Speak(r.Context(), voice.SpeechText(text))
+	st := s.voiceSt.Get()
+	if req.Voice != "" {
+		st.Voice = req.Voice
+	}
+	if req.Speed > 0 && req.Speed <= 2 {
+		st.Speed = req.Speed
+	}
+	body, ctype, err := s.voice.Speak(r.Context(), voice.SpeechText(text), st.Voice, st.Speed)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -171,6 +184,9 @@ func (s *Server) voiceTurn(w http.ResponseWriter, r *http.Request, t *turn, talk
 		return
 	}
 	ctx := r.Context()
+	if talkerName == "" {
+		talkerName = s.voiceSt.Get().Talker
+	}
 	// mainCtx is the big model's request; small talk cancels it.
 	mainCtx, cancelMain := context.WithCancel(ctx)
 	defer cancelMain()
@@ -366,7 +382,11 @@ func (s *Server) newTalker(ctx context.Context, t *turn, name string, emit func(
 // first line doesn't wait for a load.
 func (s *Server) warmTalker(main string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	name := s.pickTalker(ctx, main, "")
+	want := s.voiceSt.Get().Talker
+	name := ""
+	if want != "off" {
+		name = s.pickTalker(ctx, main, want)
+	}
 	if name == "" {
 		cancel()
 		return ""
@@ -585,4 +605,109 @@ func tail(s string, n int) string {
 		s = s[i+1:]
 	}
 	return "…" + s
+}
+
+func (s *Server) handleVoiceSettings(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.voiceSt.Get())
+}
+
+func (s *Server) handleVoiceSettingsSave(w http.ResponseWriter, r *http.Request) {
+	var in voice.Settings
+	if !readJSON(w, r, &in) {
+		return
+	}
+	if err := s.voiceSt.Set(in); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, in)
+}
+
+// voicePage is the Voice section of the settings page.
+type voicePage struct {
+	Settings   voice.Settings
+	Status     voiceStatus
+	AutoTalker string // what "Auto" picks right now
+	Talkers    []talkerChoice
+	Voices     []voiceChoice
+	STTModels  []sttChoice
+	Speeds     []float64
+	Pauses     []int
+}
+
+type talkerChoice struct {
+	Name  string
+	Size  int64
+	Small bool // small enough to run on the CPU comfortably
+}
+
+type voiceChoice struct{ ID, Label string }
+
+type sttChoice struct{ Name, Note string }
+
+func (s *Server) voicePage(ctx context.Context) voicePage {
+	v := voicePage{
+		Settings: s.voiceSt.Get(),
+		Speeds:   []float64{0.8, 0.9, 1, 1.1, 1.2, 1.35, 1.5},
+		Pauses:   []int{200, 300, 450, 600, 800, 1000},
+	}
+	for _, m := range voice.STTModels {
+		v.STTModels = append(v.STTModels, sttChoice{m.Name, m.Note})
+	}
+	if s.voice == nil {
+		v.Status.Error = "No speech service configured (start ollamui with -voice URL)."
+	} else if err := s.voice.Available(ctx); err != nil {
+		v.Status.Error = "The speech service at " + s.voice.URL() + " isn't answering. Start it with: uv run tools/voice/voice_server.py"
+	} else {
+		v.Status.Available, v.Status.URL = true, s.voice.URL()
+	}
+	ids := kokoroVoices
+	if v.Status.Available {
+		if list, err := s.voice.Voices(ctx); err == nil && len(list) > 0 {
+			ids = list
+		}
+	}
+	for _, id := range ids {
+		if label, ok := voiceLabel(id); ok {
+			v.Voices = append(v.Voices, voiceChoice{id, label})
+		}
+	}
+	if models, err := s.ollama.List(ctx); err == nil {
+		sort.Slice(models, func(i, j int) bool { return models[i].Size < models[j].Size })
+		for _, m := range models {
+			if strings.Contains(strings.ToLower(m.Details.Family), "bert") {
+				continue // embedding models can't talk
+			}
+			v.Talkers = append(v.Talkers, talkerChoice{m.Name, m.Size, m.Size <= maxTalkerSize})
+		}
+	}
+	v.AutoTalker = s.pickTalker(ctx, "", "")
+	return v
+}
+
+// kokoroVoices are Kokoro v1.0's English voices, for when the speech
+// service can't list its own.
+var kokoroVoices = strings.Fields("af_heart af_alloy af_aoede af_bella af_jessica af_kore af_nicole af_nova af_river af_sarah af_sky am_adam am_echo am_eric am_fenrir am_liam am_michael am_onyx am_puck am_santa bf_alice bf_emma bf_isabella bf_lily bm_daniel bm_fable bm_george bm_lewis")
+
+// voiceLabel turns a Kokoro voice id like "bf_emma" into "Emma · British,
+// female". Only English voices are offered: the service speaks English.
+func voiceLabel(id string) (string, bool) {
+	accent, name, ok := strings.Cut(id, "_")
+	if !ok || len(accent) != 2 || name == "" {
+		return "", false
+	}
+	var where string
+	switch accent[0] {
+	case 'a':
+		where = "American"
+	case 'b':
+		where = "British"
+	default:
+		return "", false
+	}
+	who := "female"
+	if accent[1] == 'm' {
+		who = "male"
+	}
+	return strings.ToUpper(name[:1]) + name[1:] + " · " + where + ", " + who, true
 }
