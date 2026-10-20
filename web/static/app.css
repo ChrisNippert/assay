@@ -290,18 +290,26 @@ table.models { width: 100%; border-collapse: collapse; }
 .detail-panel .quant-row .quality { grid-area: qual; }
 .panel-close { position: absolute; top: var(--s3); right: var(--s3); font-size: 22px; line-height: 1; width: 32px; height: 32px; justify-content: center; align-items: center; }
 .panel-loading { margin: 0; }
-.discover.panel-open .filters { display: none; }
-.discover.panel-open.filters-open .filters {
-  display: flex; position: absolute; left: 0; top: 0; bottom: 0; width: 240px; overflow-y: auto;
-  z-index: 15; box-shadow: 8px 0 24px rgba(0, 0, 0, .18);
-}
-.discover.panel-open { flex-wrap: nowrap; }
-.discover.panel-open .results-pane { flex: 0 0 440px; max-width: 440px; }
+/* Panel open on wide screens: three independent full-height columns. */
+.discover.panel-open { flex-wrap: nowrap; height: 100vh; min-height: 0; overflow: hidden; }
+.discover.panel-open .filters { flex: 0 0 210px; max-width: 210px; overflow-y: auto; height: 100vh; }
+.discover.panel-open .results-pane { flex: 1 1 400px; min-width: 340px; max-width: 440px; overflow-y: auto; height: 100vh; }
+.discover.panel-open .detail-panel { flex: 1 1 480px; min-width: 440px; position: static; height: 100vh; }
 .discover.panel-open .result-row { flex-wrap: wrap; gap: var(--s2) var(--s4); }
 .discover.panel-open .r-side { width: auto; text-align: left; flex-basis: 100%; flex-direction: row; gap: var(--s3); }
-@media (max-width: 1150px) {
-  .detail-panel { position: fixed; inset: 0 0 0 220px; z-index: 20; height: auto; min-width: 0; }
-  .discover.panel-open .results-pane { flex-basis: auto; max-width: none; }
+#filters-toggle { display: none; }
+/* Too narrow for three columns: the panel overlays; filters tuck behind a toggle. */
+@media (max-width: 1180px) {
+  .discover.panel-open { height: auto; min-height: 100vh; overflow: visible; }
+  .discover.panel-open .results-pane { height: auto; max-width: none; flex-basis: auto; overflow: visible; }
+  .discover.panel-open .detail-panel { position: fixed; inset: 0 0 0 220px; z-index: 20; height: auto; min-width: 0; }
+  .discover.panel-open .filters { display: none; }
+  .discover.panel-open.filters-open .filters {
+    display: flex; position: absolute; left: 0; top: 0; bottom: 0; width: 240px; max-width: 240px; height: auto; overflow-y: auto;
+    z-index: 15; box-shadow: 8px 0 24px rgba(0, 0, 0, .18);
+  }
+  #filters-toggle { display: inline-flex; }
+  #filters-toggle[hidden] { display: none; }
 }
 @media (max-width: 760px) {
   .detail-panel { inset: 0; }
