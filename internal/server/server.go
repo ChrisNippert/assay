@@ -60,6 +60,8 @@ type Server struct {
 	search  searchCache
 	env     envCache
 	ctxBase sync.Map // model name → measured weight memory, for picking context
+	// thinkers remembers, per model, whether it thought when left to decide.
+	thinkers sync.Map
 	// otherVRAM is the last measured VRAM used outside Ollama (desktop etc.).
 	otherVRAM atomic.Int64
 	// vramUsed reports GPU memory in use; swapped out in tests.

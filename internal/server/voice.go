@@ -220,6 +220,9 @@ func (s *Server) voiceTurn(w http.ResponseWriter, r *http.Request, t *turn, talk
 	})
 	stopTalking()
 	<-talkerDone
+	if err == nil {
+		s.noteThinking(t.req, thinking.Len() > 0)
+	}
 	spoken := t.spoken
 	if tk != nil {
 		spoken = strings.Join(tk.said, " ")
@@ -234,29 +237,43 @@ func (s *Server) voiceTurn(w http.ResponseWriter, r *http.Request, t *turn, talk
 	emit(event{Type: "done", Stats: stats})
 }
 
-// thinks reports whether req will think.
+// thinks reports whether req will probably think. Ollama's capability list
+// can't be trusted for this: Gemma 4 thinks without listing "thinking". So
+// unless thinking is switched off, a model counts as thinking until it's
+// been seen replying without (see noteThinking). Guessing wrong costs a
+// lead-in line before a quick answer; the other way it's a silent wait.
 func (s *Server) thinks(ctx context.Context, req ollama.ChatRequest) bool {
-	show, err := s.ollama.Show(ctx, req.Model)
-	if err != nil || !slices.Contains(show.Capabilities, "thinking") {
-		return false
-	}
 	switch v := req.Think.(type) {
-	case nil:
-		return true // thinking models think unless told not to
 	case bool:
 		return v
 	case string:
 		return v != ""
 	}
-	return false
+	if show, err := s.ollama.Show(ctx, req.Model); err == nil && slices.Contains(show.Capabilities, "thinking") {
+		return true
+	}
+	if v, ok := s.thinkers.Load(strings.ToLower(req.Model)); ok {
+		return v.(bool)
+	}
+	return true
+}
+
+// noteThinking remembers whether model thought in a reply where thinking
+// was left to the model.
+func (s *Server) noteThinking(req ollama.ChatRequest, thought bool) {
+	if req.Think == nil {
+		s.thinkers.Store(strings.ToLower(req.Model), thought)
+	}
 }
 
 // maxTalkerSize is the biggest model pickTalker considers: small enough to
 // write a sentence quickly on the CPU.
 const maxTalkerSize = 3e9
 
-// talkerOptions keep the talker on the CPU with a small context.
-var talkerOptions = map[string]any{"num_gpu": 0, "num_ctx": 4096}
+// talkerOptions keep the talker on the CPU with a small context and a few
+// threads, leaving cores for speech recognition and synthesis, which run
+// at the same time.
+var talkerOptions = map[string]any{"num_gpu": 0, "num_ctx": 4096, "num_thread": 4}
 
 // pickTalker returns the model to talk while main thinks: want if it's
 // installed, else the largest installed chat model under maxTalkerSize

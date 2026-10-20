@@ -77,10 +77,14 @@ def tts():
     global _tts
     with _tts_lock:
         if _tts is None:
+            import onnxruntime as ort
             from kokoro_onnx import Kokoro
 
             t = time.time()
-            _tts = Kokoro(fetch("kokoro-v1.0.int8.onnx"), fetch("voices-v1.0.bin"))
+            opts = ort.SessionOptions()
+            opts.intra_op_num_threads = args.tts_threads
+            session = ort.InferenceSession(fetch("kokoro-v1.0.int8.onnx"), opts, providers=["CPUExecutionProvider"])
+            _tts = Kokoro.from_session(session, fetch("voices-v1.0.bin"))
             print(f"kokoro ready in {time.time() - t:.1f}s", flush=True)
         return _tts
 
@@ -177,7 +181,12 @@ def main():
     p.add_argument("--voice", default="af_heart", help="Kokoro voice, e.g. af_heart, af_bella, am_michael, bf_emma")
     p.add_argument("--lang", default="en-us")
     p.add_argument("--speed", type=float, default=1.0)
-    p.add_argument("--threads", type=int, default=max(1, (os.cpu_count() or 4) // 2))
+    # Whisper, Kokoro and ollamui's talker model (4 threads) all run on the
+    # CPU at once during a voice turn; on a shared pool each slows the others
+    # several times over, so each gets its own share of the cores.
+    cores = max(2, (os.cpu_count() or 4) // 2)
+    p.add_argument("--threads", type=int, default=max(1, cores - 2), help="whisper threads")
+    p.add_argument("--tts-threads", type=int, default=max(1, min(4, cores // 2)), help="Kokoro threads")
     p.add_argument("--lazy", action="store_true", help="load models on first request instead of at startup")
     args = p.parse_args()
     if not args.lazy:

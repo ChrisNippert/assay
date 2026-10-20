@@ -222,6 +222,9 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	s.saveReply(t, content.String(), thinking.String(), "", stats)
+	if err == nil {
+		s.noteThinking(t.req, thinking.Len() > 0)
+	}
 	if err != nil {
 		if r.Context().Err() == nil {
 			emit(event{Type: "error", Message: err.Error()})

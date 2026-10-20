@@ -18,8 +18,6 @@
 
   const FRAME_MS = 20;
   const PREROLL = 15; // frames kept from before speech is detected (300 ms)
-  const START_FRAMES = 4; // loud frames in a row to start an utterance
-  const START_FRAMES_PLAYING = 10; // more while we're talking, against echo
   const END_SILENCE = 40; // quiet frames that end an utterance (800 ms)
   const MIN_SPEECH = 12; // loud frames for an utterance to count (240 ms)
   const MAX_FRAMES = 1500; // 30 s
@@ -128,41 +126,78 @@
   }
 
   // ---- speech detection ----
+  // Loudness alone can't tell speech from typing, so a frame only counts as
+  // voice when it's loud without being a click (a click is a sharp peak in
+  // an otherwise quiet frame), and an utterance only starts when most of
+  // the last 300 ms was voice. Typing is short bursts with gaps; speech is
+  // sustained.
+  const WINDOW = 15;
+  const START_VOICED = 11; // of the last WINDOW frames
+  const MAX_CREST = 7; // peak / RMS; voiced speech is ~3–5, clicks are far higher
   let floor = 0.002; // running estimate of background noise (RMS)
-  let loudRun = 0;
+  let recent = []; // voice flags for the last WINDOW frames
   let preroll = [];
-  let utt = null; // { frames, loud, quiet, partialAt, partialBusy }
+  let utt = null; // { frames, voiced, quiet, partialAt, partialBusy, interrupting }
 
   function onFrame(f) {
     if (!active) return;
-    let sum = 0;
-    for (let i = 0; i < f.length; i++) sum += f[i] * f[i];
+    let sum = 0, peak = 0;
+    for (let i = 0; i < f.length; i++) {
+      sum += f[i] * f[i];
+      const a = Math.abs(f[i]);
+      if (a > peak) peak = a;
+    }
     const rms = Math.sqrt(sum / f.length);
     const playing = speaker?.busy();
     const threshold = Math.max(floor * 3, 0.006) * (playing ? 2.5 : 1);
     const loud = rms > threshold;
+    const voiced = loud && peak / rms < MAX_CREST;
 
     if (!utt) {
       if (!loud) floor = floor * 0.97 + rms * 0.03;
       preroll.push(f);
       if (preroll.length > PREROLL) preroll.shift();
-      loudRun = loud ? loudRun + 1 : 0;
-      if (loudRun >= (playing ? START_FRAMES_PLAYING : START_FRAMES) && state !== 'transcribing') beginUtterance();
+      recent.push(voiced);
+      if (recent.length > WINDOW) recent.shift();
+      if (voiced && recent.filter(Boolean).length >= START_VOICED && state !== 'transcribing') beginUtterance();
       return;
     }
     utt.frames.push(f);
-    if (loud) { utt.loud++; utt.quiet = 0; } else utt.quiet++;
+    if (voiced) utt.voiced++;
+    utt.quiet = loud ? 0 : utt.quiet + 1;
     if (utt.quiet >= END_SILENCE || utt.frames.length >= MAX_FRAMES) endUtterance();
-    else if (performance.now() - utt.partialAt > PARTIAL_MS && !utt.partialBusy && utt.loud >= MIN_SPEECH) partial();
+    else if (performance.now() - utt.partialAt > (utt.interrupting ? PARTIAL_MS / 2 : PARTIAL_MS) && !utt.partialBusy && utt.voiced >= MIN_SPEECH) partial();
   }
 
+  // Talking over the reply only turns it down at first; it stops once the
+  // transcript shows real words that aren't our own speech coming back.
   function beginUtterance() {
-    // Talking over the reply interrupts it.
-    if (speaker.busy() || chat.busy()) { speaker.stop(); chat.stop(); }
-    utt = { frames: preroll, loud: loudRun, quiet: 0, partialAt: performance.now(), partialBusy: false };
+    const interrupting = speaker.busy() || chat.busy();
+    if (interrupting) speaker.duck(true);
+    utt = { frames: preroll, voiced: recent.filter(Boolean).length, quiet: 0, partialAt: performance.now(), partialBusy: false, interrupting };
     preroll = [];
-    loudRun = 0;
+    recent = [];
     setState('hearing');
+  }
+
+  function interrupt(u) {
+    u.interrupting = false;
+    turn++;
+    speaker.stop();
+    chat.stop();
+  }
+
+  // Real words: at least two, and not one of whisper's stock phrases for noise.
+  function isWords(text) {
+    const words = text.match(/[\p{L}\p{N}']+/gu) || [];
+    return words.length >= 2 && !/^(thank you|thanks for watching|you|bye)[.!]?$/i.test(text.trim());
+  }
+
+  // Echo: mostly words the speaker said just now.
+  function isEcho(text) {
+    const words = (text.toLowerCase().match(/[\p{L}\p{N}']+/gu) || []);
+    const said = new Set(speaker.recent.join(' ').toLowerCase().match(/[\p{L}\p{N}']+/gu) || []);
+    return words.length > 0 && words.filter((w) => said.has(w)).length >= words.length * 0.6;
   }
 
   // Live text while you talk: transcribe what's been said so far.
@@ -172,28 +207,38 @@
     u.partialAt = performance.now();
     const text = await transcribe(u.frames);
     u.partialBusy = false;
-    if (utt === u && text) {
-      input.value = text;
-      input.dispatchEvent(new Event('input'));
+    if (utt !== u || !text) return;
+    if (u.interrupting) {
+      if (!isWords(text) || isEcho(text)) return;
+      interrupt(u);
     }
+    input.value = text;
+    input.dispatchEvent(new Event('input'));
   }
 
   async function endUtterance() {
     const u = utt;
     utt = null;
-    if (u.loud < MIN_SPEECH) { listen(); return; } // a cough or a click
+    if (u.voiced < MIN_SPEECH) { settle(u); return; } // a cough or a click
     setState('transcribing');
     const text = await transcribe(u.frames);
     if (!active) return;
-    // Whisper hears words in noise now and then; very short ones are noise.
-    if (!text || text.replace(/[^\p{L}\p{N}]/gu, '').length < 2 || /^(thank you|thanks for watching|you)[.!]?$/i.test(text)) {
+    if (!text || !isWords(text) || (u.interrupting && isEcho(text))) {
       input.value = '';
-      listen();
+      settle(u);
       return;
     }
+    if (u.interrupting) interrupt(u);
     input.value = '';
     input.dispatchEvent(new Event('input'));
     reply(text);
+  }
+
+  // After a false alarm: back to whatever was going on.
+  function settle(u) {
+    if (u.interrupting) speaker.duck(false);
+    if (!active || utt) return;
+    setState(speaker.busy() ? 'speaking' : chat.busy() ? 'thinking' : 'listening');
   }
 
   function listen() {
@@ -240,7 +285,10 @@
   }
 
   // ---- the reply ----
+  let turn = 0; // bumped by each reply and interruption, so stale ones bow out
+
   async function reply(text) {
+    const mine = ++turn;
     setState('thinking');
     const sentences = new Sentences((s) => speaker.say(s));
     await chat.send(text, {
@@ -251,9 +299,9 @@
       },
     });
     sentences.flush();
-    if (!active) return;
+    if (!active || mine !== turn) return;
     await speaker.idle();
-    if (active && !utt) listen();
+    if (active && !utt && mine === turn) listen();
   }
 
   // Sentences cuts streamed markdown into speakable sentences. Code blocks
@@ -298,8 +346,16 @@
   // Speaker plays lines in order. Each is synthesized as soon as it arrives,
   // so the next one is ready when the current one ends.
   class Speaker {
-    constructor(ctx) { this.ctx = ctx; this.queue = []; this.source = null; this.gen = 0; this.running = false; this.waiters = []; }
+    constructor(ctx) {
+      this.ctx = ctx; this.queue = []; this.source = null; this.gen = 0; this.running = false; this.waiters = [];
+      this.recent = []; // the last few lines, to recognize our own voice in the mic
+      this.gain = ctx.createGain();
+      this.gain.connect(ctx.destination);
+    }
+    duck(on) { this.gain.gain.setTargetAtTime(on ? 0.25 : 1, this.ctx.currentTime, 0.05); }
     say(text) {
+      this.recent.push(text);
+      if (this.recent.length > 4) this.recent.shift();
       const gen = this.gen;
       const buf = fetch('/api/voice/speak', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) })
         .then((r) => (r.ok ? r.arrayBuffer() : null))
@@ -318,7 +374,7 @@
         await new Promise((done) => {
           const src = this.ctx.createBufferSource();
           src.buffer = buf;
-          src.connect(this.ctx.destination);
+          src.connect(this.gain);
           src.onended = done;
           this.source = src;
           src.start();
@@ -333,6 +389,7 @@
     busy() { return this.running; }
     idle() { return this.running ? new Promise((r) => this.waiters.push(r)) : Promise.resolve(); }
     stop() {
+      this.duck(false);
       this.gen++;
       this.queue = [];
       try { this.source?.stop(); } catch {}

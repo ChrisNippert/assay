@@ -140,13 +140,20 @@ transcript ─► /api/chat {voice: true} ─► main model on the GPU (thinks, 
   CPU, so the GPU stays free); `-voice URL` points ollamui at it or at any
   compatible server (speaches, …). It's the one exception to "single
   binary": optional, and Ollama is already a separate service too.
-- **Browser.** An AudioWorklet feeds 20 ms frames to an energy-based speech
-  detector with an adaptive noise floor and 300 ms of pre-roll. Speaking
-  while the assistant talks interrupts it (a higher threshold then, against
-  echo; `echoCancellation` does the rest). Replies are cut into sentences as
+- **Browser.** An AudioWorklet feeds 20 ms frames to a speech detector with
+  an adaptive noise floor and 300 ms of pre-roll. A frame counts as voice
+  when it's loud without being a click (peak/RMS under 7), and an utterance
+  starts only when 11 of the last 15 frames were voice: typing is short
+  bursts with gaps, speech is sustained. Talking over the reply first only
+  ducks it to 25%; it stops once a transcript shows two or more real words
+  that aren't mostly what the assistant just said (echo). A false alarm
+  restores the volume. Replies are cut into sentences as
   they stream and synthesized ahead of playback; markdown is stripped and
   code blocks are skipped. Mic access needs a secure context: localhost or
   HTTPS (e.g. `tailscale serve`).
+- **Does it think?** Ollama's capability list misses some thinkers (Gemma 4
+  thinks without listing `thinking`), so a model counts as thinking unless
+  thinking is switched off or ollamui has seen it answer without thinking.
 - **The talker.** While the main model thinks, a second model writes one
   short first-person line at a time ("I'm checking how the angle of the sun
   changes things"): a lead-in at once, then a new line whenever the speech
