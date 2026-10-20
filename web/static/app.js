@@ -453,10 +453,30 @@
   document.getElementById('sidebar')?.addEventListener('click', (e) => { if (e.target.closest('a')) set(false); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') set(false); });
 
-  // Swipes: right opens the menu (or closes Tune), left closes the menu (or
-  // opens Tune on the chat page). Ignored on fields and scrollable code.
   const phone = matchMedia('(max-width: 760px)');
   const tune = document.getElementById('tune');
+
+  // On phones the menu and Tune act like pages: opening one adds a history
+  // entry, so the back button closes it instead of leaving.
+  const overlayOpen = () => root.classList.contains('nav-open') || !!tune?.classList.contains('open');
+  let popping = false;
+  const syncHistory = () => {
+    if (!phone.matches || popping) return;
+    if (overlayOpen() && !history.state?.overlay) history.pushState({ ...history.state, overlay: true }, '');
+    else if (!overlayOpen() && history.state?.overlay) history.back();
+  };
+  new MutationObserver(syncHistory).observe(root, { attributes: true, attributeFilter: ['class'] });
+  if (tune) new MutationObserver(syncHistory).observe(tune, { attributes: true, attributeFilter: ['class'] });
+  addEventListener('popstate', () => {
+    if (history.state?.overlay || !overlayOpen()) return;
+    popping = true;
+    set(false);
+    if (tune?.classList.contains('open')) document.getElementById('tune-close')?.click();
+    setTimeout(() => { popping = false; });
+  });
+
+  // Swipes: right opens the menu (or closes Tune), left closes the menu (or
+  // opens Tune on the chat page). Ignored on fields and scrollable code.
   let start = null;
   document.addEventListener('touchstart', (e) => {
     const t = e.touches[0];

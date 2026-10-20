@@ -14,6 +14,15 @@
   const input = document.getElementById('input');
   const sendBtn = document.getElementById('send');
   let chatId = chatEl.dataset.chatId || '';
+
+  // Back from a saved chat goes to an empty one; back from there leaves.
+  // An empty-chat entry is slipped in under the chat to make that work.
+  if (chatId && !history.state?.chat) {
+    const here = location.pathname + location.search;
+    history.replaceState({ emptyChat: true }, '', '/chat');
+    history.pushState({ chat: true }, '', here);
+  }
+  addEventListener('popstate', (e) => { if (e.state?.emptyChat) location.replace(location.href); });
   let controller = null;
 
   // ---- markdown (small and safe: everything is escaped first) ----
@@ -494,7 +503,8 @@
             if (!chatId) {
               chatId = ev.id;
               chatEl.dataset.chatId = chatId;
-              history.replaceState(null, '', `/chat/${chatId}`);
+              history.replaceState({ emptyChat: true }, '');
+              history.pushState({ chat: true }, '', `/chat/${chatId}`);
               addSidebarChat(chatId, text);
             }
             break;
