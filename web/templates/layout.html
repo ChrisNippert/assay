@@ -1,0 +1,63 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · ollamui</title>
+<script src="/static/theme.js"></script>
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/app.js" defer></script>
+{{if eq .Active "chat"}}<script src="/static/tune.js" defer></script><script src="/static/chat.js" defer></script>{{end}}
+{{if eq .Active "discover"}}<script src="/static/discover.js" defer></script>{{end}}
+</head>
+<body>
+<div class="shell">
+<nav class="sidebar" aria-label="Main">
+  <div class="brand">ollamui</div>
+  <a href="/chat" class="nav-item{{if eq .Active "chat"}} active{{end}}">{{template "icon-chat"}}Chat</a>
+  <a href="/library" class="nav-item{{if eq .Active "library"}} active{{end}}">{{template "icon-library"}}Library<span class="grow"></span><span class="count">{{len .Models}}</span></a>
+  <a href="/discover" class="nav-item{{if eq .Active "discover"}} active{{end}}">{{template "icon-search"}}Discover</a>
+  <span class="nav-item disabled" title="Coming in M4">{{template "icon-chart"}}Compare</span>
+  <a href="/presets" class="nav-item{{if eq .Active "presets"}} active{{end}}">{{template "icon-sliders"}}Presets<span class="grow"></span><span class="count">{{len .Presets}}</span></a>
+
+  <div class="section-label">Chats</div>
+  <div class="chat-list" id="chat-list">
+    {{range .Chats}}<a href="/chat/{{.ID}}" class="chat-link{{if eq .ID $.ChatID}} active{{end}}" title="{{.Title}}">{{.Title}}</a>{{end}}
+  </div>
+
+  <div class="grow"></div>
+
+  <div id="downloads" class="downloads" hidden>
+    <div class="section-label">Downloads</div>
+    <div id="download-list" class="download-list"></div>
+  </div>
+
+  <div class="section-label">In memory</div>
+  <div class="loaded-list" id="loaded-list">
+    {{range .Loaded}}
+    <div class="loaded-row">
+      <div class="loaded-name" title="{{.Name}}">{{.Name}}</div>
+      <div class="loaded-detail">{{bytes .SizeVRAM}}{{if lt (gpuPct .) 100}} · {{gpuPct .}}% GPU{{end}} · {{if .Pinned}}until ejected{{else}}auto-unloads{{end}}</div>
+      <button type="button" class="icon-btn" data-eject="{{.Name}}" aria-label="Eject {{.Name}}" title="Eject">{{template "icon-eject"}}</button>
+    </div>
+    {{else}}<div class="muted small">Nothing loaded</div>{{end}}
+  </div>
+
+  <button type="button" class="nav-item theme-toggle" id="theme-toggle">{{template "icon-moon"}}<span>Dark mode</span></button>
+</nav>
+<main class="content">
+  {{if .OllamaErr}}<div class="banner error" role="alert">Can't reach Ollama at {{.OllamaURL}}. Is it running? <span class="muted">({{.OllamaErr}})</span></div>{{end}}
+  {{template "content" .}}
+</main>
+</div>
+</body>
+</html>
+{{end}}
+
+{{define "icon-chat"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>{{end}}
+{{define "icon-library"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18"/></svg>{{end}}
+{{define "icon-search"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>{{end}}
+{{define "icon-chart"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>{{end}}
+{{define "icon-sliders"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h10M4 12h16M4 18h7"/><circle cx="17" cy="6" r="2"/><circle cx="14" cy="18" r="2"/></svg>{{end}}
+{{define "icon-eject"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5l7 9H5z"/><path d="M5 19h14"/></svg>{{end}}
+{{define "icon-moon"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>{{end}}

@@ -1,0 +1,289 @@
+// Shared behavior: theme toggle, load/eject/delete buttons, the "In memory" list.
+(() => {
+  const root = document.documentElement;
+
+  // ---- theme ----
+  const themeBtn = document.getElementById('theme-toggle');
+  const currentTheme = () =>
+    root.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  const syncThemeLabel = () => {
+    if (themeBtn) themeBtn.querySelector('span').textContent = currentTheme() === 'dark' ? 'Light mode' : 'Dark mode';
+  };
+  themeBtn?.addEventListener('click', () => {
+    const next = currentTheme() === 'dark' ? 'light' : 'dark';
+    root.dataset.theme = next;
+    try { localStorage.setItem('theme', next); } catch {}
+    syncThemeLabel();
+  });
+  syncThemeLabel();
+
+  // ---- helpers ----
+  async function errorText(res) {
+    try { return (await res.json()).error || res.statusText; } catch { return res.statusText; }
+  }
+
+  async function post(path, body) {
+    const res = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+    });
+    if (!res.ok) throw new Error(await errorText(res));
+    return res.status === 204 ? null : res.json();
+  }
+
+  function fmtBytes(n) {
+    if (n >= 1e9) return (n / 1e9).toFixed(1) + ' GB';
+    if (n >= 1e6) return Math.round(n / 1e6) + ' MB';
+    return Math.round(n / 1e3) + ' KB';
+  }
+
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  const ejectIcon = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5l7 9H5z"/><path d="M5 19h14"/></svg>';
+
+  // ---- loaded models ----
+  function renderLoaded(models) {
+    const box = document.getElementById('loaded-list');
+    if (!box) return;
+    box.replaceChildren();
+    if (!models.length) {
+      box.append(el('div', 'muted small', 'Nothing loaded'));
+      return;
+    }
+    for (const m of models) {
+      const row = el('div', 'loaded-row');
+      const name = el('div', 'loaded-name', m.name);
+      name.title = m.name;
+      const pct = m.size ? Math.floor((m.sizeVram * 100) / m.size) : 100;
+      let detail = fmtBytes(m.sizeVram);
+      if (pct < 100) detail += ` · ${pct}% GPU`;
+      detail += m.pinned ? ' · until ejected' : ' · auto-unloads';
+      const btn = el('button', 'icon-btn');
+      btn.type = 'button';
+      btn.dataset.eject = m.name;
+      btn.title = 'Eject';
+      btn.setAttribute('aria-label', 'Eject ' + m.name);
+      btn.innerHTML = ejectIcon;
+      row.append(name, el('div', 'loaded-detail', detail), btn);
+      box.append(row);
+    }
+  }
+
+  async function refreshLoaded() {
+    try {
+      const res = await fetch('/api/loaded');
+      if (!res.ok) return null;
+      const models = await res.json();
+      renderLoaded(models);
+      document.dispatchEvent(new CustomEvent('loaded-changed', { detail: models }));
+      return models;
+    } catch {
+      return null;
+    }
+  }
+
+  // Makes a text button act as Load or Eject for a model.
+  function setLoadButton(btn, name, loaded) {
+    if (!btn) return;
+    delete btn.dataset.load;
+    delete btn.dataset.eject;
+    if (loaded) btn.dataset.eject = name; else btn.dataset.load = name;
+    btn.textContent = loaded ? 'Eject' : 'Load';
+    btn.disabled = false;
+  }
+
+  // ---- click handling for any [data-load], [data-eject], [data-delete] ----
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-load], [data-eject], [data-delete]');
+    if (!btn || btn.disabled) return;
+
+    if (btn.dataset.delete) {
+      const name = btn.dataset.delete;
+      if (!confirm(`Delete ${name} from disk?\n\nOther apps using Ollama will lose it too.`)) return;
+      btn.disabled = true;
+      try {
+        await post('/api/models/delete', { name });
+        btn.closest('tr')?.remove();
+        refreshLoaded();
+      } catch (err) {
+        alert(`Couldn't delete ${name}: ${err.message}`);
+        btn.disabled = false;
+      }
+      return;
+    }
+
+    const loading = !!btn.dataset.load;
+    const name = btn.dataset.load || btn.dataset.eject;
+    const isText = !btn.classList.contains('icon-btn');
+    btn.disabled = true;
+    if (isText) btn.textContent = loading ? 'Loading…' : 'Ejecting…';
+    try {
+      await post(loading ? '/api/models/load' : '/api/models/eject', { name });
+    } catch (err) {
+      alert(`Couldn't ${loading ? 'load' : 'eject'} ${name}: ${err.message}`);
+    }
+    btn.disabled = false;
+    await refreshLoaded();
+  });
+
+  // Library rows follow load/eject changes made anywhere on the page.
+  document.addEventListener('loaded-changed', (e) => {
+    const names = new Set(e.detail.map((m) => m.name));
+    for (const row of document.querySelectorAll('tr[data-model]')) {
+      if (!row.querySelector('.status')) continue;
+      const name = row.dataset.model;
+      const loaded = names.has(name);
+      const status = row.querySelector('.status');
+      status.innerHTML = loaded ? '<span class="good">● Loaded</span>' : '<span class="muted">—</span>';
+      setLoadButton(row.querySelector('[data-load], [data-eject]'), name, loaded);
+    }
+  });
+
+  // ---- downloads ----
+  let pollTimer = null;
+  const seenDone = new Set();
+
+  function jobLabel(j) {
+    return j.alias || j.model.replace(/^hf\.co\//, '');
+  }
+
+  function renderDownloads(jobs) {
+    const box = document.getElementById('downloads');
+    const list = document.getElementById('download-list');
+    if (!box || !list) return;
+    box.hidden = jobs.length === 0;
+    list.replaceChildren();
+    for (const j of jobs) {
+      const row = el('div', 'dl-row dl-' + j.state);
+      const name = el('div', 'dl-name', jobLabel(j));
+      name.title = j.model;
+      row.append(name);
+      if (j.state === 'running') {
+        const pct = j.total ? Math.floor((j.completed * 100) / j.total) : 0;
+        const bar = el('div', 'bar');
+        const fill = el('span');
+        fill.style.width = pct + '%';
+        bar.append(fill);
+        const detail = j.total
+          ? `${fmtBytes(j.completed)} / ${fmtBytes(j.total)}${j.bytesPerSec > 0 ? ` · ${fmtBytes(j.bytesPerSec)}/s` : ''}`
+          : j.status;
+        const cancel = el('button', 'link-btn small', 'Cancel');
+        cancel.type = 'button';
+        cancel.dataset.cancelPull = j.id;
+        row.append(bar, el('div', 'dl-detail', detail), cancel);
+      } else if (j.state === 'done') {
+        row.append(el('div', 'dl-detail good', j.warning || 'Downloaded'));
+      } else if (j.state === 'failed') {
+        row.append(el('div', 'dl-detail bad', j.error));
+      } else {
+        row.append(el('div', 'dl-detail', 'Canceled · start again to resume'));
+      }
+      list.append(row);
+    }
+  }
+
+  // Keeps quant rows on a model page in step with their downloads.
+  function updatePullButtons(jobs) {
+    for (const j of jobs) {
+      const cell = document.querySelector(`.quant-row[data-tag="${CSS.escape(j.model)}"] .quant-action`);
+      if (!cell) continue;
+      if (j.state === 'running') {
+        const pct = j.total ? Math.floor((j.completed * 100) / j.total) + '%' : '…';
+        cell.replaceChildren(el('span', 'small muted', `Downloading ${pct}`));
+      } else if (j.state === 'done') {
+        const a = el('a', 'btn', 'Installed · Chat');
+        a.href = '/chat?model=' + encodeURIComponent(j.alias || j.model);
+        cell.replaceChildren(a);
+      } else {
+        const btn = el('button', 'btn', j.state === 'failed' ? 'Retry' : 'Resume');
+        btn.type = 'button';
+        btn.dataset.pull = j.model;
+        if (j.alias) btn.dataset.alias = j.alias;
+        cell.replaceChildren(btn);
+      }
+    }
+  }
+
+  async function pollDownloads() {
+    clearTimeout(pollTimer);
+    let jobs = [];
+    try {
+      const res = await fetch('/api/pulls');
+      if (res.ok) jobs = await res.json();
+    } catch {}
+    renderDownloads(jobs);
+    updatePullButtons(jobs);
+    for (const j of jobs) {
+      if (j.state === 'done' && !seenDone.has(j.id)) {
+        seenDone.add(j.id);
+        document.dispatchEvent(new CustomEvent('models-changed'));
+      }
+    }
+    if (jobs.some((j) => j.state === 'running')) pollTimer = setTimeout(pollDownloads, 1000);
+  }
+
+  document.addEventListener('click', async (e) => {
+    const pull = e.target.closest('[data-pull]');
+    if (pull && !pull.disabled) {
+      const addAlias = document.getElementById('add-alias');
+      const alias = addAlias && !addAlias.checked ? '' : pull.dataset.alias || '';
+      pull.disabled = true;
+      pull.textContent = 'Starting…';
+      try {
+        await post('/api/pulls', { model: pull.dataset.pull, alias });
+      } catch (err) {
+        alert(`Couldn't start the download: ${err.message}`);
+        pull.disabled = false;
+        pull.textContent = 'Download';
+      }
+      pollDownloads();
+      return;
+    }
+    const cancel = e.target.closest('[data-cancel-pull]');
+    if (cancel) {
+      cancel.disabled = true;
+      try { await post(`/api/pulls/${encodeURIComponent(cancel.dataset.cancelPull)}/cancel`); } catch {}
+      pollDownloads();
+    }
+  });
+  // Already-running downloads (e.g. started on another page) show up right away.
+  pollDownloads();
+
+  // ---- presets page ----
+  document.addEventListener('change', async (e) => {
+    const box = e.target.closest('[data-publish]');
+    if (!box) return;
+    box.disabled = true;
+    try {
+      const res = await fetch('/api/presets');
+      const preset = (await res.json()).find((p) => p.name === box.dataset.publish);
+      const put = await fetch('/api/presets/' + encodeURIComponent(preset.name), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...preset, published: box.checked }),
+      });
+      if (!put.ok) throw new Error(await errorText(put));
+    } catch (err) {
+      box.checked = !box.checked;
+      alert(err.message);
+    }
+    box.disabled = false;
+  });
+  document.addEventListener('click', async (e) => {
+    const del = e.target.closest('[data-delete-preset]');
+    if (!del) return;
+    const name = del.dataset.deletePreset;
+    if (!confirm(`Delete the preset “${name}”? If it's available to other apps, ollamui/${name} is removed from Ollama too.`)) return;
+    const res = await fetch('/api/presets/' + encodeURIComponent(name), { method: 'DELETE' });
+    if (res.ok) del.closest('tr')?.remove();
+    else alert(`Couldn't delete: ${await errorText(res)}`);
+  });
+
+  window.ollamui = { post, errorText, refreshLoaded, setLoadButton, el, fmtBytes };
+})();

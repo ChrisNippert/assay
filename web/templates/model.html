@@ -1,0 +1,90 @@
+{{define "content"}}
+<div class="page model-page">
+  <div class="crumbs small"><a href="/discover">Discover</a> / {{.Title}}</div>
+
+  {{with .Data.Error}}<div class="banner error" role="alert">{{.}}</div>{{end}}
+
+  {{with .Data.Repo}}
+  <header class="model-head">
+    <div class="model-title">
+      <h1>{{.Name}}</h1>
+      <div class="tags">
+        <span class="muted">{{.Author}}</span>
+        {{with billions .Params}}<span class="tag">{{if $.Data.MoE}}MoE {{else}}dense {{end}}{{.}}</span>{{end}}
+        {{with .Arch}}<span class="tag">{{.}}</span>{{end}}
+        {{if $.Data.Vision}}<span class="tag">vision</span>{{end}}
+        {{with .ContextLength}}<span class="tag">{{.}} ctx</span>{{end}}
+        {{if .IsGated}}<span class="tag warn">gated: needs HF_TOKEN</span>{{end}}
+      </div>
+    </div>
+    <div class="model-stats small muted">
+      <div>{{.Downloads}} downloads · {{.Likes}} likes</div>
+      <div>updated {{ago .LastModified}} · <a href="https://huggingface.co/{{.ID}}" target="_blank" rel="noopener">model card ↗</a></div>
+    </div>
+  </header>
+
+  <div class="model-body">
+    <section class="card quants">
+      <div class="card-head">
+        <h2>Pick a quant</h2>
+        <form method="get" class="ctx-form small">
+          <label for="ctx" class="muted">Memory estimate at</label>
+          <select id="ctx" name="ctx" onchange="this.form.submit()">
+            {{range $.Data.CtxOptions}}<option value="{{.}}"{{if eq . $.Data.Ctx}} selected{{end}}>{{.}} context</option>{{end}}
+          </select>
+          <noscript><button class="btn">Update</button></noscript>
+        </form>
+      </div>
+      <p class="muted small">
+        {{with $.Data.Memory}}{{if .VRAM}}{{.GPU}}: {{bytes .VRAM}} VRAM · {{bytes .RAM}} RAM.{{else}}No GPU detected · {{bytes .RAM}} RAM.{{end}}{{end}}
+        Estimates are rough: weights + context cache + overhead.
+      </p>
+      {{if not $.Data.Quants}}<p class="muted">No GGUF quants found in this repo.</p>{{end}}
+      <div class="quant-list">
+        {{range $.Data.Quants}}
+        <div class="quant-row{{if .Best}} best{{end}}" data-tag="{{.Tag}}">
+          <span class="quant-name mono">{{.Name}}{{if .Best}} <span class="star" title="Largest that fits on your GPU">★</span>{{end}}</span>
+          <span class="quant-size">{{bytes .Size}}</span>
+          <span class="fit fit-{{.Fit.Level}}">
+            <span class="bar"><span style="width: {{.Fit.Percent}}%"></span></span>
+            <span class="fit-label">{{.Fit.Label}}</span>
+          </span>
+          <span class="quality muted small">quality: {{.Quality}}</span>
+          <span class="quant-action">
+            {{if .Installed}}<a class="btn" href="/chat?model={{.Tag}}">Installed · Chat</a>
+            {{else}}<button type="button" class="btn{{if .Best}} primary{{end}}" data-pull="{{.Tag}}" data-alias="{{.Alias}}">Download</button>{{end}}
+          </span>
+          {{if .Split}}<span class="split-note small">Split into {{len .Files}} files. Ollama may not be able to pull this one.</span>{{end}}
+        </div>
+        {{end}}
+      </div>
+      {{if $.Data.Quants}}<label class="alias-opt small"><input type="checkbox" id="add-alias" checked> Also give it a short name (e.g. <span class="mono">{{(index $.Data.Quants 0).Alias}}</span>) so it's easy to pick in Zed</label>{{end}}
+    </section>
+
+    <aside class="side">
+      {{if $.Data.Recommended}}
+      <section class="card">
+        <h2>Recommended settings</h2>
+        <p class="muted small">From the uploader's <span class="mono">params</span> file.</p>
+        <dl class="kv">
+          {{range $.Data.Recommended}}<dt class="mono">{{.Key}}</dt><dd class="mono">{{.Value}}</dd>{{end}}
+        </dl>
+      </section>
+      {{end}}
+      <section class="card">
+        <h2>Specs</h2>
+        <dl class="kv">
+          <dt>Architecture</dt><dd>{{or .Arch "unknown"}}</dd>
+          <dt>Parameters</dt><dd>{{or (billions .Params) "unknown"}}{{if $.Data.MoE}} (MoE){{end}}</dd>
+          <dt>Trained context</dt><dd>{{if .ContextLength}}{{.ContextLength}} tokens{{else}}unknown{{end}}</dd>
+          <dt>Pipeline</dt><dd>{{or .PipelineTag "—"}}</dd>
+        </dl>
+      </section>
+      <section class="card muted small">
+        Benchmarks and an intelligence score come with the Compare milestone.
+      </section>
+    </aside>
+  </div>
+  {{end}}
+</div>
+{{end}}

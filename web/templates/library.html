@@ -1,0 +1,42 @@
+{{define "content"}}
+<div class="page">
+  <header class="page-head">
+    <h1>Library</h1>
+    <span class="muted">{{len .Models}} installed</span>
+  </header>
+
+  {{if .Models}}
+  <div class="table-wrap">
+    <table class="models">
+      <thead>
+        <tr><th>Model</th><th>Family</th><th>Params</th><th>Quant</th><th>Size</th><th>Modified</th><th>Memory</th><th><span class="sr-only">Actions</span></th></tr>
+      </thead>
+      <tbody>
+      {{range .Models}}
+        {{$loaded := $.IsLoaded .Name}}
+        <tr data-model="{{.Name}}">
+          <td class="name">{{.Name}}</td>
+          <td>{{.Details.Family}}</td>
+          <td>{{.Details.ParameterSize}}</td>
+          <td class="mono">{{.Details.QuantizationLevel}}</td>
+          <td>{{bytes .Size}}</td>
+          <td class="muted">{{ago .ModifiedAt}}</td>
+          <td class="status">{{if $loaded}}<span class="good">● Loaded</span>{{else}}<span class="muted">—</span>{{end}}</td>
+          <td><div class="actions">
+            {{if $loaded}}<button type="button" class="btn" data-eject="{{.Name}}">Eject</button>{{else}}<button type="button" class="btn" data-load="{{.Name}}">Load</button>{{end}}
+            <a class="btn" href="/chat?model={{.Name}}">Chat</a>
+            <button type="button" class="btn danger" data-delete="{{.Name}}">Delete</button>
+          </div></td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else if not .OllamaErr}}
+  <div class="empty">
+    <p>No models installed yet. Until Discover lands, pull one from a terminal:</p>
+    <pre>ollama pull hf.co/unsloth/Qwen3-8B-GGUF:Q4_K_M</pre>
+  </div>
+  {{end}}
+</div>
+{{end}}

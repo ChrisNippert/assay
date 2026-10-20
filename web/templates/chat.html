@@ -1,0 +1,98 @@
+{{define "content"}}
+<div class="chat" id="chat" data-chat-id="{{with .Data.Chat}}{{.ID}}{{end}}" data-tune="{{json .Data.Tune}}" data-presets="{{json .Presets}}" data-loaded="{{json .LoadedNames}}">
+  <header class="topbar">
+    <label class="sr-only" for="model">Model or preset</label>
+    <select id="model" class="model-select">
+      {{if .Presets}}<optgroup label="Presets">
+        {{range .Presets}}<option value="preset:{{.Name}}" data-base="{{.Base}}"{{if eq .Name $.Data.Preset}} selected{{end}}>{{.Name}}</option>{{end}}
+      </optgroup>{{end}}
+      <optgroup label="Models">
+        {{range .Models}}<option value="{{.Name}}" data-base="{{.Name}}" data-meta="{{.Details.Family}} · {{.Details.ParameterSize}} · {{.Details.QuantizationLevel}}"{{if and (not $.Data.Preset) (eq .Name $.Data.Model)}} selected{{end}}>{{.Name}}</option>{{end}}
+      </optgroup>
+      {{if not .Models}}<option value="">No models installed</option>{{end}}
+    </select>
+    <span class="muted small" id="model-meta"></span>
+    <span class="load-state" id="load-state"></span>
+    <button type="button" class="btn" id="load-btn" hidden></button>
+    <span class="grow"></span>
+    <button type="button" class="btn tune-btn" id="tune-btn" aria-expanded="false" aria-controls="tune">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h10M4 12h16M4 18h7"/><circle cx="17" cy="6" r="2"/><circle cx="14" cy="18" r="2"/></svg>
+      <span id="tune-summary">Tune</span>
+    </button>
+    {{with .Data.Chat}}<button type="button" class="btn subtle" id="delete-chat">Delete chat</button>{{end}}
+  </header>
+
+  <div class="chat-body">
+    <div class="chat-main">
+      <div class="messages" id="messages">
+        <div class="column" id="message-list">
+          {{with .Data.Chat}}{{range .Messages}}
+            {{if eq .Role "user"}}
+            <div class="msg user">{{.Content}}</div>
+            {{else}}
+            <div class="msg assistant">
+              {{if .Thinking}}<details class="thinking"><summary>Thinking</summary><div class="thinking-text">{{.Thinking}}</div></details>{{end}}
+              <div class="md">{{.Content}}</div>
+              {{with .Stats}}<div class="stats">{{printf "%.1f" .TokensPerSec}} tok/s · {{.OutputTokens}} tokens</div>
+              {{if eq .DoneReason "length"}}<div class="msg-warn">Cut off at the length limit. Raise “Context length” or “Max reply tokens” in Tune for longer replies.</div>{{end}}{{end}}
+            </div>
+            {{end}}
+          {{end}}{{else}}
+            <div class="empty" id="empty">
+              {{if $.Models}}<p>Pick a model and say something.</p>
+              {{else}}<p>No models installed yet. Find one in <a href="/discover">Discover</a>.</p>{{end}}
+            </div>
+          {{end}}
+        </div>
+      </div>
+
+      <form class="composer column" id="composer">
+        <label class="sr-only" for="input">Message</label>
+        <textarea id="input" rows="2" placeholder="Message · Enter to send, Shift+Enter for a new line"></textarea>
+        <button type="submit" class="btn primary" id="send">Send</button>
+      </form>
+    </div>
+
+    <aside class="tune" id="tune" aria-label="Tune" inert>
+      <div class="tune-head">
+        <span class="tune-title">Tune</span>
+        <span class="muted small" id="tune-source"></span>
+        <span class="grow"></span>
+        <span class="muted small">Esc</span>
+        <button type="button" class="icon-btn" id="tune-close" aria-label="Close Tune panel">
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="tune-body">
+        <div class="tune-section">Sampling</div>
+        <div id="tune-sampling"></div>
+        <div class="tune-section">Length</div>
+        <div id="tune-length"></div>
+        <div class="tune-row">
+          <label for="tune-think">Thinking</label>
+          <select id="tune-think">
+            <option value="">Default</option>
+            <option value="on">On</option>
+            <option value="off">Off</option>
+          </select>
+        </div>
+        <div class="tune-section"><label for="tune-system">System prompt</label></div>
+        <textarea id="tune-system" rows="4" placeholder=""></textarea>
+        <p class="tune-note small" id="tune-note"></p>
+      </div>
+      <div class="tune-foot">
+        <div class="tune-actions">
+          <button type="button" class="btn primary" id="tune-save" hidden>Save to preset</button>
+          <button type="button" class="btn" id="tune-save-new">Save as new preset…</button>
+          <button type="button" class="btn subtle" id="tune-reset">Reset</button>
+        </div>
+        <label class="publish small" id="tune-publish-row" hidden>
+          <input type="checkbox" id="tune-publish">
+          <span>Available to Zed and other apps as <span class="mono" id="tune-publish-name"></span></span>
+        </label>
+        <p class="tune-error small" id="tune-error" role="alert"></p>
+      </div>
+    </aside>
+  </div>
+</div>
+{{end}}

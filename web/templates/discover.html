@@ -1,0 +1,82 @@
+{{define "content"}}
+<div class="discover" id="discover" data-memory="{{json .Data}}">
+  <aside class="filters" aria-label="Filters">
+    <div class="filters-head"><span class="filters-title">Filters</span><button type="button" class="link-btn" id="f-clear">Clear all</button></div>
+
+    <fieldset>
+      <legend>Size (total params)</legend>
+      <div class="range-row">
+        <label class="sr-only" for="f-min">Minimum, billions</label>
+        <input id="f-min" type="number" min="0" step="0.5" placeholder="0" inputmode="decimal">
+        <span class="muted">to</span>
+        <label class="sr-only" for="f-max">Maximum, billions</label>
+        <input id="f-max" type="number" min="0" step="0.5" placeholder="any" inputmode="decimal">
+        <span class="muted">B</span>
+      </div>
+      <div class="chips" id="f-size-chips">
+        <button type="button" class="chip" data-min="" data-max="4">&lt;4B</button>
+        <button type="button" class="chip" data-min="4" data-max="9">4–9B</button>
+        <button type="button" class="chip" data-min="5" data-max="12">5–12B</button>
+        <button type="button" class="chip" data-min="12" data-max="35">12–35B</button>
+        <button type="button" class="chip" data-min="35" data-max="">35B+</button>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Type</legend>
+      <div class="segmented" id="f-type">
+        <button type="button" data-value="" class="on">Any</button>
+        <button type="button" data-value="dense">Dense</button>
+        <button type="button" data-value="moe">MoE</button>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Architecture</legend>
+      <div id="f-arch" class="checklist"><span class="muted small">Search to see architectures</span></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Can do</legend>
+      <div class="checklist">
+        <label><input type="checkbox" id="f-vision">Vision</label>
+        <label><input type="checkbox" id="f-longctx">128k+ context</label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>My machine</legend>
+      <div class="checklist">
+        <label><input type="checkbox" id="f-fits">Fits on GPU (Q4, 8k context)</label>
+        <label><input type="checkbox" id="f-hide-installed">Hide installed</label>
+        <label><input type="checkbox" id="f-hide-gated">Hide gated</label>
+      </div>
+      <p class="muted small" id="memory-line"></p>
+    </fieldset>
+  </aside>
+
+  <section class="results-pane">
+    <div class="search-row">
+      <label class="sr-only" for="q">Search Hugging Face</label>
+      <input id="q" type="search" placeholder="Search GGUF models on Hugging Face" autocomplete="off">
+      <label class="sr-only" for="author">Uploader</label>
+      <select id="author">
+        <option value="unsloth">unsloth</option>
+        <option value="bartowski">bartowski</option>
+        <option value="">anyone</option>
+      </select>
+      <label for="sort" class="muted">Sort</label>
+      <select id="sort">
+        <option value="downloads">Downloads</option>
+        <option value="trendingScore">Trending</option>
+        <option value="likes">Likes</option>
+        <option value="lastModified">Newest</option>
+        <option value="params-desc">Size, largest</option>
+        <option value="params-asc">Size, smallest</option>
+      </select>
+    </div>
+    <div class="result-meta muted small" id="result-meta" aria-live="polite"></div>
+    <div class="results" id="results"></div>
+  </section>
+</div>
+{{end}}

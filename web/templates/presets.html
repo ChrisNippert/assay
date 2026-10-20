@@ -1,0 +1,38 @@
+{{define "content"}}
+<div class="page">
+  <header class="page-head">
+    <h1>Presets</h1>
+    <span class="muted">{{len .Presets}} saved · tune a chat, then “Save as new preset”</span>
+  </header>
+
+  {{if .Presets}}
+  <div class="table-wrap">
+    <table class="models">
+      <thead><tr><th>Preset</th><th>Base model</th><th>Settings</th><th>In other apps</th><th><span class="sr-only">Actions</span></th></tr></thead>
+      <tbody>
+      {{range .Presets}}
+        <tr data-preset="{{.Name}}">
+          <td class="name">{{.Name}}{{with .System}}<div class="muted small ellipsis" title="{{.}}">{{.}}</div>{{end}}</td>
+          <td class="mono small">{{.Base}}</td>
+          <td class="small settings-cell">{{range $k, $v := .Options}}<span class="tag mono">{{$k}} {{$v}}</span> {{end}}{{if .Think}}<span class="tag">think {{if deref .Think}}on{{else}}off{{end}}</span>{{end}}{{if not .Options}}<span class="muted">model defaults</span>{{end}}</td>
+          <td>
+            <label class="publish small"><input type="checkbox" data-publish="{{.Name}}"{{if .Published}} checked{{end}}>
+              <span class="mono">{{.OllamaName}}</span></label>
+          </td>
+          <td><div class="actions">
+            <a class="btn" href="/chat?preset={{.Name}}">Chat</a>
+            <button type="button" class="btn danger" data-delete-preset="{{.Name}}">Delete</button>
+          </div></td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+  <p class="muted small">Ticking “In other apps” creates a real Ollama model named <span class="mono">ollamui/&lt;preset&gt;</span> with these settings built in. It reuses the base model's weights, so it takes no extra disk space. Zed and anything else using Ollama will list it.</p>
+  {{else}}
+  <div class="empty">
+    <p>No presets yet. Open a chat, press <strong>Tune</strong>, adjust settings, then choose <strong>Save as new preset</strong>.</p>
+  </div>
+  {{end}}
+</div>
+{{end}}
