@@ -1,6 +1,7 @@
 package server
 
 import (
+	"log/slog"
 	"testing"
 
 	"ollamui/internal/hw"
@@ -38,5 +39,22 @@ func TestChooseContext(t *testing.T) {
 func TestSameModel(t *testing.T) {
 	if !sameModel("gemma4", "gemma4:latest") || !sameModel("hf.co/a/B-GGUF:Q4", "hf.co/a/b-gguf:q4") || sameModel("a:1", "a:2") {
 		t.Fatal("sameModel")
+	}
+}
+
+func TestNoteOverflow(t *testing.T) {
+	s := &Server{log: slog.New(slog.DiscardHandler)}
+	s.noteOverflow("Qwen:9b", 262144)
+	if v, _ := s.ctxCap.Load("qwen:9b"); v != 131072 {
+		t.Fatalf("cap after 256k spilled = %v, want 131072", v)
+	}
+	s.noteOverflow("qwen:9b", 262144) // a stale reading doesn't raise it again
+	s.noteOverflow("qwen:9b", 131072)
+	if v, _ := s.ctxCap.Load("qwen:9b"); v != 65536 {
+		t.Fatalf("cap after 128k spilled = %v, want 65536", v)
+	}
+	s.noteOverflow("qwen:9b", 262144)
+	if v, _ := s.ctxCap.Load("qwen:9b"); v != 65536 {
+		t.Fatalf("cap went back up to %v", v)
 	}
 }

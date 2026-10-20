@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	"ollamui/internal/hw"
@@ -107,6 +108,9 @@ func (s *Server) pickContext(ctx context.Context, model string, probe bool) auto
 		return nil
 	}
 	self := find(running)
+	if self != nil && self.SizeVRAM < self.Size && self.ContextLength > 0 && aloneOnGPU(running, self) {
+		s.noteOverflow(model, self.ContextLength)
+	}
 	if self == nil {
 		if _, ok := s.ctxBase.Load(strings.ToLower(model)); !ok && probe {
 			// Load at Ollama's default context just to measure the weights.
@@ -128,7 +132,7 @@ func (s *Server) pickContext(ctx context.Context, model string, probe bool) auto
 	} else if v, ok := s.ctxBase.Load(strings.ToLower(model)); ok {
 		base = v.(int64)
 	} else {
-		return autoContext{Reason: "picked when the model first loads"}
+		return autoContext{Reason: "worked out when the model first loads"}
 	}
 
 	// VRAM that isn't ours to use: the desktop, browsers, other apps.
@@ -155,10 +159,102 @@ func (s *Server) pickContext(ctx context.Context, model string, probe bool) auto
 		}
 	}
 	budget := s.memory.VRAM - other - ctxMargin
-	c := chooseContext(base, kv, budget, show.ContextLength(), loadedCtx)
+	modelMax := show.ContextLength()
+	capped := false
+	if _, ok := s.ctxCap.Load(strings.ToLower(model)); !ok {
+		s.capFromBench(ctx, model, modelMax)
+	}
+	if v, ok := s.ctxCap.Load(strings.ToLower(model)); ok {
+		if limit := v.(int); modelMax == 0 || limit < modelMax {
+			modelMax, capped = limit, true
+		}
+	}
+	if self != nil && self.SizeVRAM < self.Size {
+		loadedCtx = 0 // don't hold on to a context that spilled over
+	}
+	c := chooseContext(base, kv, budget, modelMax, loadedCtx)
 	s.log.Debug("picked context", "model", model, "ctx", c, "base", base, "budget", budget, "other", other, "loaded", loadedCtx)
 	if c == 0 {
 		return autoContext{Reason: "even 8k context doesn't fit on the GPU"}
 	}
+	if capped {
+		return autoContext{Ctx: c, Reason: "largest that fit on your GPU when tried"}
+	}
 	return autoContext{Ctx: c, Reason: "largest that fits on your GPU"}
+}
+
+// noteOverflow records that model didn't fit on the GPU at ctx, so later
+// picks stay below it. The estimate leaves out some of Ollama's buffers,
+// which grow with context, so a large context can look like it fits and
+// then spill onto the CPU; this is the correction.
+func (s *Server) noteOverflow(model string, ctx int) {
+	limit := 0
+	for _, c := range ctxSteps {
+		if c < ctx {
+			limit = c
+		}
+	}
+	key := strings.ToLower(model)
+	if v, ok := s.ctxCap.Load(key); ok && v.(int) <= limit {
+		return
+	}
+	s.ctxCap.Store(key, limit)
+	s.log.Info("context didn't fit on the GPU; picking smaller from now on", "model", model, "ctx", ctx, "limit", limit)
+}
+
+// capFromBench starts from a saved speed test, which settled on the
+// largest context that stayed on the GPU with the model alone there, so
+// what was learned survives a restart.
+func (s *Server) capFromBench(ctx context.Context, model string, modelMax int) {
+	models, err := s.ollama.List(ctx)
+	if err != nil {
+		return
+	}
+	i := slices.IndexFunc(models, func(m ollama.Model) bool { return sameModel(m.Name, model) })
+	if i < 0 {
+		return
+	}
+	if r, ok := s.bench.Get(models[i].Digest); ok && r.GPUPct == 100 && r.Ctx > 0 && (modelMax == 0 || r.Ctx < modelMax) {
+		s.ctxCap.LoadOrStore(strings.ToLower(model), r.Ctx)
+	}
+}
+
+// aloneOnGPU reports whether self is the only model using VRAM, so a
+// spill onto the CPU is its own context's doing.
+func aloneOnGPU(running []ollama.RunningModel, self *ollama.RunningModel) bool {
+	for _, m := range running {
+		if m.Name != self.Name && m.SizeVRAM > 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// loadAuto loads model at the context ollamui picks. If it spills onto the
+// CPU anyway, it tries the next smaller context, a couple of times at most.
+func (s *Server) loadAuto(ctx context.Context, model, keepAlive string) (autoContext, error) {
+	var auto autoContext
+	for range 3 {
+		auto = s.pickContext(ctx, model, true)
+		var opts map[string]any
+		if auto.Ctx > 0 {
+			opts = map[string]any{"num_ctx": auto.Ctx}
+		}
+		if err := s.ollama.Load(ctx, model, keepAlive, opts); err != nil {
+			return auto, err
+		}
+		if auto.Ctx == 0 {
+			return auto, nil
+		}
+		running, err := s.ollama.Running(ctx)
+		if err != nil {
+			return auto, nil
+		}
+		i := slices.IndexFunc(running, func(m ollama.RunningModel) bool { return sameModel(m.Name, model) })
+		if i < 0 || running[i].SizeVRAM >= running[i].Size || !aloneOnGPU(running, &running[i]) {
+			return auto, nil
+		}
+		s.noteOverflow(model, running[i].ContextLength)
+	}
+	return auto, nil
 }

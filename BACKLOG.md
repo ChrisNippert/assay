@@ -53,15 +53,14 @@ model pages).
     - Epoch's CSV URL returned a 404.
   - **Caching:** keep a `scores.json` that refreshes at most daily and serves stale data when a
     refresh fails.
-- **Local speed bench (M):** run a fixed prompt through Ollama on installed
-  models; record prompt tok/s, generation tok/s, time to first token. Store
-  under `~/.local/share/ollamui/bench/`. This is the most trustworthy number
-  we can show.
+- **Local speed bench:** built (Compare → Run speed test). Open: show
+  measured speed on Library rows and the model page.
 - **Score on Discover + model page (M):** sort by intelligence, show it on
   rows, rank within the current filter ("#2 of 14 in 5–12B").
-- **Compare page (M):** up to 4 models side by side: fit, measured speed,
-  score, card benchmarks, quant quality. Every number labeled with its
-  source.
+- **Compare page:** built (see Done). Still open: model-card benchmarks
+  and uploaders' KLD numbers as extra rows; an "add to compare" action on
+  Library and Discover rows; comparing a not-yet-downloaded quant (fit and
+  score only).
 
 ### 2. More runtime settings: KV cache type, GPU layers, speculative decoding (M)
 
@@ -126,6 +125,13 @@ Most of the 2026-10-20 list is done (see Done). Still open:
 - **Chat search** across saved chats. (M)
 
 ## Done
+
+- Compare page (2026-10-20): up to 4 installed models side by side (specs,
+  quant quality, context that fits on the GPU, intelligence score) with a
+  per-model speed test saved under `bench/`. Auto context now checks itself:
+  a context that spills onto the CPU is remembered and the next smaller one
+  used (Qwen3.5-9B Q4 went from 256k at 15 tok/s to 128k at 39 tok/s).
+  Settings moved to the bottom of the sidebar with its own icon.
 
 - Voice mode's ~800 MB of speech models downloads only after the user agrees
   (prompt in the voice bar on the first mic press), and Settings → Voice can

@@ -1,0 +1,102 @@
+{{define "appbar"}}<h1 class="appbar-title">Compare</h1>{{with .Data.Columns}}<span class="muted small">{{len .}} of 4</span>{{end}}{{end}}
+{{define "content"}}
+{{$d := .Data}}
+<div class="page cmp">
+  <div class="cmp-pick">
+    {{range $d.Picked}}<span class="chip on cmp-chip">{{.}}<button type="button" class="cmp-x" data-remove="{{.}}" aria-label="Remove {{.}}" title="Remove from the comparison">×</button></span>{{end}}
+    {{if lt (len $d.Picked) 4}}{{if .Models}}
+    <select id="cmp-add" aria-label="Add a model">
+      <option value="">{{if $d.Picked}}Add a model…{{else}}Choose a model…{{end}}</option>
+      {{range .ModelGroups}}{{if not (hasChoice $d.Picked .Primary.Name)}}<option value="{{.Primary.Name}}">{{.Primary.Name}}{{with .Primary.Details.ParameterSize}} · {{.}}{{end}} · {{bytes .Primary.Size}}</option>{{end}}{{end}}
+    </select>
+    {{end}}{{end}}
+  </div>
+
+  {{if not .Models}}
+  <div class="empty">No models installed yet. Find some on <a href="/discover">Discover</a>.</div>
+  {{else if not $d.Columns}}
+  <div class="empty cmp-empty">
+    <p>Put up to four installed models side by side: size, how much context fits on your GPU, intelligence score and measured speed.</p>
+    {{with .Loaded}}<p><a class="btn" href="/compare?{{range $i, $m := .}}{{if $i}}&amp;{{end}}m={{$m.Name}}{{end}}">Start with what's loaded</a></p>{{end}}
+  </div>
+  {{else}}
+  <div class="cmp-scroll">
+  <div class="cmp-grid" style="--cols: {{len $d.Columns}}">
+    <div class="cmp-corner"></div>
+    {{range $d.Columns}}{{$m := .Group.Primary}}
+    <div class="cmp-head">
+      <a class="cmp-name row-link" href="/chat?model={{$m.Name}}" title="Chat with {{$m.Name}}">{{if .Group.HFRepo}}{{.Group.ShortName}}{{else}}{{$m.Name}}{{end}}</a>
+      {{with .Group.PrimaryOwner}}<span class="muted small">{{.}}</span>{{end}}
+      {{if .Group.Loaded}}<span class="tag good">● Loaded</span>{{end}}
+    </div>
+    {{end}}
+
+    <div class="cmp-section">Model <span class="cmp-src">from Ollama</span></div>
+    <div class="cmp-label">Parameters</div>
+    {{range $d.Columns}}<div class="cmp-cell">{{or .Group.Primary.Details.ParameterSize "–"}}</div>{{end}}
+    <div class="cmp-label">Quantization</div>
+    {{range $d.Columns}}<div class="cmp-cell">{{with .Group.Primary.Details.QuantizationLevel}}<span class="mono">{{.}}</span>{{else}}–{{end}}{{with .Quality}}<span class="muted"> · {{.}}</span>{{end}}</div>{{end}}
+    <div class="cmp-label">On disk</div>
+    {{range $d.Columns}}<div class="cmp-cell">{{bytes .Group.Primary.Size}}</div>{{end}}
+    <div class="cmp-label">Architecture</div>
+    {{range $d.Columns}}<div class="cmp-cell">{{or .Group.Primary.Details.Family "–"}}</div>{{end}}
+    <div class="cmp-label">Longest context</div>
+    {{range $d.Columns}}<div class="cmp-cell">{{if .MaxCtx}}{{kib .MaxCtx}}k tokens{{else}}–{{end}}</div>{{end}}
+    <div class="cmp-label">Can do</div>
+    {{range $d.Columns}}<div class="cmp-cell cmp-caps">{{range .Caps}}<span class="tag">{{.}}</span>{{else}}<span class="muted">text</span>{{end}}{{with .Err}}<span class="settings-warn small">{{.}}</span>{{end}}</div>{{end}}
+
+    <div class="cmp-section">On your GPU <span class="cmp-src">ollamui's estimate</span></div>
+    <div class="cmp-label">Context that fits</div>
+    {{range $d.Columns}}<div class="cmp-cell{{if and $d.BestCtx (eq .Auto.Ctx $d.BestCtx)}} best{{end}}">{{if .Auto.Ctx}}{{kib .Auto.Ctx}}k, all on the GPU{{else}}<span class="muted">{{or .Auto.Reason "unknown"}}</span>{{end}}</div>{{end}}
+
+    <div class="cmp-section">Intelligence <span class="cmp-src"><a href="{{$d.ScoreURL}}" target="_blank" rel="noopener">Artificial Analysis ↗</a></span></div>
+    <div class="cmp-label">Score</div>
+    {{range $d.Columns}}<div class="cmp-cell{{if and .Rated (eq .Score $d.BestScore)}} best{{end}}">{{if .Rated}}
+      <span class="cmp-score"><b>{{printf "%.0f" .Score}}</b><span class="bar"><span style="width: {{.ScorePct}}%"></span></span></span>
+      <span class="muted small">of <a href="https://huggingface.co/{{.ScoreOf}}" target="_blank" rel="noopener">{{.ScoreOf}}</a></span>
+    {{else}}<span class="muted">Not rated</span>{{end}}</div>{{end}}
+
+    <div class="cmp-section">Speed <span class="cmp-src">measured on this machine</span></div>
+    <div class="cmp-label">Writing</div>
+    {{range $d.Columns}}<div class="cmp-cell{{if and .Bench (eq .Bench.GenTPS $d.BestGen)}} best{{end}}">{{with .Bench}}<b>{{printf "%.1f" .GenTPS}}</b> tokens/s{{else}}<span class="muted">–</span>{{end}}</div>{{end}}
+    <div class="cmp-label">Reading the prompt</div>
+    {{range $d.Columns}}<div class="cmp-cell{{if and .Bench (eq .Bench.PromptTPS $d.BestPrompt)}} best{{end}}">{{with .Bench}}{{printf "%.0f" .PromptTPS}} tokens/s{{else}}<span class="muted">–</span>{{end}}</div>{{end}}
+    <div class="cmp-label">First word after</div>
+    {{range $d.Columns}}{{$c := .}}<div class="cmp-cell{{if and .Bench (eq .Bench.TTFTMs $d.BestTTFT)}} best{{end}}">{{with .Bench}}{{$c.Secs .TTFTMs}}{{else}}<span class="muted">–</span>{{end}}</div>{{end}}
+    <div class="cmp-label">Loading</div>
+    {{range $d.Columns}}{{$c := .}}<div class="cmp-cell{{if and .Bench (eq .Bench.LoadMs $d.BestLoad)}} best{{end}}">{{with .Bench}}{{$c.Secs .LoadMs}}{{else}}<span class="muted">–</span>{{end}}</div>{{end}}
+    <div class="cmp-label"></div>
+    {{range $d.Columns}}<div class="cmp-cell cmp-run">
+      {{with .Bench}}<span class="muted small">{{ago .At}} · {{kib .Ctx}}k context{{if lt .GPUPct 100}} · {{.GPUPct}}% on GPU{{end}}</span>{{end}}
+      <button type="button" class="btn{{if not .Bench}} primary{{end}}" data-bench="{{.Group.Primary.Name}}">{{if .Bench}}Run again{{else}}Run speed test{{end}}</button>
+    </div>{{end}}
+  </div>
+  </div>
+  <p class="muted small cmp-foot" id="cmp-status" role="status">The speed test loads the model fresh at the context chats use, reads a prompt of about a thousand tokens and writes 256 tokens with thinking off. Other models are unloaded first, so each model has the GPU to itself. Highlighted values are the best in each row.</p>
+  {{end}}
+</div>
+<script>
+(() => {
+  const picked = {{$d.Picked}} || [];
+  const go = (list) => { location.href = '/compare' + (list.length ? '?' + list.map((m) => 'm=' + encodeURIComponent(m)).join('&') : ''); };
+  document.getElementById('cmp-add')?.addEventListener('change', (e) => { if (e.target.value) go([...picked, e.target.value]); });
+  for (const b of document.querySelectorAll('[data-remove]')) b.addEventListener('click', () => go(picked.filter((m) => m !== b.dataset.remove)));
+  const status = document.getElementById('cmp-status');
+  for (const b of document.querySelectorAll('[data-bench]')) b.addEventListener('click', async () => {
+    const all = document.querySelectorAll('[data-bench]');
+    all.forEach((x) => { x.disabled = true; });
+    b.textContent = 'Testing…';
+    status.textContent = `Testing ${b.dataset.bench}: unloading other models, loading it, then reading and writing. This takes up to a minute.`;
+    try {
+      const res = await fetch('/api/bench', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: b.dataset.bench }) });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+      location.reload();
+    } catch (err) {
+      status.textContent = `The speed test failed: ${err.message}`;
+      all.forEach((x) => { x.disabled = false; });
+      b.textContent = 'Run speed test';
+    }
+  });
+})();
+</script>
+{{end}}

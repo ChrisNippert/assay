@@ -17,9 +17,8 @@
   <a href="/chat" class="nav-item{{if eq .Active "chat"}} active{{end}}">{{template "icon-chat"}}Chat</a>
   <a href="/library" class="nav-item{{if eq .Active "library"}} active{{end}}">{{template "icon-library"}}Library<span class="grow"></span><span class="count">{{len .ModelGroups}}</span></a>
   <a href="/discover" class="nav-item{{if eq .Active "discover"}} active{{end}}">{{template "icon-search"}}Discover</a>
-  <span class="nav-item disabled" title="Coming in M4">{{template "icon-chart"}}Compare</span>
+  <a href="/compare" class="nav-item{{if eq .Active "compare"}} active{{end}}">{{template "icon-chart"}}Compare</a>
   <a href="/presets" class="nav-item{{if eq .Active "presets"}} active{{end}}">{{template "icon-sliders"}}Presets<span class="grow"></span><span class="count">{{len .Presets}}</span></a>
-  <a href="/settings" class="nav-item{{if eq .Active "settings"}} active{{end}}">{{template "icon-sliders"}}Settings</a>
 
   <div class="section-label chats-head"><span>Chats</span><a href="/chat" class="icon-btn chats-new" aria-label="New chat" title="New chat">{{template "icon-plus"}}</a></div>
   <input type="search" class="chat-filter" id="chat-filter" placeholder="Search chats" aria-label="Search chats"{{if le (len .Chats) 8}} hidden{{end}}>
@@ -31,6 +30,7 @@
 
   <div class="grow"></div>
 
+  <a href="/settings" class="nav-item nav-foot{{if eq .Active "settings"}} active{{end}}">{{template "icon-gear"}}Settings</a>
   <button type="button" class="nav-item theme-toggle" id="theme-toggle">{{template "icon-moon"}}<span>Dark mode</span></button>
 </nav>
 <div class="nav-backdrop" id="nav-backdrop"></div>
@@ -72,6 +72,7 @@
 {{define "icon-search"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>{{end}}
 {{define "icon-chart"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>{{end}}
 {{define "icon-sliders"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h10M4 12h16M4 18h7"/><circle cx="17" cy="6" r="2"/><circle cx="14" cy="18" r="2"/></svg>{{end}}
+{{define "icon-gear"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>{{end}}
 {{define "icon-eject"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5l7 9H5z"/><path d="M5 19h14"/></svg>{{end}}
 {{define "icon-moon"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>{{end}}
 {{define "icon-download"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v11M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>{{end}}

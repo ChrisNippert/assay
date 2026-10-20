@@ -99,13 +99,9 @@ func (s *Server) handleLoad(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Load with the context chats will use, so the first message doesn't
-	// have to reload the model.
-	var opts map[string]any
-	if auto := s.pickContext(r.Context(), req.Name, true); auto.Ctx > 0 {
-		opts = map[string]any{"num_ctx": auto.Ctx}
-	}
-	// Loaded from the UI means loaded until ejected, like Unsloth/LM Studio.
-	if err := s.ollama.Load(r.Context(), req.Name, "-1", opts); err != nil {
+	// have to reload the model. Loaded from the UI means loaded until
+	// ejected, like Unsloth/LM Studio.
+	if _, err := s.loadAuto(r.Context(), req.Name, "-1"); err != nil {
 		writeError(w, ollamaStatus(err), err.Error())
 		return
 	}

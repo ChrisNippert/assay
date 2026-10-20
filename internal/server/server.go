@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"ollamui/internal/bench"
 	"ollamui/internal/chats"
 	"ollamui/internal/hf"
 	"ollamui/internal/hw"
@@ -39,6 +40,8 @@ type Options struct {
 	Pulls   *pulls.Manager
 	// Scores is optional; without it nothing is rated.
 	Scores *scores.Store
+	// Bench keeps speed tests; without it they aren't saved.
+	Bench *bench.Store
 	// Voice is the speech service for voice mode; nil turns it off.
 	Voice *voice.Client
 	// VoiceSettings are voice mode's preferences. Required.
@@ -60,12 +63,16 @@ type Server struct {
 	hf      *hf.Client
 	pulls   *pulls.Manager
 	scores  *scores.Store
+	bench   *bench.Store
 	voice   *voice.Client
 	voiceSt *voice.SettingsStore
 	speech  *voice.Launcher
 	search  searchCache
 	env     envCache
 	ctxBase sync.Map // model name → measured weight memory, for picking context
+	// ctxCap is model name → largest context worth trying, learned when a
+	// bigger one spilled onto the CPU.
+	ctxCap sync.Map
 	// thinkers remembers, per model, whether it thought when left to decide.
 	thinkers sync.Map
 	// otherVRAM is the last measured VRAM used outside Ollama (desktop etc.).
@@ -82,8 +89,11 @@ type Server struct {
 func New(opts Options) (*Server, error) {
 	s := &Server{
 		ollama: opts.Ollama, chats: opts.Chats, presets: opts.Presets,
-		hf: opts.HF, pulls: opts.Pulls, scores: opts.Scores, voice: opts.Voice, voiceSt: opts.VoiceSettings, speech: opts.VoiceLauncher, memory: opts.Memory, log: opts.Logger,
+		hf: opts.HF, pulls: opts.Pulls, scores: opts.Scores, bench: opts.Bench, voice: opts.Voice, voiceSt: opts.VoiceSettings, speech: opts.VoiceLauncher, memory: opts.Memory, log: opts.Logger,
 		vramUsed: hw.VRAMUsed,
+	}
+	if s.bench == nil {
+		s.bench = bench.Open("")
 	}
 	if s.voiceSt == nil {
 		s.voiceSt, _ = voice.OpenSettings("") // in memory
@@ -93,7 +103,7 @@ func New(opts Options) (*Server, error) {
 		s.log = slog.Default()
 	}
 	s.pages = map[string]*template.Template{}
-	for _, name := range []string{"chat", "library", "discover", "model", "presets", "settings"} {
+	for _, name := range []string{"chat", "library", "discover", "model", "presets", "settings", "compare"} {
 		t, err := template.New("").Funcs(templateFuncs).ParseFS(web.FS, "templates/layout.html", "templates/"+name+".html")
 		if err != nil {
 			return nil, fmt.Errorf("parse %s template: %w", name, err)
@@ -113,6 +123,8 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("GET /discover/{owner}/{name}", s.handleModelPage)
 	mux.HandleFunc("GET /presets", s.handlePresetsPage)
 	mux.HandleFunc("GET /settings", s.handleSettingsPage)
+	mux.HandleFunc("GET /compare", s.handleComparePage)
+	mux.HandleFunc("POST /api/bench", s.handleBench)
 	mux.HandleFunc("GET /api/ollama/env", s.handleOllamaEnv)
 
 	mux.HandleFunc("GET /api/loaded", s.handleLoaded)

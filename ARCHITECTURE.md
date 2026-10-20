@@ -52,6 +52,7 @@ browser ──HTTP──► ollamui (Go) ──HTTP──► Ollama :11434 ◄�
                      ├── internal/presets  TOML presets + sync to ollamui/*                   (M3)
                      ├── internal/chats    one JSON file per chat
                      ├── internal/scores   intelligence index (Artificial Analysis via OpenRouter)
+                     ├── internal/bench    saved speed tests, one JSON file per model digest
                      ├── internal/voice    client for an OpenAI-style audio API (STT + TTS)
                      ├── internal/server   pages, JSON API, streaming, host/CSRF guards
                      └── web/              templates, CSS, small vanilla JS (embedded)
@@ -247,8 +248,8 @@ No database. Plain files under XDG directories:
 ~/.local/share/ollamui/
   chats/<id>.json        one conversation per file
   scores.json            cached intelligence scores, refreshed daily
+  bench/<digest>.json    speed tests from the Compare page
 ~/.cache/ollamui-voice/  Kokoro model files (the speech service's)
-  bench/<model>.json     local benchmark results                     (M4)
 ```
 
 Presets are plain TOML, so they diff, hand-edit and sync well.
@@ -262,8 +263,8 @@ Design reference: direction **F** on the design canvas
 
 - Compact, mostly sans-serif (IBM Plex Sans). Monospace only for quant names
   and code. Light and dark themes.
-- Left sidebar: Chat, Library, Discover, Compare, Presets, Settings, recent
-  chats, theme toggle. On phones it's a drawer (hamburger, swipe right).
+- Left sidebar: Chat, Library, Discover, Compare, Presets, recent chats;
+  Settings and the theme toggle at the bottom. On phones it's a drawer (hamburger, swipe right).
 - App bar: loaded models as pills (VRAM, context; "CPU" for the talker),
   downloads, page actions.
 - **Chat**: centered column. The Tune panel is closed by default and slides
@@ -280,20 +281,42 @@ Design reference: direction **F** on the design canvas
 - **Model page**: intelligence score and rank, quant picker rows (size,
   memory bar, quality, estimated speed), model-card benchmarks, specs,
   similar-size models.
-- **Compare**: side by side: fit on your machine, speed measured locally,
-  card benchmarks, quant loss.
+- **Compare** (`/compare?m=a&m=b`, up to 4 installed models): specs from
+  Ollama (parameters, quant + rule-of-thumb quality, disk, architecture,
+  longest context, capabilities), the context that fits on the GPU, the
+  intelligence score, and speed measured here. Each section names its
+  source; the best value in a row is highlighted. Not yet: card benchmarks,
+  quant loss (KLD).
 
 ## Benchmarks (M4)
 
 | Data | Source | Trust |
 |---|---|---|
-| Speed (prompt tok/s, gen tok/s, time to first token) | measured locally: a short fixed prompt through `/api/generate`, timings from the response | high, your hardware |
+| Speed (prompt tok/s, gen tok/s, time to first token, load time) | measured locally (Compare → Run speed test), see below | high, your hardware |
 | Speed estimate before download | size and memory bandwidth heuristic | rough |
 | Intelligence score | external index where it covers the model, otherwise none | medium, see open questions |
 | Card benchmarks | parsed from the HF README | low, authors' own setups |
 | Quant loss (KLD) | the uploader's published numbers, when present | medium |
 
 Every number in the UI is labeled with where it came from.
+
+**The speed test** (`POST /api/bench`, one at a time) unloads every model
+and waits until Ollama reports them gone (an unload returns before memory
+is free), settles the context with `loadAuto`, unloads again, then times a
+fresh load at that context, reads a fixed ~1,080-token prompt and writes
+256 tokens with `think: false`, temperature 0. Prompt and generation speed
+come from Ollama's eval counts and durations; time to first word is
+wall-clock to the first streamed token. Results are keyed by digest, so a
+model's aliases share one result.
+
+**Context that really fits.** The auto-context estimate leaves out some of
+Ollama's buffers that grow with context, so a big context can look like it
+fits and spill onto the CPU (Qwen3.5-9B at 256k: 11.2 GiB, 79% on the GPU,
+15 tok/s instead of 39). When an auto-sized model is alone on the GPU and
+`/api/ps` shows it partly on the CPU, `noteOverflow` caps that model one
+step below (`ctxCap`); `loadAuto` (Load button, speed test) retries at once,
+chats pick the smaller context next message. A saved speed test that stayed
+fully on the GPU seeds the cap after a restart.
 
 ## Milestones
 
@@ -307,8 +330,9 @@ Every number in the UI is labeled with where it came from.
 3. **M3: Presets.** Tune panel, per-chat overrides, save to preset, publish
    to `ollamui/*`. *Built.* Not yet: drift detection, `config.toml` (flags
    and `HF_TOKEN` for now).
-4. **M4: Compare.** Local benchmarks, intelligence score, compare page,
-   download fallback path.
+4. **M4: Compare.** Local benchmarks, intelligence score, compare page.
+   *Built.* Not yet: card benchmarks and quant loss on Compare, sorting
+   Discover by measured speed, the download fallback path.
 
 ## Open questions
 

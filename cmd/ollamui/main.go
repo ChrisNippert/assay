@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"ollamui/internal/bench"
 	"ollamui/internal/chats"
 	"ollamui/internal/hf"
 	"ollamui/internal/hw"
@@ -97,6 +98,7 @@ func run() error {
 		HF:            hf.New(hf.DefaultBaseURL, os.Getenv("HF_TOKEN")),
 		Pulls:         pulls.New(client, log),
 		Scores:        scoreStore,
+		Bench:         bench.Open(filepath.Join(*dataDir, "bench")),
 		Voice:         speech,
 		VoiceLauncher: launcher,
 		VoiceSettings: voiceSettings,
