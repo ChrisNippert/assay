@@ -15,7 +15,7 @@
   const minIn = $('f-min');
   const maxIn = $('f-max');
   const archBox = $('f-arch');
-  const checks = { vision: 'f-vision', long: 'f-longctx', fits: 'f-fits', hideInstalled: 'f-hide-installed', hideGated: 'f-hide-gated' };
+  const checks = { vision: 'f-vision', long: 'f-longctx', rated: 'f-rated', fits: 'f-fits', hideInstalled: 'f-hide-installed', hideGated: 'f-hide-gated' };
 
   const PAGE = 20;
   const memory = JSON.parse(root.dataset.memory || '{}');
@@ -145,6 +145,7 @@
     if (archs.size && !archs.has(r.arch || 'unknown')) return false;
     if ($('f-vision').checked && !r.vision) return false;
     if ($('f-longctx').checked && r.context < 131072) return false;
+    if ($('f-rated').checked && r.score == null) return false;
     if ($('f-fits').checked && r.fit.level !== 'gpu' && r.fit.level !== 'tight') return false;
     if ($('f-hide-installed').checked && r.installed) return false;
     if ($('f-hide-gated').checked && r.gated) return false;
