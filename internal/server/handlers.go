@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -50,13 +51,16 @@ func (s *Server) handleChatPage(w http.ResponseWriter, r *http.Request) {
 		p.ChatID = c.ID
 		p.Title = c.Title
 	}
-	// Pick a model for a new chat: ?model=, then whatever is loaded, then the
-	// first installed one.
+	// Pick a model for a new chat: ?model=, then whatever is loaded on the
+	// GPU (a model only on the CPU is voice mode's talker), then the first
+	// installed one.
 	if data.Model == "" {
 		data.Model = r.URL.Query().Get("model")
 	}
-	if data.Model == "" && len(p.Loaded) > 0 {
-		data.Model = p.Loaded[0].Name
+	for _, m := range p.Loaded {
+		if data.Model == "" && m.SizeVRAM > 0 {
+			data.Model = m.Name
+		}
 	}
 	if data.Model == "" && len(p.Models) > 0 {
 		data.Model = p.Models[0].Name
@@ -165,11 +169,15 @@ type sendRequest struct {
 	// FromUser, when set, drops that user message (counting user messages
 	// from 0) and everything after it before sending: edit and regenerate.
 	FromUser *int `json:"fromUser"`
+	// Voice asks for a spoken reply: see voiceTurn. Talker names the model
+	// that talks while the chat model thinks: "" picks one, "off" none.
+	Voice  bool   `json:"voice"`
+	Talker string `json:"talker"`
 }
 
 // event is one line of the NDJSON stream sent back to the browser.
 type event struct {
-	Type    string       `json:"type"` // chat, thinking, content, done, error
+	Type    string       `json:"type"` // chat, thinking, content, say, done, error
 	ID      string       `json:"id,omitempty"`
 	Text    string       `json:"text,omitempty"`
 	Stats   *chats.Stats `json:"stats,omitempty"`
@@ -181,24 +189,91 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
+	t, ok := s.prepareTurn(w, r, req)
+	if !ok {
+		return
+	}
+	if req.Voice {
+		s.voiceTurn(w, r, t, req.Talker)
+		return
+	}
+	emit := streamEvents(w)
+	if emit(event{Type: "chat", ID: t.chat.ID}) != nil {
+		return
+	}
+	var content, thinking strings.Builder
+	var stats *chats.Stats
+	err := s.ollama.Chat(r.Context(), t.req, func(resp ollama.ChatResponse) error {
+		if t := resp.Message.Thinking; t != "" {
+			thinking.WriteString(t)
+			if err := emit(event{Type: "thinking", Text: t}); err != nil {
+				return err
+			}
+		}
+		if t := resp.Message.Content; t != "" {
+			content.WriteString(t)
+			if err := emit(event{Type: "content", Text: t}); err != nil {
+				return err
+			}
+		}
+		if resp.Done {
+			stats = t.stats(resp)
+		}
+		return nil
+	})
+	s.saveReply(t, content.String(), thinking.String(), "", stats)
+	if err != nil {
+		if r.Context().Err() == nil {
+			emit(event{Type: "error", Message: err.Error()})
+		}
+		return
+	}
+	emit(event{Type: "done", Stats: stats})
+}
+
+// turn is one send, resolved: the chat with the new user message saved,
+// and the request that goes to Ollama.
+type turn struct {
+	chat *chats.Chat
+	req  ollama.ChatRequest
+	auto autoContext
+	// spoken is what voice mode said before the reply (lead-in only).
+	spoken string
+}
+
+// stats turns Ollama's final chunk into the stats saved with the reply.
+func (t *turn) stats(resp ollama.ChatResponse) *chats.Stats {
+	st := statsFrom(resp)
+	switch n := t.req.Options["num_ctx"].(type) {
+	case int:
+		st.Context, st.AutoContext = n, t.auto.Ctx > 0
+	case int64:
+		st.Context = int(n)
+	}
+	return st
+}
+
+// prepareTurn resolves preset and chat settings, saves the user message and
+// builds the Ollama request. On failure it has already written the error.
+func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendRequest) (*turn, bool) {
 	req.Content = strings.TrimSpace(req.Content)
 	overrides, err := presets.CleanOptions(req.Options)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, false
 	}
 	// Resolve what actually gets sent: preset settings, then this chat's tweaks.
 	var preset *presets.Preset
 	if req.Preset != "" {
 		if preset, err = s.presets.Get(req.Preset); err != nil {
 			writeError(w, http.StatusBadRequest, "preset "+req.Preset+" not found")
-			return
+			return nil, false
 		}
 		req.Model = preset.Base
 	}
 	if req.Content == "" || req.Model == "" {
 		writeError(w, http.StatusBadRequest, "model and content are required")
-		return
+		return nil, false
 	}
 	options, system, think := overrides, req.System, req.Think
 	if preset != nil {
@@ -215,7 +290,7 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 	if req.ChatID != "" {
 		if c, err = s.chats.Get(req.ChatID); err != nil {
 			writeError(w, http.StatusNotFound, "chat not found")
-			return
+			return nil, false
 		}
 	} else {
 		c = chats.New(req.Model)
@@ -224,7 +299,7 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 	if req.FromUser != nil {
 		if !c.TruncateAtUser(*req.FromUser) {
 			writeError(w, http.StatusBadRequest, "no such message")
-			return
+			return nil, false
 		}
 	}
 	c.Model = req.Model // switching models mid-chat is allowed
@@ -233,22 +308,7 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 	if err := s.chats.Save(c); err != nil {
 		s.log.Error("save chat", "err", err)
 		writeError(w, http.StatusInternalServerError, "could not save chat")
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/x-ndjson")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Accel-Buffering", "no")
-	rc := http.NewResponseController(w)
-	enc := json.NewEncoder(w)
-	emit := func(e event) error {
-		if err := enc.Encode(e); err != nil {
-			return err
-		}
-		return rc.Flush()
-	}
-	if emit(event{Type: "chat", ID: c.ID}) != nil {
-		return
+		return nil, false
 	}
 
 	msgs := toOllama(c.Messages)
@@ -258,70 +318,60 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 	// Without a context length from the chat or preset, Ollama would use its
 	// small default (4k on most GPUs), which thinking models fill quickly.
 	// Pick the largest that fits on the GPU instead.
-	var auto autoContext
+	t := &turn{chat: c}
 	if _, set := options["num_ctx"]; !set {
-		if auto = s.pickContext(r.Context(), c.Model, true); auto.Ctx > 0 {
-			options = presets.Merge(options, map[string]any{"num_ctx": auto.Ctx})
+		if t.auto = s.pickContext(r.Context(), c.Model, true); t.auto.Ctx > 0 {
+			options = presets.Merge(options, map[string]any{"num_ctx": t.auto.Ctx})
 		}
 	}
-	chatReq := ollama.ChatRequest{Model: c.Model, Messages: msgs, Options: options}
+	t.req = ollama.ChatRequest{Model: c.Model, Messages: msgs, Options: options}
 	if think != nil {
-		chatReq.Think = *think
+		t.req.Think = *think
 	}
 	// Chat requests reset Ollama's keep-alive timer. If the user loaded this
 	// model "until ejected", keep it that way.
 	if s.isPinned(r, c.Model) {
-		chatReq.KeepAlive = -1
+		t.req.KeepAlive = -1
 	}
+	return t, true
+}
 
-	var content, thinking strings.Builder
-	var stats *chats.Stats
-	err = s.ollama.Chat(r.Context(), chatReq, func(resp ollama.ChatResponse) error {
-		if t := resp.Message.Thinking; t != "" {
-			thinking.WriteString(t)
-			if err := emit(event{Type: "thinking", Text: t}); err != nil {
-				return err
-			}
+// streamEvents starts an NDJSON response and returns a function that sends
+// one event and flushes it.
+func streamEvents(w http.ResponseWriter) func(event) error {
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Accel-Buffering", "no")
+	rc := http.NewResponseController(w)
+	enc := json.NewEncoder(w)
+	var mu sync.Mutex
+	return func(e event) error {
+		mu.Lock()
+		defer mu.Unlock()
+		if err := enc.Encode(e); err != nil {
+			return err
 		}
-		if t := resp.Message.Content; t != "" {
-			content.WriteString(t)
-			if err := emit(event{Type: "content", Text: t}); err != nil {
-				return err
-			}
-		}
-		if resp.Done {
-			stats = statsFrom(resp)
-			switch n := options["num_ctx"].(type) {
-			case int:
-				stats.Context, stats.AutoContext = n, auto.Ctx > 0
-			case int64:
-				stats.Context = int(n)
-			}
-		}
-		return nil
-	})
-
-	// Keep whatever was generated, even if the user stopped it early.
-	if content.Len() > 0 || thinking.Len() > 0 {
-		c.Messages = append(c.Messages, chats.Message{
-			Role:     "assistant",
-			Content:  content.String(),
-			Thinking: thinking.String(),
-			Model:    c.Model,
-			Stats:    stats,
-			Created:  time.Now(),
-		})
-		if serr := s.chats.Save(c); serr != nil {
-			s.log.Error("save chat", "err", serr)
-		}
+		return rc.Flush()
 	}
-	if err != nil {
-		if r.Context().Err() == nil {
-			emit(event{Type: "error", Message: err.Error()})
-		}
+}
+
+// saveReply keeps whatever was generated, even if the user stopped it early.
+func (s *Server) saveReply(t *turn, content, thinking, spoken string, stats *chats.Stats) {
+	if content == "" && thinking == "" && spoken == "" {
 		return
 	}
-	emit(event{Type: "done", Stats: stats})
+	t.chat.Messages = append(t.chat.Messages, chats.Message{
+		Role:     "assistant",
+		Content:  content,
+		Thinking: thinking,
+		Spoken:   spoken,
+		Model:    t.chat.Model,
+		Stats:    stats,
+		Created:  time.Now(),
+	})
+	if err := s.chats.Save(t.chat); err != nil {
+		s.log.Error("save chat", "err", err)
+	}
 }
 
 func (s *Server) isPinned(r *http.Request, model string) bool {

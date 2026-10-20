@@ -59,16 +59,20 @@
     }
     for (const m of models) {
       const pct = m.size ? Math.floor((m.sizeVram * 100) / m.size) : 100;
-      const pill = el('div', 'mem-pill' + (pct < 100 ? ' partial' : ''));
+      // A model with nothing on the GPU was put on the CPU on purpose (voice
+      // mode's talker), so it isn't flagged as spilling.
+      const cpu = m.size > 0 && m.sizeVram === 0;
+      const pill = el('div', 'mem-pill' + (cpu ? ' cpu' : pct < 100 ? ' partial' : ''));
       pill.title = m.pinned ? 'Stays loaded until ejected' : 'Unloads after a few idle minutes';
       const dot = el('span', 'mem-dot');
       dot.setAttribute('aria-hidden', 'true');
       const link = el('a', 'row-link mem-name', m.name);
       link.href = '/chat?model=' + encodeURIComponent(m.name);
       link.title = 'Chat with ' + m.name;
-      let detail = fmtBytes(m.sizeVram);
+      let detail = fmtBytes(cpu ? m.size : m.sizeVram);
       if (m.context) detail += ` · ${Math.round(m.context / 1024)}k`;
-      if (pct < 100) detail += ` · ${pct}% GPU`;
+      if (cpu) detail += ' · CPU';
+      else if (pct < 100) detail += ` · ${pct}% GPU`;
       const btn = el('button', 'icon-btn mem-eject');
       btn.type = 'button';
       btn.dataset.eject = m.name;

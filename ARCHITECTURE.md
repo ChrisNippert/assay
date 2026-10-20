@@ -12,6 +12,7 @@ else pointed at it (Zed, scripts, other clients) sees the same models.
   hand-writing Modelfiles.
 - **Chat** with streaming output, thinking blocks and speed stats.
 - **Compare** models by size, speed on your machine and published benchmarks.
+- **Talk**: a hands-free voice mode that keeps talking while a model thinks.
 - One static Go binary. No Docker, no database server, no Node toolchain.
 
 ## Non-goals
@@ -44,13 +45,17 @@ nothing in Ollama until you choose "Save to preset".
 
 ```
 browser ──HTTP──► ollamui (Go) ──HTTP──► Ollama :11434 ◄── Zed, etc.
+                     │        └──HTTP──► speech service :8485 (optional, voice mode)
                      │
-                     ├── internal/ollama   typed API client, NDJSON streaming
+                     ├── internal/ollama   typed API client, NDJSON streaming, server env
                      ├── internal/hf       HF search, file tree, quant parsing, fit estimate   (M2)
                      ├── internal/presets  TOML presets + sync to ollamui/*                   (M3)
                      ├── internal/chats    one JSON file per chat
+                     ├── internal/scores   intelligence index (Artificial Analysis via OpenRouter)
+                     ├── internal/voice    client for an OpenAI-style audio API (STT + TTS)
                      ├── internal/server   pages, JSON API, streaming, host/CSRF guards
                      └── web/              templates, CSS, small vanilla JS (embedded)
+tools/voice/voice_server.py   the speech service: faster-whisper + Kokoro, run with uv
 ```
 
 ### internal/ollama
@@ -104,6 +109,62 @@ pinned. A model counts as pinned when `/api/ps` reports an expiry more than
 a year away. The sidebar shows each loaded model's VRAM, how much of it is
 on the GPU, and whether it stays until ejected or auto-unloads.
 
+### Server settings
+
+Ollama's tuning that matters most (K/V cache type, flash attention,
+parallel requests) is server-wide environment only. ollamui reads it from
+the running `ollama serve` process (`/proc/<pid>/environ`, matched by port;
+readable when it runs as the same user), falling back to the systemd
+unit's configuration (`systemctl show`). `/settings` shows it and writes a
+`sudo` drop-in snippet for changes; ollamui never runs sudo. Auto context
+scales its cache estimate by the K/V type and by `OLLAMA_NUM_PARALLEL`,
+since Ollama gives every parallel slot its own cache.
+
+### Voice mode
+
+The goal is a spoken conversation that never leaves you in silence, even
+while a thinking model thinks for half a minute.
+
+```
+mic ─► browser: energy VAD, 16 kHz WAV ─► /api/voice/transcribe ─► whisper
+                                           (live partials every ~0.9 s while you talk)
+transcript ─► /api/chat {voice: true} ─► main model on the GPU (thinks, then answers)
+                                    └─► talker: small model on the CPU, one short line
+                                        at a time, from the thinking so far ("say" events)
+"say" lines + answer sentences ─► /api/voice/speak ─► Kokoro ─► browser plays in order
+```
+
+- **Speech service.** A separate local process with OpenAI's audio API
+  (`/v1/audio/transcriptions`, `/v1/audio/speech`). `tools/voice/voice_server.py`
+  is the bundled one (faster-whisper `small.en` + Kokoro int8, both on the
+  CPU, so the GPU stays free); `-voice URL` points ollamui at it or at any
+  compatible server (speaches, …). It's the one exception to "single
+  binary": optional, and Ollama is already a separate service too.
+- **Browser.** An AudioWorklet feeds 20 ms frames to an energy-based speech
+  detector with an adaptive noise floor and 300 ms of pre-roll. Speaking
+  while the assistant talks interrupts it (a higher threshold then, against
+  echo; `echoCancellation` does the rest). Replies are cut into sentences as
+  they stream and synthesized ahead of playback; markdown is stripped and
+  code blocks are skipped. Mic access needs a secure context: localhost or
+  HTTPS (e.g. `tailscale serve`).
+- **The talker.** While the main model thinks, a second model writes one
+  short first-person line at a time ("I'm checking how the angle of the sun
+  changes things"): a lead-in at once, then a new line whenever the speech
+  is about to run out and there's enough new thinking, with growing gaps on
+  long thinks. It runs on the CPU (`num_gpu: 0`, 4k context): no VRAM, no GPU
+  contention, and no need for Ollama to serve two requests on one model,
+  which hybrid models like Qwen3.5 can't. ollamui picks the largest
+  installed chat model under 3 GB and loads it when voice mode starts.
+  Without one, the main model says a lead-in before it starts thinking.
+- **Guarding the talker.** Small models reading half-finished notes blurt
+  out wrong intermediate results. Lines are dropped when cut off, near
+  repeats, phrased as conclusions, or containing numbers the question
+  didn't; dropped lines back off the next attempt.
+- **No style prompt for the answer.** Telling a thinking model its reply
+  will be spoken made Qwen3.5-9B think for 95 s instead of 8 s over "what is
+  2 plus 2". The browser cleans the text for speech instead.
+- What was said aloud is saved with the reply (`spoken`) and shown above it.
+
 ### internal/chats
 
 One JSON file per conversation. Writes go to a temp file and are renamed into
@@ -139,6 +200,8 @@ No database. Plain files under XDG directories:
   presets/<name>.toml    one preset per file                         (M3)
 ~/.local/share/ollamui/
   chats/<id>.json        one conversation per file
+  scores.json            cached intelligence scores, refreshed daily
+~/.cache/ollamui-voice/  Kokoro model files (the speech service's)
   bench/<model>.json     local benchmark results                     (M4)
 ```
 
@@ -153,11 +216,15 @@ Design reference: direction **F** on the design canvas
 
 - Compact, mostly sans-serif (IBM Plex Sans). Monospace only for quant names
   and code. Light and dark themes.
-- Left sidebar: Chat, Library, Discover, Compare, Presets, recent chats,
-  VRAM in use, theme toggle.
+- Left sidebar: Chat, Library, Discover, Compare, Presets, Settings, recent
+  chats, theme toggle. On phones it's a drawer (hamburger, swipe right).
+- App bar: loaded models as pills (VRAM, context; "CPU" for the talker),
+  downloads, page actions.
 - **Chat**: centered column. The Tune panel is closed by default and slides
   in from the right. A button in the top bar summarizes the current settings
-  and how many differ from the preset.
+  and how many differ from the preset. A mic button next to Send starts
+  voice mode; a status line under the composer shows listening / thinking /
+  speaking.
 - **Library**: installed models, size, quant, what's loaded and its VRAM,
   delete.
 - **Discover**: filters (total params range, dense/MoE, architecture,

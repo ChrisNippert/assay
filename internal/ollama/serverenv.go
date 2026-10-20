@@ -2,7 +2,9 @@ package ollama
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"unicode"
 )
@@ -15,10 +17,63 @@ type ServerEnv struct {
 	Source string // where Vars came from, e.g. "systemd (ollama.service)"; "" if unknown
 }
 
-// ReadServerEnv reads the OLLAMA_* variables of the systemd ollama service.
-// It needs no root: `systemctl show` is readable by anyone. On systems
-// without systemd, or where Ollama isn't a service, Vars is empty.
-func ReadServerEnv(ctx context.Context) ServerEnv {
+// ReadServerEnv reads the OLLAMA_* variables of the Ollama server on port.
+// It prefers the running process (/proc/<pid>/environ, readable when it runs
+// as the same user), which also covers a hand-started "ollama serve", and
+// falls back to the systemd service's configuration, which `systemctl show`
+// gives anyone. Without either, Vars is empty.
+func ReadServerEnv(ctx context.Context, port string) ServerEnv {
+	if env, ok := processEnv(port); ok {
+		return env
+	}
+	return systemdEnv(ctx)
+}
+
+// processEnv finds an "ollama serve" process listening on port and reads
+// its environment.
+func processEnv(port string) (ServerEnv, bool) {
+	dirs, _ := filepath.Glob("/proc/[0-9]*")
+	for _, dir := range dirs {
+		cmd, err := os.ReadFile(dir + "/cmdline")
+		if err != nil {
+			continue
+		}
+		args := strings.Split(strings.TrimRight(string(cmd), "\x00"), "\x00")
+		if len(args) < 2 || filepath.Base(args[0]) != "ollama" || args[1] != "serve" {
+			continue
+		}
+		raw, err := os.ReadFile(dir + "/environ")
+		if err != nil {
+			continue // another user's process
+		}
+		vars := map[string]string{}
+		for _, kv := range strings.Split(string(raw), "\x00") {
+			k, v, ok := strings.Cut(kv, "=")
+			if ok && (strings.HasPrefix(k, "OLLAMA_") || strings.HasPrefix(k, "LLAMA_")) {
+				vars[k] = v
+			}
+		}
+		if hostPort(vars["OLLAMA_HOST"]) != port {
+			continue
+		}
+		return ServerEnv{Vars: vars, Source: "the running Ollama (pid " + filepath.Base(dir) + ")"}, true
+	}
+	return ServerEnv{}, false
+}
+
+// hostPort is the port an OLLAMA_HOST value listens on.
+func hostPort(host string) string {
+	if host == "" {
+		return "11434"
+	}
+	host = strings.TrimPrefix(strings.TrimPrefix(host, "http://"), "https://")
+	if i := strings.LastIndex(host, ":"); i >= 0 && !strings.HasSuffix(host, "]") {
+		return host[i+1:]
+	}
+	return "11434"
+}
+
+func systemdEnv(ctx context.Context) ServerEnv {
 	for _, scope := range [][]string{nil, {"--user"}} {
 		args := append(append([]string{}, scope...), "show", "ollama", "-p", "Environment,LoadState", "--value")
 		out, err := exec.CommandContext(ctx, "systemctl", args...).Output()

@@ -36,3 +36,11 @@ func TestKVCacheType(t *testing.T) {
 		}
 	}
 }
+
+func TestHostPort(t *testing.T) {
+	for in, want := range map[string]string{"": "11434", "0.0.0.0:11434": "11434", "127.0.0.1:11500": "11500", "http://[::1]:9000": "9000", "localhost": "11434"} {
+		if got := hostPort(in); got != want {
+			t.Errorf("hostPort(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -3,7 +3,7 @@
 <div class="column settings">
   <h2 class="group-title">Ollama server</h2>
   {{if not .Data.Local}}<p class="muted small">Ollama runs on another machine ({{.OllamaURL}}), so its settings can't be read from here.</p>
-  {{else if not .Data.Source}}<p class="muted small">Couldn't find an <span class="mono">ollama</span> systemd service, so these show Ollama's defaults.</p>
+  {{else if not .Data.Source}}<p class="muted small">Couldn't find the running Ollama or an <span class="mono">ollama</span> systemd service, so these show Ollama's defaults.</p>
   {{else}}<p class="muted small">Read from {{.Data.Source}}. These are server-wide; changing one means restarting Ollama. Auto context already counts the K/V cache type (now <strong>{{.Data.KVType}}</strong>).</p>{{end}}
 
   <div class="boxed-list" id="env-list">

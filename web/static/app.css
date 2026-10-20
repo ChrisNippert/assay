@@ -148,6 +148,20 @@ select, textarea, input { font: inherit; color: var(--text); }
   background: var(--surface); height: 44px; min-height: 44px; max-height: 40vh; line-height: 1.4; display: block;
 }
 .composer .btn { height: 44px; min-height: 44px; padding: 0 var(--s5); justify-content: center; align-self: flex-end; border-radius: 6px; }
+.composer .mic-btn { height: 44px; width: 44px; justify-content: center; align-items: center; flex: none; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); }
+.composer .mic-btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.composer .mic-btn.unavailable { opacity: .55; }
+.voice-bar { flex: none; display: flex; align-items: center; gap: var(--s3); margin-top: calc(-1 * var(--s3)); padding-bottom: var(--s4); color: var(--text-2); }
+.voice-bar[hidden] { display: none; }
+.voice-state { font-size: var(--fs-sm); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.voice-state.error { color: var(--bad); white-space: normal; }
+.voice-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+.voice-bar[data-state="listening"] .voice-dot { background: var(--good); }
+.voice-bar[data-state="hearing"] .voice-dot { background: var(--good); animation: voice-pulse .8s ease-in-out infinite; }
+.voice-bar[data-state="thinking"] .voice-dot, .voice-bar[data-state="transcribing"] .voice-dot { background: var(--warn); animation: voice-pulse 1.4s ease-in-out infinite; }
+.voice-bar[data-state="speaking"] .voice-dot { background: var(--accent); animation: voice-pulse 1s ease-in-out infinite; }
+@keyframes voice-pulse { 50% { transform: scale(1.5); opacity: .6; } }
+.msg .spoken { color: var(--muted); font-style: italic; margin-bottom: var(--s3); }
 
 /* ---- library ---- */
 .page { padding: 20px var(--s5); display: flex; flex-direction: column; gap: var(--s4); }
@@ -473,8 +487,9 @@ input.switch:checked::after { transform: translateX(20px); }
   .switcher { flex: 0 1 auto; }
   .switcher-btn { width: 100%; }
   #switcher-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .mem-list { flex: 0 1 auto; min-width: 0; }
-  .mem-pill { min-width: 0; }
+  .mem-list { flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .mem-pill { min-width: 0; flex: none; }
+  .mem-pill.cpu { display: none; } /* voice mode's talker: not worth a row on a phone */
   .mem-name { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .discover .r-side { flex-basis: 100%; }
   .discover:not(.filters-open) .filters { display: none; }
@@ -483,8 +498,13 @@ input.switch:checked::after { transform: translateX(20px); }
   .mem-detail { display: none; }
   .dl-wrap { position: static; }
   .dl-pop { position: fixed; top: auto; left: 8px; right: 8px; width: auto; max-width: none; margin-top: 6px; }
+  /* The chat page is exactly the screen: the app bar (one or two rows),
+     then messages that scroll, then the composer. Tune floats above it,
+     closed or open, so it can't stretch the page. */
+  .content-chat { height: 100dvh; }
   .chat { height: auto; min-height: 0; flex: 1; }
-  .tune.open { position: fixed; inset: 0 0 0 auto; width: min(380px, 100vw); z-index: 10; box-shadow: -8px 0 24px rgba(0, 0, 0, .25); }
+  .tune { position: fixed; inset: 0 0 0 auto; z-index: 10; }
+  .tune.open { width: min(380px, 100vw); box-shadow: -8px 0 24px rgba(0, 0, 0, .25); }
   .tune > * { min-width: 0; }
   .filters { flex: 1 1 100%; max-width: none; border-right: none; border-bottom: 1px solid var(--border); }
   .quant-row { grid-template-columns: 1fr auto; }

@@ -24,6 +24,7 @@ import (
 	"ollamui/internal/pulls"
 	"ollamui/internal/scores"
 	"ollamui/internal/server"
+	"ollamui/internal/voice"
 )
 
 func main() {
@@ -38,6 +39,9 @@ func run() error {
 	ollamaURL := flag.String("ollama", ollama.ResolveHost(os.Getenv("OLLAMA_HOST")), "Ollama server URL")
 	dataDir := flag.String("data", defaultDir("XDG_DATA_HOME", ".local/share"), "where chats are stored")
 	configDir := flag.String("config", defaultDir("XDG_CONFIG_HOME", ".config"), "where presets are stored")
+	voiceURL := flag.String("voice", envOr("OLLAMUI_VOICE", "http://127.0.0.1:8485"), "speech service for voice mode (OpenAI audio API); empty turns voice off")
+	sttModel := flag.String("stt-model", "", "speech-to-text model name to ask the speech service for")
+	ttsVoice := flag.String("tts-voice", "", "voice to ask the speech service for")
 	debug := flag.Bool("debug", false, "log extra detail, e.g. how context lengths are picked")
 	var allowHosts []string
 	flag.Func("allow-host", "extra hostname the UI may be reached by, e.g. a Tailscale name (repeatable)", func(v string) error {
@@ -67,6 +71,13 @@ func run() error {
 	mem := hw.Detect()
 	log.Info("memory", "gpu", mem.GPU, "vram_gb", float64(mem.VRAM)/1e9, "ram_gb", float64(mem.RAM)/1e9)
 	scoreStore := scores.Open(scores.DefaultURL, filepath.Join(*dataDir, "scores.json"), log)
+	var speech *voice.Client
+	if *voiceURL != "" {
+		if speech, err = voice.New(*voiceURL); err != nil {
+			return err
+		}
+		speech.STTModel, speech.TTSVoice = *sttModel, *ttsVoice
+	}
 	srv, err := server.New(server.Options{
 		Ollama:     client,
 		Chats:      store,
@@ -74,6 +85,7 @@ func run() error {
 		HF:         hf.New(hf.DefaultBaseURL, os.Getenv("HF_TOKEN")),
 		Pulls:      pulls.New(client, log),
 		Scores:     scoreStore,
+		Voice:      speech,
 		Memory:     mem,
 		AllowHosts: allowHosts,
 		Logger:     log,
@@ -120,6 +132,13 @@ func run() error {
 		return err
 	}
 	return nil
+}
+
+func envOr(key, fallback string) string {
+	if v, ok := os.LookupEnv(key); ok {
+		return v
+	}
+	return fallback
 }
 
 // defaultDir follows the XDG convention: $env/ollamui, else ~/fallback/ollamui.

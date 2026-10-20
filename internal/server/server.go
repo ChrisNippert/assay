@@ -26,6 +26,7 @@ import (
 	"ollamui/internal/presets"
 	"ollamui/internal/pulls"
 	"ollamui/internal/scores"
+	"ollamui/internal/voice"
 	"ollamui/web"
 )
 
@@ -38,6 +39,8 @@ type Options struct {
 	Pulls   *pulls.Manager
 	// Scores is optional; without it nothing is rated.
 	Scores *scores.Store
+	// Voice is the speech service for voice mode; nil turns it off.
+	Voice  *voice.Client
 	Memory hw.Memory
 	// AllowHosts are extra hostnames (besides localhost and IP addresses)
 	// the UI may be reached by, e.g. a Tailscale machine name.
@@ -53,6 +56,7 @@ type Server struct {
 	hf      *hf.Client
 	pulls   *pulls.Manager
 	scores  *scores.Store
+	voice   *voice.Client
 	search  searchCache
 	env     envCache
 	ctxBase sync.Map // model name → measured weight memory, for picking context
@@ -70,10 +74,10 @@ type Server struct {
 func New(opts Options) (*Server, error) {
 	s := &Server{
 		ollama: opts.Ollama, chats: opts.Chats, presets: opts.Presets,
-		hf: opts.HF, pulls: opts.Pulls, scores: opts.Scores, memory: opts.Memory, log: opts.Logger,
+		hf: opts.HF, pulls: opts.Pulls, scores: opts.Scores, voice: opts.Voice, memory: opts.Memory, log: opts.Logger,
 		vramUsed: hw.VRAMUsed,
 	}
-	s.env.read = ollama.ReadServerEnv
+	s.env.read = func(ctx context.Context) ollama.ServerEnv { return ollama.ReadServerEnv(ctx, s.ollama.Port()) }
 	if s.log == nil {
 		s.log = slog.Default()
 	}
@@ -107,6 +111,9 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("POST /api/models/delete", s.handleDeleteModel)
 	mux.HandleFunc("POST /api/chat", s.handleChatSend)
 	mux.HandleFunc("DELETE /api/chats/{id}", s.handleDeleteChat)
+	mux.HandleFunc("GET /api/voice", s.handleVoiceStatus)
+	mux.HandleFunc("POST /api/voice/transcribe", s.handleTranscribe)
+	mux.HandleFunc("POST /api/voice/speak", s.handleSpeak)
 
 	mux.HandleFunc("GET /api/hf/search", s.handleSearch)
 	mux.HandleFunc("GET /api/pulls", s.handlePullList)

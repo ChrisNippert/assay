@@ -43,6 +43,17 @@ func (c *Client) URL() string { return c.base.String() }
 // Host is the hostname of the Ollama server, without the port.
 func (c *Client) Host() string { return c.base.Hostname() }
 
+// Port is the port of the Ollama URL.
+func (c *Client) Port() string {
+	if p := c.base.Port(); p != "" {
+		return p
+	}
+	if c.base.Scheme == "https" {
+		return "443"
+	}
+	return "80"
+}
+
 // ResolveHost turns an OLLAMA_HOST style value ("0.0.0.0", ":11434",
 // "host:port", "https://host") into a URL a client can connect to.
 func ResolveHost(v string) string {

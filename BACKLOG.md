@@ -5,6 +5,29 @@ big it is (S = an hour or two, M = a session, L = several sessions).
 
 ## Next up
 
+### 0. Voice mode follow-ups (S–M)
+
+Voice mode shipped 2026-10-20 (see Done). Open:
+
+- **Talker and voice pickers.** The talker is auto-picked (largest chat model
+  under 3 GB) and `/api/chat` already takes `talker` ("off" or a name); add a
+  control for it, plus the Kokoro voice and speed, e.g. on Settings. (S)
+- **Phone over HTTPS.** The mic needs a secure context. Document or automate
+  `tailscale serve --bg 8484` (and `-allow-host <machine>.<tailnet>.ts.net`). (S)
+- **Gemma 4 hears audio natively.** Ollama lists `audio` in its capabilities,
+  so whisper could be skipped for it. Keep whisper for the live transcript;
+  try sending the WAV as the message for better understanding of names. (M)
+- **Talker quality.** Qwen3.5-2B sometimes states a wrong fact in the
+  lead-in ("water scatters blue light"). Try a 4B, or tighter few-shot
+  prompts. The filters in `goodLine` catch numbers and conclusions only. (S)
+- **Overthinking.** Qwen3.5-9B still thinks 20–90 s on easy questions. A
+  router (talker decides "easy → answer without thinking") or a think
+  budget would cut that. (M)
+- **Better speech detection.** The energy detector is fine in a quiet room;
+  Silero VAD (onnxruntime-web, ~2 MB) if noise causes false starts. (M)
+- **Speech service as a user service.** A systemd `--user` unit snippet so
+  it starts with the session. (S)
+
 ### 1. Intelligence score and benchmarks (L)
 
 The M4 feature from the design (Compare page, score on Discover rows and
@@ -106,6 +129,16 @@ Most of the 2026-10-20 list is done (see Done). Still open:
 - **Chat search** across saved chats. (M)
 
 ## Done
+
+- Voice mode (2026-10-20). Mic button in chat: hands-free conversation with
+  live transcription, sentence-by-sentence speech, talking over the reply to
+  interrupt, and a CPU talker model that fills the silence while the main
+  model thinks (see ARCHITECTURE.md, "Voice mode"). Speech service:
+  `uv run tools/voice/voice_server.py` (faster-whisper + Kokoro on the CPU).
+  Also: Ollama's settings are read from the running process when possible
+  (fixes the Settings page for a hand-started `ollama serve`); auto context
+  counts `OLLAMA_NUM_PARALLEL`; the phone chat page fits the screen (the
+  closed Tune panel used to stretch it and push the composer off-screen).
 
 - Settings page, downloads, scores (2026-10-20):
   - `/settings` reads the Ollama service env via `systemctl show` (no root),

@@ -461,8 +461,9 @@
   });
 
   // send streams a reply to text. fromUser (edit/regenerate) replaces that
-  // user message, counted from 0, and everything after it.
-  async function send(text, fromUser) {
+  // user message, counted from 0, and everything after it. voice (from
+  // voice.js) asks for a spoken reply and gets every stream event.
+  async function send(text, fromUser, voice) {
     document.getElementById('empty')?.remove();
     const userMsg = el('div', 'msg user');
     userMsg.append(el('div', 'bubble', text));
@@ -474,12 +475,14 @@
     thinkBox.append(el('summary', null, 'Thinking…'));
     const thinkText = el('div', 'thinking-text');
     thinkBox.append(thinkText);
+    const spoken = el('div', 'spoken');
+    spoken.hidden = true;
     const md = el('div', 'md');
     const stats = el('div', 'stats', 'Waiting for model…');
     stats.setAttribute('role', 'button');
     stats.tabIndex = 0;
     stats.title = 'Open Tune';
-    reply.append(thinkBox, md, stats);
+    reply.append(thinkBox, spoken, md, stats);
     list.append(reply);
     scrollDown();
 
@@ -492,12 +495,13 @@
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chatId, content: text, fromUser, ...tune.selection(), ...tune.settings() }),
+        body: JSON.stringify({ chatId, content: text, fromUser, voice: !!voice, ...tune.selection(), ...tune.settings() }),
         signal: controller.signal,
       });
       if (!res.ok) throw new Error(await errorText(res));
       await readNDJSON(res.body, (ev) => {
         const stick = nearBottom();
+        voice?.onEvent(ev);
         switch (ev.type) {
           case 'chat':
             if (!chatId) {
@@ -509,9 +513,15 @@
             }
             break;
           case 'thinking':
-            if (!thinking) { thinkBox.hidden = false; thinkBox.open = true; stats.textContent = ''; }
+            // Spoken replies keep it shut: the talker's lines say what's going on.
+            if (!thinking) { thinkBox.hidden = false; thinkBox.open = !voice; stats.textContent = ''; }
             thinking += ev.text;
             thinkText.textContent = thinking;
+            break;
+          case 'say':
+            spoken.hidden = false;
+            spoken.textContent += (spoken.textContent ? ' ' : '') + ev.text;
+            if (!thinking) stats.textContent = '';
             break;
           case 'content':
             if (!content) {
@@ -542,10 +552,20 @@
       controller = null;
       sendBtn.textContent = 'Send';
       addActions(reply);
-      input.focus();
+      if (!voice) input.focus(); // on a phone that would pop up the keyboard
       refreshLoaded(); // chatting loads the model, so the memory list may have changed
     }
   }
+
+  // voice.js drives the chat through this.
+  window.ollamuiChat = {
+    send: (text, voice) => send(text, undefined, voice),
+    stop: () => controller?.abort(),
+    busy: () => !!controller,
+    ready: () => !!select.value,
+    model: () => baseOf(selectedOption()),
+    input,
+  };
 
   // Stats lines (server-rendered and streamed) open the Tune panel.
   list.addEventListener('click', (e) => { if (e.target.closest('.stats')) tune?.open?.(); });

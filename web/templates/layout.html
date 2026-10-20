@@ -7,7 +7,7 @@
 <script src="/static/theme.js"></script>
 <link rel="stylesheet" href="/static/app.css">
 <script src="/static/app.js" defer></script>
-{{if eq .Active "chat"}}<link rel="stylesheet" href="/static/katex/katex.min.css"><script src="/static/katex/katex.min.js" defer></script><script src="/static/tune.js" defer></script><script src="/static/chat.js" defer></script>{{end}}
+{{if eq .Active "chat"}}<link rel="stylesheet" href="/static/katex/katex.min.css"><script src="/static/katex/katex.min.js" defer></script><script src="/static/tune.js" defer></script><script src="/static/chat.js" defer></script><script src="/static/voice.js" defer></script>{{end}}
 {{if eq .Active "discover"}}<script src="/static/discover.js" defer></script>{{end}}
 </head>
 <body>
@@ -49,10 +49,10 @@
     </div>
     <div class="mem-list" id="loaded-list" aria-label="Models in memory">
       {{range .Loaded}}
-      <div class="mem-pill{{if lt (gpuPct .) 100}} partial{{end}}" title="{{if .Pinned}}Stays loaded until ejected{{else}}Unloads after a few idle minutes{{end}}">
+      <div class="mem-pill{{if not .SizeVRAM}} cpu{{else if lt (gpuPct .) 100}} partial{{end}}" title="{{if .Pinned}}Stays loaded until ejected{{else}}Unloads after a few idle minutes{{end}}">
         <span class="mem-dot" aria-hidden="true"></span>
         <a class="row-link mem-name" href="/chat?model={{.Name}}" title="Chat with {{.Name}}">{{.Name}}</a>
-        <span class="mem-detail">{{bytes .SizeVRAM}}{{with .Context}} · {{kib .}}k{{end}}{{if lt (gpuPct .) 100}} · {{gpuPct .}}% GPU{{end}}</span>
+        <span class="mem-detail">{{if .SizeVRAM}}{{bytes .SizeVRAM}}{{else}}{{bytes .Size}}{{end}}{{with .Context}} · {{kib .}}k{{end}}{{if not .SizeVRAM}} · CPU{{else if lt (gpuPct .) 100}} · {{gpuPct .}}% GPU{{end}}</span>
         <button type="button" class="icon-btn mem-eject" data-eject="{{.Name}}" aria-label="Eject {{.Name}}" title="Eject {{.Name}}">{{template "icon-eject"}}</button>
       </div>
       {{else}}<span class="mem-empty">No model loaded</span>{{end}}

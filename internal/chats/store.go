@@ -37,12 +37,15 @@ type Stats struct {
 
 // Message is one turn in a chat.
 type Message struct {
-	Role     string    `json:"role"`
-	Content  string    `json:"content"`
-	Thinking string    `json:"thinking,omitempty"`
-	Model    string    `json:"model,omitempty"`
-	Stats    *Stats    `json:"stats,omitempty"`
-	Created  time.Time `json:"created"`
+	Role     string `json:"role"`
+	Content  string `json:"content"`
+	Thinking string `json:"thinking,omitempty"`
+	// Spoken is what voice mode said aloud while the model was still
+	// thinking, before Content.
+	Spoken  string    `json:"spoken,omitempty"`
+	Model   string    `json:"model,omitempty"`
+	Stats   *Stats    `json:"stats,omitempty"`
+	Created time.Time `json:"created"`
 }
 
 // Chat is a whole conversation. Options, System and Think are this chat's

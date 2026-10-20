@@ -50,9 +50,10 @@ func (s *Server) ollamaIsLocal() bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// kvFactor scales f16 cache estimates to the server's K/V cache type.
+// kvFactor scales f16 cache estimates to the server's K/V cache type, and
+// to the number of parallel requests: Ollama gives each its own cache.
 func (s *Server) kvFactor(ctx context.Context) float64 {
-	return hw.KVTypeFactor(s.ollamaEnv(ctx).KVCacheType())
+	return hw.KVTypeFactor(s.ollamaEnv(ctx).KVCacheType()) * float64(s.ollamaParallel(ctx))
 }
 
 // serverSetting is one row on the settings page: an Ollama environment
