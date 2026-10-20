@@ -1,0 +1,64 @@
+{{define "appbar"}}<h1 class="appbar-title">Settings</h1>{{with .Data.Version}}<span class="muted small">Ollama {{.}}</span>{{end}}{{end}}
+{{define "content"}}
+<div class="column settings">
+  <h2 class="group-title">Ollama server</h2>
+  {{if not .Data.Local}}<p class="muted small">Ollama runs on another machine ({{.OllamaURL}}), so its settings can't be read from here.</p>
+  {{else if not .Data.Source}}<p class="muted small">Couldn't find an <span class="mono">ollama</span> systemd service, so these show Ollama's defaults.</p>
+  {{else}}<p class="muted small">Read from {{.Data.Source}}. These are server-wide; changing one means restarting Ollama. Auto context already counts the K/V cache type (now <strong>{{.Data.KVType}}</strong>).</p>{{end}}
+
+  <div class="boxed-list" id="env-list">
+    {{range .Data.Settings}}
+    <div class="row" data-key="{{.Key}}" data-current="{{.Value}}">
+      <div class="row-text"><span class="row-title">{{.Title}}</span><span class="row-sub">{{.Help}}</span></div>
+      <div class="row-ctrl">
+        {{if .Choices}}{{$v := .Value}}
+        <select aria-label="{{.Title}}">
+          <option value=""{{if eq $v ""}} selected{{end}}>Default ({{.Default}})</option>
+          {{range .Choices}}<option value="{{.}}"{{if eq . $v}} selected{{end}}>{{.}}</option>{{end}}
+          {{if $v}}{{if not (hasChoice .Choices $v)}}<option value="{{$v}}" selected>{{$v}}</option>{{end}}{{end}}
+        </select>
+        {{else}}<input type="text" value="{{.Value}}" placeholder="{{.Default}}" aria-label="{{.Title}}" size="16">{{end}}
+      </div>
+    </div>
+    {{end}}
+  </div>
+
+  <div id="env-apply" hidden>
+    <h2 class="group-title">Apply the changes</h2>
+    <p class="muted small">ollamui doesn't run sudo itself. Paste this into a terminal; it writes a drop-in file next to your existing ones and restarts Ollama, which unloads every model.</p>
+    <div class="code"><pre class="mono" id="env-snippet"></pre><button type="button" class="btn" id="env-copy">Copy</button></div>
+  </div>
+
+  <h2 class="group-title">This machine</h2>
+  <div class="boxed-list">
+    <div class="row"><div class="row-text"><span class="row-title">GPU</span><span class="row-sub">{{if .Data.Memory.GPU}}{{.Data.Memory.GPU}}{{else}}None detected{{end}}</span></div><div class="row-ctrl">{{bytes .Data.Memory.VRAM}} VRAM</div></div>
+    <div class="row"><div class="row-text"><span class="row-title">System memory</span></div><div class="row-ctrl">{{bytes .Data.Memory.RAM}}</div></div>
+  </div>
+</div>
+<script>
+(() => {
+  const rows = [...document.querySelectorAll('#env-list .row')];
+  const box = document.getElementById('env-apply');
+  const pre = document.getElementById('env-snippet');
+  function update() {
+    const changed = rows.map(r => {
+      const v = r.querySelector('select, input').value.trim();
+      r.classList.toggle('changed', v !== r.dataset.current);
+      return { k: r.dataset.key, v, changed: v !== r.dataset.current };
+    }).filter(c => c.changed);
+    box.hidden = !changed.length;
+    if (!changed.length) return;
+    const lines = changed.map(c => c.v ? `Environment="${c.k}=${c.v}"` : `UnsetEnvironment=${c.k}`);
+    pre.textContent =
+      'sudo mkdir -p /etc/systemd/system/ollama.service.d\n' +
+      "sudo tee -a /etc/systemd/system/ollama.service.d/zz-ollamui.conf <<'EOF'\n[Service]\n" + lines.join('\n') + '\nEOF\n' +
+      'sudo systemctl daemon-reload && sudo systemctl restart ollama';
+  }
+  rows.forEach(r => r.querySelector('select, input').addEventListener('input', update));
+  document.getElementById('env-copy').addEventListener('click', async (e) => {
+    try { await navigator.clipboard.writeText(pre.textContent); e.target.textContent = 'Copied'; } catch {}
+    setTimeout(() => { e.target.textContent = 'Copy'; }, 1500);
+  });
+})();
+</script>
+{{end}}

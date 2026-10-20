@@ -60,3 +60,13 @@ func TestOllamaDefaultContext(t *testing.T) {
 		}
 	}
 }
+
+func TestScoreFor(t *testing.T) {
+	var s Server // nil score store: everything is unrated
+	if sc, _ := s.scoreFor([]string{"base_model:quantized:Qwen/Qwen3-8B"}); sc != nil {
+		t.Error("score without a store")
+	}
+	if sc, _ := s.scoreFor([]string{"gguf"}); sc != nil {
+		t.Error("score without a base model")
+	}
+}

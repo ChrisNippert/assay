@@ -30,6 +30,7 @@
   const archs = new Set(); // selected architectures; empty means any
   let limit = PAGE;
   let controller = null;
+  let topScore = 0; // highest score in the filtered list, for scaling bars
   let openId = null; // repo shown in the detail panel
   let detailController = null;
   const panel = $('detail-panel');
@@ -157,6 +158,8 @@
     lastModified: (a, b) => new Date(b.updated) - new Date(a.updated),
     'params-desc': (a, b) => b.params - a.params,
     'params-asc': (a, b) => (a.params || Infinity) - (b.params || Infinity),
+    // Unrated models sort last, then by downloads.
+    score: (a, b) => (b.score ?? -1) - (a.score ?? -1) || b.downloads - a.downloads,
   };
 
   // What the current sort is ranking by, shown on the right of each row.
@@ -179,6 +182,8 @@
 
   function render() {
     const shown = results.filter(passes).sort(sorters[sort.value] || sorters.downloads);
+    // Bars are scaled to the best score among the models on screen.
+    topScore = Math.max(0, ...shown.map((r) => r.score || 0));
     if (!results.length) {
       meta.textContent = 'No GGUF repos match that search.';
     } else {
@@ -187,6 +192,9 @@
         ? `${shown.length} models (${scope})`
         : `${shown.length} of ${results.length} match your filters${truncated ? ` (searched ${scope})` : ''}`;
     }
+
+    const rated = shown.filter((r) => r.score != null).length;
+    $('score-note').textContent = shown.length ? ` · ${rated} of ${shown.length} rated` : '';
 
     for (const chip of document.querySelectorAll('#f-size-chips .chip')) {
       chip.classList.toggle('on', chip.dataset.min === minIn.value && chip.dataset.max === maxIn.value);
@@ -206,6 +214,27 @@
     b.title = title;
     b.addEventListener('click', apply);
     return b;
+  }
+
+  // Intelligence score: a thin bar scaled to the best in view. It links to
+  // Artificial Analysis, where the score comes from.
+  function scoreChip(r) {
+    if (r.score == null) {
+      const none = el('div', 'muted', 'not rated');
+      none.title = 'No Intelligence Index score for this model';
+      return none;
+    }
+    const a = el('a', 'r-score');
+    a.href = 'https://artificialanalysis.ai';
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.title = `Artificial Analysis Intelligence Index of ${r.scoreOf}`;
+    const bar = el('span', 'bar');
+    const fill = el('span');
+    fill.style.width = `${topScore ? Math.round((r.score / topScore) * 100) : 0}%`;
+    bar.append(fill);
+    a.append(el('span', 'muted', 'Intelligence'), bar, el('b', null, r.score.toFixed(0)));
+    return a;
   }
 
   function row(r) {
@@ -259,6 +288,8 @@
     } else {
       side.append(el('div', 'muted', 'size unknown'), el('div', 'muted', sortFact(r)));
     }
+
+    side.append(scoreChip(r));
 
     item.append(main, side);
     return item;

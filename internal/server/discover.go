@@ -15,6 +15,7 @@ import (
 
 	"ollamui/internal/hf"
 	"ollamui/internal/hw"
+	"ollamui/internal/scores"
 )
 
 // --- Discover list ---
@@ -43,6 +44,10 @@ type searchResult struct {
 	Installed bool      `json:"installed"`
 	Q4Size    int64     `json:"q4Size"` // estimated size of a ~4.8 bits/weight quant
 	Fit       hw.Fit    `json:"fit"`    // of that quant at the default context
+	// Score is the base model's Artificial Analysis Intelligence Index, when
+	// the repo is a quantization of a rated model; ScoreOf names that model.
+	Score   *float64 `json:"score,omitempty"`
+	ScoreOf string   `json:"scoreOf,omitempty"`
 }
 
 // discoverCtx is the context length fit estimates assume unless the user
@@ -80,6 +85,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 			Updated:   repo.LastModified,
 			Installed: installed[strings.ToLower(repo.ID)],
 		}
+		res.Score, res.ScoreOf = s.scoreFor(repo.Tags)
 		if params > 0 {
 			res.Q4Size = params * 48 / 80 // ~4.8 bits per weight, typical of Q4_K_M
 			res.Fit = hw.Classify(hw.Estimate(res.Q4Size, params, discoverCtx, moe), s.memory)
@@ -90,6 +96,20 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		"results": out, "truncated": truncated, "max": hf.DefaultSearchMax,
 		"memory": s.memory, "context": discoverCtx,
 	})
+}
+
+// scoreFor rates a repo by the model it was quantized from. Finetunes and
+// repos with no base model tag are unrated.
+func (s *Server) scoreFor(tags []string) (*float64, string) {
+	base := scores.BaseModel(tags)
+	if base == "" {
+		return nil, ""
+	}
+	e, ok := s.scores.Lookup(base)
+	if !ok {
+		return nil, ""
+	}
+	return &e.Score, base
 }
 
 // searchCache keeps recent search results for a few minutes, so going back
@@ -194,6 +214,10 @@ type modelPageData struct {
 	Ctx         int
 	CtxOptions  []int
 	Memory      hw.Memory
+	Score       float64 // of the base model, 0 if unrated
+	ScoreOf     string
+	ScorePct    int // Score as a percentage of the best known score
+	ScoreURL    string
 	Error       string
 	Partial     bool // render only the detail block, for the Discover panel
 }
@@ -240,6 +264,13 @@ func (s *Server) handleModelPage(w http.ResponseWriter, r *http.Request) {
 	}
 	data.Repo = repo
 	data.MoE = hf.IsMoE(repo.Arch(), repo.ID)
+	data.ScoreURL = scores.AttributionURL
+	if sc, of := s.scoreFor(repo.Tags); sc != nil {
+		data.Score, data.ScoreOf = *sc, of
+		if top := s.scores.Max(); top > 0 {
+			data.ScorePct = min(100, int(*sc/top*100+0.5))
+		}
+	}
 
 	maxCtx := repo.ContextLength()
 	for _, c := range ctxChoices {

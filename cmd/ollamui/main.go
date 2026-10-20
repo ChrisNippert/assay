@@ -22,6 +22,7 @@ import (
 	"ollamui/internal/ollama"
 	"ollamui/internal/presets"
 	"ollamui/internal/pulls"
+	"ollamui/internal/scores"
 	"ollamui/internal/server"
 )
 
@@ -65,12 +66,14 @@ func run() error {
 	}
 	mem := hw.Detect()
 	log.Info("memory", "gpu", mem.GPU, "vram_gb", float64(mem.VRAM)/1e9, "ram_gb", float64(mem.RAM)/1e9)
+	scoreStore := scores.Open(scores.DefaultURL, filepath.Join(*dataDir, "scores.json"), log)
 	srv, err := server.New(server.Options{
 		Ollama:     client,
 		Chats:      store,
 		Presets:    presetStore,
 		HF:         hf.New(hf.DefaultBaseURL, os.Getenv("HF_TOKEN")),
 		Pulls:      pulls.New(client, log),
+		Scores:     scoreStore,
 		Memory:     mem,
 		AllowHosts: allowHosts,
 		Logger:     log,
@@ -81,6 +84,8 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	go scoreStore.Run(ctx)
 
 	checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	if v, err := client.Version(checkCtx); err != nil {

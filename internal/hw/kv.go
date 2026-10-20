@@ -18,9 +18,31 @@ func (k KVCache) Bytes(ctx int) int64 {
 	return k.PerToken*int64(ctx) + k.WindowPerToken*int64(w)
 }
 
-// kvBytesPerValue assumes an f16 cache, Ollama's default. A q8_0 cache
-// (OLLAMA_KV_CACHE_TYPE) would be about half.
+// kvBytesPerValue assumes an f16 cache, Ollama's default. Scale adjusts
+// for a quantized one (OLLAMA_KV_CACHE_TYPE).
 const kvBytesPerValue = 2
+
+// KVTypeFactor is the size of a K/V cache of type t relative to f16:
+// q8_0 stores 32 values in 34 bytes, q4_0 in 18.
+func KVTypeFactor(t string) float64 {
+	switch t {
+	case "q8_0":
+		return 34.0 / 64
+	case "q4_0":
+		return 18.0 / 64
+	}
+	return 1
+}
+
+// Scale returns the cache shape for a cache f times the size of f16.
+func (k KVCache) Scale(f float64) KVCache {
+	if f == 1 {
+		return k
+	}
+	k.PerToken = int64(float64(k.PerToken) * f)
+	k.WindowPerToken = int64(float64(k.WindowPerToken) * f)
+	return k
+}
 
 // KVCacheFromInfo works out the cache shape from the GGUF metadata Ollama
 // returns as model_info in /api/show. It understands per-layer KV head

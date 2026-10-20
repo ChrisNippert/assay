@@ -92,6 +92,7 @@ func (s *Server) pickContext(ctx context.Context, model string, probe bool) auto
 	if !ok {
 		return autoContext{Reason: "model doesn't describe its layers"}
 	}
+	kv = kv.Scale(s.kvFactor(ctx))
 
 	running, err := s.ollama.Running(ctx)
 	if err != nil {

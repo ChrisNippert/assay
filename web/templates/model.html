@@ -87,8 +87,18 @@
           <dt>Pipeline</dt><dd>{{or .PipelineTag "—"}}</dd>
         </dl>
       </section>
-      <section class="card muted small">
-        Benchmarks and an intelligence score come with the Compare milestone.
+      <section class="card">
+        <h2>Intelligence</h2>
+        {{if $.Data.Score}}
+        <a class="score-big" href="{{$.Data.ScoreURL}}" target="_blank" rel="noopener" title="Artificial Analysis Intelligence Index of {{$.Data.ScoreOf}}">
+          <b>{{printf "%.0f" $.Data.Score}}</b>
+          <span class="bar"><span style="width: {{$.Data.ScorePct}}%"></span></span>
+        </a>
+        <p class="muted small">Scores run roughly 0 to 50; the bar is against the best known. Rated for <a href="https://huggingface.co/{{$.Data.ScoreOf}}" target="_blank" rel="noopener">{{$.Data.ScoreOf}}</a>, which this was quantized from.</p>
+        {{else}}
+        <p class="muted small">Not rated. Only quantizations of models on the Artificial Analysis Intelligence Index get a score.</p>
+        {{end}}
+        <p class="muted small">Scores: <a href="{{$.Data.ScoreURL}}" target="_blank" rel="noopener">Artificial Analysis ↗</a></p>
       </section>
     </aside>
   </div>

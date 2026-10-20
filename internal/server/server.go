@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	"ollamui/internal/ollama"
 	"ollamui/internal/presets"
 	"ollamui/internal/pulls"
+	"ollamui/internal/scores"
 	"ollamui/web"
 )
 
@@ -34,7 +36,9 @@ type Options struct {
 	Presets *presets.Store
 	HF      *hf.Client
 	Pulls   *pulls.Manager
-	Memory  hw.Memory
+	// Scores is optional; without it nothing is rated.
+	Scores *scores.Store
+	Memory hw.Memory
 	// AllowHosts are extra hostnames (besides localhost and IP addresses)
 	// the UI may be reached by, e.g. a Tailscale machine name.
 	AllowHosts []string
@@ -48,7 +52,9 @@ type Server struct {
 	presets *presets.Store
 	hf      *hf.Client
 	pulls   *pulls.Manager
+	scores  *scores.Store
 	search  searchCache
+	env     envCache
 	ctxBase sync.Map // model name → measured weight memory, for picking context
 	// otherVRAM is the last measured VRAM used outside Ollama (desktop etc.).
 	otherVRAM atomic.Int64
@@ -64,14 +70,15 @@ type Server struct {
 func New(opts Options) (*Server, error) {
 	s := &Server{
 		ollama: opts.Ollama, chats: opts.Chats, presets: opts.Presets,
-		hf: opts.HF, pulls: opts.Pulls, memory: opts.Memory, log: opts.Logger,
+		hf: opts.HF, pulls: opts.Pulls, scores: opts.Scores, memory: opts.Memory, log: opts.Logger,
 		vramUsed: hw.VRAMUsed,
 	}
+	s.env.read = ollama.ReadServerEnv
 	if s.log == nil {
 		s.log = slog.Default()
 	}
 	s.pages = map[string]*template.Template{}
-	for _, name := range []string{"chat", "library", "discover", "model", "presets"} {
+	for _, name := range []string{"chat", "library", "discover", "model", "presets", "settings"} {
 		t, err := template.New("").Funcs(templateFuncs).ParseFS(web.FS, "templates/layout.html", "templates/"+name+".html")
 		if err != nil {
 			return nil, fmt.Errorf("parse %s template: %w", name, err)
@@ -90,6 +97,8 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("GET /discover", s.handleDiscover)
 	mux.HandleFunc("GET /discover/{owner}/{name}", s.handleModelPage)
 	mux.HandleFunc("GET /presets", s.handlePresetsPage)
+	mux.HandleFunc("GET /settings", s.handleSettingsPage)
+	mux.HandleFunc("GET /api/ollama/env", s.handleOllamaEnv)
 
 	mux.HandleFunc("GET /api/loaded", s.handleLoaded)
 	mux.HandleFunc("GET /api/models/defaults", s.handleModelDefaults)
@@ -305,7 +314,8 @@ var templateFuncs = template.FuncMap{
 		b, err := json.Marshal(v)
 		return string(b), err
 	},
-	"deref": func(b *bool) bool { return b != nil && *b },
+	"deref":     func(b *bool) bool { return b != nil && *b },
+	"hasChoice": func(list []string, v string) bool { return slices.Contains(list, v) },
 	"billions": func(n int64) string {
 		if n <= 0 {
 			return ""

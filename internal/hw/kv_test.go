@@ -71,3 +71,17 @@ func TestKVCacheFallbacks(t *testing.T) {
 		t.Fatal("empty info should fail")
 	}
 }
+
+func TestKVScale(t *testing.T) {
+	k := KVCache{PerToken: 6400, WindowPerToken: 640, Window: 1024}
+	if got := k.Scale(KVTypeFactor("f16")); got != k {
+		t.Errorf("f16 changed the cache: %+v", got)
+	}
+	q8 := k.Scale(KVTypeFactor("q8_0"))
+	if q8.PerToken != 3400 || q8.WindowPerToken != 340 || q8.Window != 1024 {
+		t.Errorf("q8_0 = %+v", q8)
+	}
+	if q4 := k.Scale(KVTypeFactor("q4_0")); q4.PerToken != 1800 {
+		t.Errorf("q4_0 per token = %d, want 1800", q4.PerToken)
+	}
+}

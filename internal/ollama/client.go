@@ -40,6 +40,9 @@ func New(baseURL string) (*Client, error) {
 // URL returns the server address the client talks to.
 func (c *Client) URL() string { return c.base.String() }
 
+// Host is the hostname of the Ollama server, without the port.
+func (c *Client) Host() string { return c.base.Hostname() }
+
 // ResolveHost turns an OLLAMA_HOST style value ("0.0.0.0", ":11434",
 // "host:port", "https://host") into a URL a client can connect to.
 func ResolveHost(v string) string {

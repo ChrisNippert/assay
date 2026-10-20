@@ -77,9 +77,7 @@ installed version (0.40.x) before building UI for it.
 
 Most of the 2026-10-20 list is done (see Done). Still open:
 
-1. **Downloads in the app bar.** A progress indicator beside the memory
-   pills, with a popover for details, replacing the sidebar list.
-2. **Polish on what shipped:** renaming chats from the sidebar; a GPU-fit
+1. **Polish on what shipped:** renaming chats from the sidebar; a GPU-fit
    bar on Library rows; "fits on GPU" hints and a ★ for presets in the model
    switcher; showing recent presets on the empty chat screen.
 
@@ -108,6 +106,17 @@ Most of the 2026-10-20 list is done (see Done). Still open:
 - **Chat search** across saved chats. (M)
 
 ## Done
+
+- Settings page, downloads, scores (2026-10-20):
+  - `/settings` reads the Ollama service env via `systemctl show` (no root),
+    lets you pick new values and generates a `sudo` drop-in snippet. Auto
+    context scales the KV estimate by the server's cache type (q8_0 ≈ 0.53×).
+  - Downloads moved from the sidebar to an app-bar button with a popover.
+  - Intelligence score (Artificial Analysis via OpenRouter) on Discover.
+  - Still open from #2: GPU layers (`num_gpu`) in Tune; scale Discover's
+    fit estimates by KV type. Speculative decoding: 0.40.6 has `draft` on
+    /api/create and a `draft_num_predict` option, apparently MLX-runner
+    only; untested on ROCm.
 
 - Chat polish (2026-10-20):
   - A model switcher card replaces the plain select. It is searchable and

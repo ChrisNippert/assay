@@ -176,11 +176,52 @@
     return m ? m[1] : '';
   }
 
+  const dlWrap = document.getElementById('downloads');
+  const dlBtn = document.getElementById('dl-btn');
+  const dlPop = document.getElementById('dl-pop');
+  let dlAutoClose = null;
+  let knownJobs = null; // ids seen so far; null until the first poll
+
+  function setDlOpen(open) {
+    if (!dlPop) return;
+    clearTimeout(dlAutoClose);
+    dlPop.hidden = !open;
+    dlBtn.setAttribute('aria-expanded', String(open));
+  }
+  if (dlBtn) {
+    dlBtn.addEventListener('click', () => setDlOpen(dlPop.hidden));
+    document.addEventListener('pointerdown', (e) => {
+      if (!dlPop.hidden && !dlWrap.contains(e.target)) setDlOpen(false);
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !dlPop.hidden) { setDlOpen(false); dlBtn.focus(); }
+    });
+    dlPop.addEventListener('pointerdown', () => clearTimeout(dlAutoClose));
+  }
+
+  // Briefly shows a newly started download.
+  function announceDownload() {
+    dlBtn.classList.remove('pulse');
+    void dlBtn.offsetWidth;
+    dlBtn.classList.add('pulse');
+    setDlOpen(true);
+    dlAutoClose = setTimeout(() => setDlOpen(false), 4000);
+  }
+
   function renderDownloads(jobs) {
-    const box = document.getElementById('downloads');
     const list = document.getElementById('download-list');
-    if (!box || !list) return;
-    box.hidden = jobs.length === 0;
+    if (!dlWrap || !list) return;
+    dlWrap.hidden = jobs.length === 0;
+    if (jobs.length === 0) setDlOpen(false);
+    const running = jobs.filter((j) => j.state === 'running');
+    const count = document.getElementById('dl-count');
+    count.hidden = jobs.length < 2;
+    count.textContent = jobs.length;
+    dlWrap.classList.toggle('idle', running.length === 0);
+    const total = running.reduce((n, j) => n + j.total, 0);
+    const done = running.reduce((n, j) => n + j.completed, 0);
+    document.querySelector('#dl-mini > span').style.width = (total ? Math.floor((done * 100) / total) : 0) + '%';
+    dlBtn.title = running.length ? `${running.length} downloading` : 'Downloads';
     list.replaceChildren();
     for (const j of jobs) {
       const row = el('div', 'dl-row dl-' + j.state);
@@ -192,8 +233,10 @@
         a.title = j.model + ' · open on Discover';
         name.append(a);
       } else {
-        name.textContent = jobLabel(j);
-        name.title = j.model;
+        const a = el('a', 'row-link', jobLabel(j));
+        a.href = '/library';
+        a.title = j.model + ' · open Library';
+        name.append(a);
       }
       row.append(name);
       if (j.state === 'running') {
@@ -203,16 +246,20 @@
         fill.style.width = pct + '%';
         bar.append(fill);
         const detail = j.total
-          ? `${fmtBytes(j.completed)} / ${fmtBytes(j.total)}${j.bytesPerSec > 0 ? ` · ${fmtBytes(j.bytesPerSec)}/s` : ''}`
+          ? `${fmtBytes(j.completed)} of ${fmtBytes(j.total)}${j.bytesPerSec > 0 ? ` · ${fmtBytes(j.bytesPerSec)}/s` : ''}`
           : j.status;
         const cancel = el('button', 'link-btn small', 'Cancel');
         cancel.type = 'button';
         cancel.dataset.cancelPull = j.id;
-        row.append(bar, el('div', 'dl-detail', detail), cancel);
+        const foot = el('div', 'dl-foot');
+        foot.append(el('div', 'dl-detail', detail), cancel);
+        row.append(bar, foot);
       } else if (j.state === 'done') {
         const chat = el('a', 'row-link small', 'Chat');
         chat.href = '/chat?model=' + encodeURIComponent(j.alias || j.model);
-        row.append(el('div', 'dl-detail good', j.warning || 'Downloaded'), chat);
+        const foot = el('div', 'dl-foot');
+        foot.append(el('div', 'dl-detail good', j.warning || 'Downloaded'), chat);
+        row.append(foot);
       } else if (j.state === 'failed') {
         row.append(el('div', 'dl-detail bad', j.error));
       } else {
@@ -220,6 +267,10 @@
       }
       list.append(row);
     }
+    // A job we haven't seen before (after the first poll) means a download just started.
+    const ids = new Set(jobs.map((j) => j.id));
+    if (knownJobs && jobs.some((j) => j.state === 'running' && !knownJobs.has(j.id))) announceDownload();
+    knownJobs = ids;
   }
 
   // Keeps quant rows on a model page in step with their downloads.
