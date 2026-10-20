@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -37,6 +38,7 @@ type searchResult struct {
 	Gated     bool      `json:"gated"`
 	Downloads int       `json:"downloads"`
 	Likes     int       `json:"likes"`
+	Trending  float64   `json:"trending"`
 	Updated   time.Time `json:"updated"`
 	Installed bool      `json:"installed"`
 	Q4Size    int64     `json:"q4Size"` // estimated size of a ~4.8 bits/weight quant
@@ -47,12 +49,16 @@ type searchResult struct {
 // picks another.
 const discoverCtx = 8192
 
+// handleSearch returns every match for a search (up to hf.DefaultSearchMax),
+// so the browser can sort and filter the full set without asking again.
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	repos, err := s.hf.Search(r.Context(), hf.SearchParams{
+	params := hf.SearchParams{
 		Query:  strings.TrimSpace(q.Get("q")),
 		Author: strings.TrimSpace(q.Get("author")),
-		Sort:   q.Get("sort"),
+	}
+	repos, truncated, err := s.search.get(params, func() ([]hf.Repo, bool, error) {
+		return s.hf.Search(r.Context(), params)
 	})
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
@@ -61,13 +67,17 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	installed := s.installedRepos(r.Context())
 	out := make([]searchResult, 0, len(repos))
 	for _, repo := range repos {
+		if !repo.IsChatModel() {
+			continue
+		}
 		params := repo.Params()
 		moe := hf.IsMoE(repo.Arch(), repo.ID)
 		res := searchResult{
 			ID: repo.ID, Author: repo.Author(), Name: repo.Name(),
 			Params: params, Arch: repo.Arch(), Context: repo.ContextLength(),
 			MoE: moe, Vision: repo.Vision(), Gated: repo.IsGated(),
-			Downloads: repo.Downloads, Likes: repo.Likes, Updated: repo.LastModified,
+			Downloads: repo.Downloads, Likes: repo.Likes, Trending: repo.Trending,
+			Updated:   repo.LastModified,
 			Installed: installed[strings.ToLower(repo.ID)],
 		}
 		if params > 0 {
@@ -76,7 +86,66 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, res)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"results": out, "memory": s.memory, "context": discoverCtx})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"results": out, "truncated": truncated, "max": hf.DefaultSearchMax,
+		"memory": s.memory, "context": discoverCtx,
+	})
+}
+
+// searchCache keeps recent search results for a few minutes, so going back
+// to Discover or tweaking a search is instant and doesn't re-page through HF.
+type searchCache struct {
+	mu      sync.Mutex
+	entries map[hf.SearchParams]searchEntry
+}
+
+type searchEntry struct {
+	repos     []hf.Repo
+	truncated bool
+	at        time.Time
+}
+
+const (
+	searchTTL        = 5 * time.Minute
+	searchCacheLimit = 20
+)
+
+func (c *searchCache) get(key hf.SearchParams, fetch func() ([]hf.Repo, bool, error)) ([]hf.Repo, bool, error) {
+	key.Query = strings.ToLower(key.Query)
+	key.Author = strings.ToLower(key.Author)
+	c.mu.Lock()
+	e, ok := c.entries[key]
+	c.mu.Unlock()
+	if ok && time.Since(e.at) < searchTTL {
+		return e.repos, e.truncated, nil
+	}
+
+	repos, truncated, err := fetch()
+	if err != nil {
+		return nil, false, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.entries == nil {
+		c.entries = map[hf.SearchParams]searchEntry{}
+	}
+	for k, v := range c.entries {
+		if time.Since(v.at) >= searchTTL {
+			delete(c.entries, k)
+		}
+	}
+	if len(c.entries) >= searchCacheLimit {
+		var oldest hf.SearchParams
+		first := true
+		for k, v := range c.entries {
+			if first || v.at.Before(c.entries[oldest].at) {
+				oldest, first = k, false
+			}
+		}
+		delete(c.entries, oldest)
+	}
+	c.entries[key] = searchEntry{repos, truncated, time.Now()}
+	return repos, truncated, nil
 }
 
 // installedRepos returns the lowercased HF repo IDs that have at least one
@@ -126,6 +195,7 @@ type modelPageData struct {
 	CtxOptions  []int
 	Memory      hw.Memory
 	Error       string
+	Partial     bool // render only the detail block, for the Discover panel
 }
 
 var ctxChoices = []int{4096, 8192, 16384, 32768, 65536, 131072}
@@ -133,11 +203,11 @@ var ctxChoices = []int{4096, 8192, 16384, 32768, 65536, 131072}
 func (s *Server) handleModelPage(w http.ResponseWriter, r *http.Request) {
 	repoID := r.PathValue("owner") + "/" + r.PathValue("name")
 	p := s.basePage(r.Context(), "discover", repoID)
-	data := &modelPageData{Memory: s.memory, Ctx: discoverCtx}
+	data := &modelPageData{Memory: s.memory, Ctx: discoverCtx, Partial: r.URL.Query().Get("partial") == "1"}
 	p.Data = data
 	if !hf.ValidRepo(repoID) {
 		data.Error = "That isn't a Hugging Face repo name."
-		s.render(w, "model", p)
+		s.renderModel(w, p, data.Partial)
 		return
 	}
 
@@ -159,11 +229,11 @@ func (s *Server) handleModelPage(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(infoErr, hf.ErrNotFound):
 		w.WriteHeader(http.StatusNotFound)
 		data.Error = "No such repo on Hugging Face (or it's private)."
-		s.render(w, "model", p)
+		s.renderModel(w, p, data.Partial)
 		return
 	case infoErr != nil:
 		data.Error = infoErr.Error()
-		s.render(w, "model", p)
+		s.renderModel(w, p, data.Partial)
 		return
 	case fileErr != nil:
 		data.Error = "Couldn't list files: " + fileErr.Error()
@@ -207,7 +277,24 @@ func (s *Server) handleModelPage(w http.ResponseWriter, r *http.Request) {
 	for _, k := range keys {
 		data.Recommended = append(data.Recommended, setting{k, recommended[k]})
 	}
-	s.render(w, "model", p)
+	s.renderModel(w, p, data.Partial)
+}
+
+// renderModel writes the full page, or just the "model-detail" block when
+// the Discover panel asked for a fragment.
+func (s *Server) renderModel(w http.ResponseWriter, p *page, partial bool) {
+	if !partial {
+		s.render(w, "model", p)
+		return
+	}
+	var buf bytes.Buffer
+	if err := s.pages["model"].ExecuteTemplate(&buf, "model-detail", p); err != nil {
+		s.log.Error("render", "page", "model-detail", "err", err)
+		http.Error(w, "template error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	buf.WriteTo(w)
 }
 
 // markBest flags the largest quant that fits fully on the GPU. Without a

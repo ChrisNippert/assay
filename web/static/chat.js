@@ -81,12 +81,17 @@
 
   function showLoadState() {
     const base = baseOf(selectedOption());
-    if (!base) { loadState.textContent = ''; loadBtn.hidden = true; return; }
+    loadBtn.hidden = true; // the chip below does the same job
+    if (!base) { loadState.textContent = ''; loadState.hidden = true; return; }
     const loaded = loadedNames.has(base);
+    loadState.hidden = false;
+    loadState.disabled = false;
     loadState.textContent = loaded ? '● Loaded' : '○ Not loaded';
     loadState.classList.toggle('on', loaded);
-    loadBtn.hidden = false;
-    setLoadButton(loadBtn, base, loaded);
+    loadState.title = loaded ? 'Click to eject' : 'Click to load';
+    delete loadState.dataset.load;
+    delete loadState.dataset.eject;
+    loadState.dataset[loaded ? 'eject' : 'load'] = base;
   }
 
   function syncPicker() {
@@ -142,10 +147,18 @@
     }
   }
 
-  function lengthNote(onlyThinking) {
+  function statsText(st) {
+    let text = `${st.tokensPerSec.toFixed(1)} tok/s · ${st.outputTokens} tokens`;
+    if (st.context) text += ` · ${Math.round(st.context / 1024)}k context${st.autoContext ? ' (auto)' : ''}`;
+    return text;
+  }
+
+  function lengthNote(onlyThinking, stats) {
+    const n = (v) => v.toLocaleString();
+    const used = stats ? ` (${n(stats.promptTokens)} prompt + ${n(stats.outputTokens)} reply tokens)` : '';
     return onlyThinking
-      ? 'The model used its whole length limit on thinking and never answered. Raise “Context length” or “Max reply tokens” in Tune, or turn Thinking off.'
-      : 'Cut off at the length limit. Raise “Context length” or “Max reply tokens” in Tune for longer replies.';
+      ? `The model used up the context${used} on thinking and never answered. Raise “Context length” in Tune, or turn Thinking off.`
+      : `Cut off: the conversation filled the context${used}. Raise “Context length” in Tune for longer replies.`;
   }
 
   function addSidebarChat(id, title) {
@@ -173,6 +186,9 @@
     thinkBox.append(thinkText);
     const md = el('div', 'md');
     const stats = el('div', 'stats', 'Waiting for model…');
+    stats.setAttribute('role', 'button');
+    stats.tabIndex = 0;
+    stats.title = 'Open Tune';
     reply.append(thinkBox, md, stats);
     list.append(reply);
     scrollDown();
@@ -216,8 +232,8 @@
             md.innerHTML = renderMarkdown(content);
             break;
           case 'done':
-            if (ev.stats) stats.textContent = `${ev.stats.tokensPerSec.toFixed(1)} tok/s · ${ev.stats.outputTokens} tokens`;
-            if (ev.stats?.doneReason === 'length') reply.append(el('div', 'msg-warn', lengthNote(!content && !!thinking)));
+            if (ev.stats) stats.textContent = statsText(ev.stats);
+            if (ev.stats?.doneReason === 'length') reply.append(el('div', 'msg-warn', lengthNote(!content && !!thinking, ev.stats)));
             break;
           case 'error':
             throw new Error(ev.message);
@@ -238,5 +254,11 @@
       input.focus();
       refreshLoaded(); // chatting loads the model, so the memory list may have changed
     }
+  });
+
+  // Stats lines (server-rendered and streamed) open the Tune panel.
+  list.addEventListener('click', (e) => { if (e.target.closest('.stats')) tune?.open?.(); });
+  list.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.closest?.('.stats')) { e.preventDefault(); tune?.open?.(); }
   });
 })();

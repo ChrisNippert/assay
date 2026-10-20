@@ -13,15 +13,15 @@
       </thead>
       <tbody>
       {{range .Models}}
-        {{$loaded := $.IsLoaded .Name}}
+        {{$loaded := $.IsLoaded .Name}}{{$n := .Name}}
         <tr data-model="{{.Name}}">
-          <td class="name">{{.Name}}</td>
+          <td class="name">{{with hfRepo .Name}}<a class="row-link" href="/discover/{{.}}" title="Open on Discover">{{$n}}</a>{{else}}<a class="row-link" href="/chat?model={{.Name}}" title="Chat with {{.Name}}">{{.Name}}</a>{{end}}</td>
           <td>{{.Details.Family}}</td>
           <td>{{.Details.ParameterSize}}</td>
           <td class="mono">{{.Details.QuantizationLevel}}</td>
           <td>{{bytes .Size}}</td>
           <td class="muted">{{ago .ModifiedAt}}</td>
-          <td class="status">{{if $loaded}}<span class="good">● Loaded</span>{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="status">{{if $loaded}}<button type="button" class="status-btn good" data-eject="{{.Name}}" title="Click to eject">● Loaded</button>{{else}}<button type="button" class="status-btn muted" data-load="{{.Name}}" title="Click to load">—</button>{{end}}</td>
           <td><div class="actions">
             {{if $loaded}}<button type="button" class="btn" data-eject="{{.Name}}">Eject</button>{{else}}<button type="button" class="btn" data-load="{{.Name}}">Load</button>{{end}}
             <a class="btn" href="/chat?model={{.Name}}">Chat</a>

@@ -29,6 +29,10 @@ type Stats struct {
 	// DoneReason is why generation stopped: "stop" normally, "length" when
 	// the reply hit the context or max-tokens limit.
 	DoneReason string `json:"doneReason,omitempty"`
+	// Context is the context length the reply ran with, when ollamui set it;
+	// AutoContext means ollamui picked it to fit the GPU.
+	Context     int  `json:"context,omitempty"`
+	AutoContext bool `json:"autoContext,omitempty"`
 }
 
 // Message is one turn in a chat.

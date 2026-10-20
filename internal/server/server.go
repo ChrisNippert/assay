@@ -12,7 +12,10 @@ import (
 	"net"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"ollamui/internal/chats"
@@ -45,10 +48,16 @@ type Server struct {
 	presets *presets.Store
 	hf      *hf.Client
 	pulls   *pulls.Manager
-	memory  hw.Memory
-	log     *slog.Logger
-	pages   map[string]*template.Template
-	handler http.Handler
+	search  searchCache
+	ctxBase sync.Map // model name → measured weight memory, for picking context
+	// otherVRAM is the last measured VRAM used outside Ollama (desktop etc.).
+	otherVRAM atomic.Int64
+	// vramUsed reports GPU memory in use; swapped out in tests.
+	vramUsed func() int64
+	memory   hw.Memory
+	log      *slog.Logger
+	pages    map[string]*template.Template
+	handler  http.Handler
 }
 
 // New builds the server and its routes.
@@ -56,6 +65,7 @@ func New(opts Options) (*Server, error) {
 	s := &Server{
 		ollama: opts.Ollama, chats: opts.Chats, presets: opts.Presets,
 		hf: opts.HF, pulls: opts.Pulls, memory: opts.Memory, log: opts.Logger,
+		vramUsed: hw.VRAMUsed,
 	}
 	if s.log == nil {
 		s.log = slog.Default()
@@ -264,8 +274,31 @@ func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 // --- template helpers ---
 
 var templateFuncs = template.FuncMap{
+	// hfRepo turns "hf.co/owner/repo:quant" into "owner/repo" ("" for other names).
+	"hfRepo": func(name string) string {
+		rest, ok := strings.CutPrefix(name, "hf.co/")
+		if !ok {
+			return ""
+		}
+		rest, _, _ = strings.Cut(rest, ":")
+		if strings.Count(rest, "/") != 1 {
+			return ""
+		}
+		return rest
+	},
 	"bytes": formatBytes,
-	"ago":   ago,
+	"kib":   func(n int) int { return (n + 512) / 1024 },
+	// compact formats counts like 1329922 as "1.3M".
+	"compact": func(n int) string {
+		switch {
+		case n >= 1e6:
+			return strconv.FormatFloat(float64(n)/1e6, 'f', 1, 64) + "M"
+		case n >= 1e3:
+			return strconv.FormatFloat(float64(n)/1e3, 'f', 1, 64) + "k"
+		}
+		return strconv.Itoa(n)
+	},
+	"ago": ago,
 	"json": func(v any) (string, error) {
 		b, err := json.Marshal(v)
 		return string(b), err

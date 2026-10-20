@@ -314,6 +314,29 @@ func TestModelPageMarksBestQuant(t *testing.T) {
 	}
 }
 
+func TestModelPagePartial(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	rec := do(s, "GET", "/discover/unsloth/Qwen3-8B-GGUF?partial=1&ctx=16384", "")
+	if rec.Code != 200 {
+		t.Fatalf("status %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `class="quant-row`) || !strings.Contains(body, `data-pull="hf.co/unsloth/Qwen3-8B-GGUF:Q4_K_M"`) {
+		t.Error("quant row missing from partial")
+	}
+	for _, bad := range []string{"<html", `class="sidebar"`, `class="crumbs`, "onchange="} {
+		if strings.Contains(body, bad) {
+			t.Errorf("partial should not contain %q", bad)
+		}
+	}
+	if !strings.Contains(body, "data-close-panel") || !strings.Contains(body, `<option value="16384" selected>`) {
+		t.Error("expected close button and ctx selection")
+	}
+	if rec := do(s, "GET", "/discover/unsloth/Nope-GGUF?partial=1", ""); rec.Code != 404 || strings.Contains(rec.Body.String(), "<html") {
+		t.Errorf("missing repo partial: %d", rec.Code)
+	}
+}
+
 func TestPresetPublishAndChat(t *testing.T) {
 	s, fake, store := newTestServer(t)
 	rec := do(s, "PUT", "/api/presets/coder", `{"base":"qwen3:8b","system":"Be terse.","published":true,"options":{"temperature":0.3,"num_ctx":16384}}`)

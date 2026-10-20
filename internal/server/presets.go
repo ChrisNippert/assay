@@ -116,8 +116,30 @@ func (s *Server) handlePresetDelete(w http.ResponseWriter, r *http.Request) {
 type modelDefaults struct {
 	Options       map[string]any `json:"options"`
 	System        string         `json:"system,omitempty"`
-	ContextLength int            `json:"contextLength,omitempty"`
+	ContextLength int            `json:"contextLength,omitempty"` // the most the model supports
+	OllamaContext int            `json:"ollamaContext"`           // what Ollama uses if num_ctx isn't set
+	Auto          autoContext    `json:"auto"`                    // what ollamui picks if num_ctx isn't set
 	Thinking      bool           `json:"thinking"`
+}
+
+// ollamaDefaultContext is the context length Ollama picks when a request
+// doesn't set num_ctx: it scales with VRAM (4k under 24 GiB, 32k under
+// 48 GiB, 256k above), capped at what the model supports. An
+// OLLAMA_CONTEXT_LENGTH set on the Ollama server overrides this; we can't see
+// that from here.
+func ollamaDefaultContext(vram int64, modelMax int) int {
+	const gib = 1 << 30
+	ctx := 262144
+	switch {
+	case vram < 24*gib:
+		ctx = 4096
+	case vram < 48*gib:
+		ctx = 32768
+	}
+	if modelMax > 0 && modelMax < ctx {
+		ctx = modelMax
+	}
+	return ctx
 }
 
 func (s *Server) handleModelDefaults(w http.ResponseWriter, r *http.Request) {
@@ -142,6 +164,8 @@ func (s *Server) handleModelDefaults(w http.ResponseWriter, r *http.Request) {
 		Options:       opts,
 		System:        show.System,
 		ContextLength: show.ContextLength(),
+		OllamaContext: ollamaDefaultContext(s.memory.VRAM, show.ContextLength()),
+		Auto:          s.pickContext(r.Context(), name, false),
 		Thinking:      show.HasCapability("thinking"),
 	})
 }

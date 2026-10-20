@@ -36,7 +36,7 @@
   <div class="loaded-list" id="loaded-list">
     {{range .Loaded}}
     <div class="loaded-row">
-      <div class="loaded-name" title="{{.Name}}">{{.Name}}</div>
+      <div class="loaded-name"><a class="row-link" href="/chat?model={{.Name}}" title="Chat with {{.Name}}">{{.Name}}</a></div>
       <div class="loaded-detail">{{bytes .SizeVRAM}}{{if lt (gpuPct .) 100}} · {{gpuPct .}}% GPU{{end}} · {{if .Pinned}}until ejected{{else}}auto-unloads{{end}}</div>
       <button type="button" class="icon-btn" data-eject="{{.Name}}" aria-label="Eject {{.Name}}" title="Eject">{{template "icon-eject"}}</button>
     </div>

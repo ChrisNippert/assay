@@ -37,6 +37,7 @@ func run() error {
 	ollamaURL := flag.String("ollama", ollama.ResolveHost(os.Getenv("OLLAMA_HOST")), "Ollama server URL")
 	dataDir := flag.String("data", defaultDir("XDG_DATA_HOME", ".local/share"), "where chats are stored")
 	configDir := flag.String("config", defaultDir("XDG_CONFIG_HOME", ".config"), "where presets are stored")
+	debug := flag.Bool("debug", false, "log extra detail, e.g. how context lengths are picked")
 	var allowHosts []string
 	flag.Func("allow-host", "extra hostname the UI may be reached by, e.g. a Tailscale name (repeatable)", func(v string) error {
 		allowHosts = append(allowHosts, v)
@@ -44,7 +45,11 @@ func run() error {
 	})
 	flag.Parse()
 
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	level := slog.LevelInfo
+	if *debug {
+		level = slog.LevelDebug
+	}
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 
 	client, err := ollama.New(*ollamaURL)
 	if err != nil {

@@ -85,6 +85,56 @@ func nvidiaVRAM() (string, int64) {
 	return name, best
 }
 
+// VRAMUsed returns how much of the GPU's memory is in use right now by
+// everything (desktop, browser, loaded models), or 0 if it can't tell.
+func VRAMUsed() int64 {
+	if v := amdVRAMUsed("/sys/class/drm"); v > 0 {
+		return v
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "nvidia-smi", "--query-gpu=memory.total,memory.used", "--format=csv,noheader,nounits").Output()
+	if err != nil {
+		return 0
+	}
+	var bestTotal, used int64
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		t, u, ok := strings.Cut(line, ",")
+		if !ok {
+			continue
+		}
+		tv, err1 := strconv.ParseInt(strings.TrimSpace(t), 10, 64)
+		uv, err2 := strconv.ParseInt(strings.TrimSpace(u), 10, 64)
+		if err1 == nil && err2 == nil && tv > bestTotal {
+			bestTotal, used = tv, uv*1024*1024
+		}
+	}
+	return used
+}
+
+// amdVRAMUsed reads the in-use VRAM of the card with the most VRAM, the
+// same card amdVRAM reports.
+func amdVRAMUsed(drmDir string) int64 {
+	paths, _ := filepath.Glob(filepath.Join(drmDir, "card*", "device", "mem_info_vram_total"))
+	var bestTotal, used int64
+	for _, p := range paths {
+		total := readInt(p)
+		if total > bestTotal {
+			bestTotal, used = total, readInt(filepath.Join(filepath.Dir(p), "mem_info_vram_used"))
+		}
+	}
+	return used
+}
+
+func readInt(path string) int64 {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	v, _ := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
+	return v
+}
+
 // Fit levels, from best to worst.
 const (
 	FitGPU     = "gpu"     // runs entirely on the GPU

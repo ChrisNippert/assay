@@ -12,8 +12,8 @@
       <tbody>
       {{range .Presets}}
         <tr data-preset="{{.Name}}">
-          <td class="name">{{.Name}}{{with .System}}<div class="muted small ellipsis" title="{{.}}">{{.}}</div>{{end}}</td>
-          <td class="mono small">{{.Base}}</td>
+          <td class="name"><a class="row-link" href="/chat?preset={{.Name}}" title="Chat with this preset">{{.Name}}</a>{{with .System}}<div class="muted small ellipsis" title="{{.}}">{{.}}</div>{{end}}</td>
+          <td class="mono small">{{$b := .Base}}{{with hfRepo .Base}}<a class="row-link" href="/discover/{{.}}" title="Open on Discover">{{$b}}</a>{{else}}<a class="row-link" href="/chat?model={{.Base}}" title="Chat with {{.Base}}">{{.Base}}</a>{{end}}</td>
           <td class="small settings-cell">{{range $k, $v := .Options}}<span class="tag mono">{{$k}} {{$v}}</span> {{end}}{{if .Think}}<span class="tag">think {{if deref .Think}}on{{else}}off{{end}}</span>{{end}}{{if not .Options}}<span class="muted">model defaults</span>{{end}}</td>
           <td>
             <label class="publish small"><input type="checkbox" data-publish="{{.Name}}"{{if .Published}} checked{{end}}>

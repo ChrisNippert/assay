@@ -1,7 +1,14 @@
 {{define "content"}}
 <div class="page model-page">
   <div class="crumbs small"><a href="/discover">Discover</a> / {{.Title}}</div>
+  {{template "model-detail" .}}
+</div>
+{{end}}
 
+{{/* The model's header, quants and side cards. Used by the full page and,
+     as a fragment (?partial=1), by the Discover detail panel. */}}
+{{define "model-detail"}}
+  {{if .Data.Partial}}<button type="button" class="icon-btn panel-close" data-close-panel aria-label="Close" title="Close (Esc)">×</button>{{end}}
   {{with .Data.Error}}<div class="banner error" role="alert">{{.}}</div>{{end}}
 
   {{with .Data.Repo}}
@@ -9,16 +16,16 @@
     <div class="model-title">
       <h1>{{.Name}}</h1>
       <div class="tags">
-        <span class="muted">{{.Author}}</span>
-        {{with billions .Params}}<span class="tag">{{if $.Data.MoE}}MoE {{else}}dense {{end}}{{.}}</span>{{end}}
-        {{with .Arch}}<span class="tag">{{.}}</span>{{end}}
-        {{if $.Data.Vision}}<span class="tag">vision</span>{{end}}
-        {{with .ContextLength}}<span class="tag">{{.}} ctx</span>{{end}}
+        <a class="row-link muted" href="/discover?author={{.Author}}" title="More from {{.Author}}">{{.Author}}</a>
+        {{with billions .Params}}<a class="tag tag-link" href="/discover?author={{$.Data.Repo.Author}}&type={{if $.Data.MoE}}moe{{else}}dense{{end}}" title="More {{if $.Data.MoE}}MoE{{else}}dense{{end}} models">{{if $.Data.MoE}}MoE {{else}}dense {{end}}{{.}}</a>{{end}}
+        {{with .Arch}}<a class="tag tag-link" href="/discover?author={{$.Data.Repo.Author}}&arch={{.}}" title="More {{.}} models">{{.}}</a>{{end}}
+        {{if $.Data.Vision}}<a class="tag tag-link" href="/discover?author={{$.Data.Repo.Author}}&vision=1" title="More vision models">vision</a>{{end}}
+        {{with .ContextLength}}<span class="tag">{{kib .}}k ctx</span>{{end}}
         {{if .IsGated}}<span class="tag warn">gated: needs HF_TOKEN</span>{{end}}
       </div>
     </div>
     <div class="model-stats small muted">
-      <div>{{.Downloads}} downloads · {{.Likes}} likes</div>
+      <div>{{compact .Downloads}} downloads · {{compact .Likes}} likes</div>
       <div>updated {{ago .LastModified}} · <a href="https://huggingface.co/{{.ID}}" target="_blank" rel="noopener">model card ↗</a></div>
     </div>
   </header>
@@ -29,10 +36,10 @@
         <h2>Pick a quant</h2>
         <form method="get" class="ctx-form small">
           <label for="ctx" class="muted">Memory estimate at</label>
-          <select id="ctx" name="ctx" onchange="this.form.submit()">
+          <select id="ctx" name="ctx"{{if not $.Data.Partial}} onchange="this.form.submit()"{{end}}>
             {{range $.Data.CtxOptions}}<option value="{{.}}"{{if eq . $.Data.Ctx}} selected{{end}}>{{.}} context</option>{{end}}
           </select>
-          <noscript><button class="btn">Update</button></noscript>
+          {{if not $.Data.Partial}}<noscript><button class="btn">Update</button></noscript>{{end}}
         </form>
       </div>
       <p class="muted small">
@@ -76,7 +83,7 @@
         <dl class="kv">
           <dt>Architecture</dt><dd>{{or .Arch "unknown"}}</dd>
           <dt>Parameters</dt><dd>{{or (billions .Params) "unknown"}}{{if $.Data.MoE}} (MoE){{end}}</dd>
-          <dt>Trained context</dt><dd>{{if .ContextLength}}{{.ContextLength}} tokens{{else}}unknown{{end}}</dd>
+          <dt>Trained context</dt><dd>{{if .ContextLength}}{{kib .ContextLength}}k tokens{{else}}unknown{{end}}</dd>
           <dt>Pipeline</dt><dd>{{or .PipelineTag "—"}}</dd>
         </dl>
       </section>
@@ -86,5 +93,4 @@
     </aside>
   </div>
   {{end}}
-</div>
 {{end}}

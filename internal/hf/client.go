@@ -60,6 +60,7 @@ type Repo struct {
 	PipelineTag  string    `json:"pipeline_tag"`
 	GGUF         *GGUF     `json:"gguf"`
 	Gated        any       `json:"gated"` // false, "auto" or "manual"
+	Trending     float64   `json:"trendingScore"`
 }
 
 // Author is the part of the ID before the slash.
@@ -105,6 +106,17 @@ func (r Repo) Vision() bool {
 	return false
 }
 
+// generativeMedia are pipelines for models that make images, video or
+// audio. Their GGUFs (e.g. FLUX, Qwen-Image) aren't chat models Ollama can run.
+var generativeMedia = map[string]bool{
+	"text-to-image": true, "image-to-image": true, "text-to-video": true, "image-to-video": true,
+	"text-to-speech": true, "text-to-audio": true, "unconditional-image-generation": true,
+}
+
+// IsChatModel reports whether the repo looks like a text model rather than
+// an image, video or audio generator.
+func (r Repo) IsChatModel() bool { return !generativeMedia[r.PipelineTag] }
+
 // IsGated reports whether downloading requires accepting terms on the website.
 func (r Repo) IsGated() bool {
 	b, ok := r.Gated.(bool)
@@ -125,18 +137,27 @@ func IsMoE(arch, repoID string) bool {
 	return strings.Contains(a, "moe") || moeArchs[a] || activeParamsPattern.MatchString(repoID)
 }
 
-var expandFields = []string{"gguf", "downloads", "likes", "lastModified", "tags", "pipeline_tag", "gated"}
+var expandFields = []string{"gguf", "downloads", "likes", "lastModified", "tags", "pipeline_tag", "gated", "trendingScore"}
 
 // SearchParams narrows a search.
 type SearchParams struct {
 	Query  string
 	Author string
-	Sort   string // downloads, likes, lastModified, trendingScore
-	Limit  int
+	Max    int // stop after this many repos; 0 means DefaultSearchMax
 }
 
-// Search finds repos that contain GGUF files.
-func (c *Client) Search(ctx context.Context, p SearchParams) ([]Repo, error) {
+// DefaultSearchMax caps how many repos one search fetches. All of Unsloth's
+// GGUF repos fit comfortably; broad searches like "qwen" get the top ones by
+// downloads.
+const DefaultSearchMax = 1000
+
+// Search finds every repo with GGUF files matching p, most downloaded first,
+// following Hugging Face's cursor paging up to p.Max results. truncated
+// reports whether more matches exist beyond that.
+func (c *Client) Search(ctx context.Context, p SearchParams) (repos []Repo, truncated bool, err error) {
+	if p.Max <= 0 {
+		p.Max = DefaultSearchMax
+	}
 	q := url.Values{}
 	q.Set("filter", "gguf")
 	if p.Query != "" {
@@ -145,25 +166,40 @@ func (c *Client) Search(ctx context.Context, p SearchParams) ([]Repo, error) {
 	if p.Author != "" {
 		q.Set("author", p.Author)
 	}
-	switch p.Sort {
-	case "downloads", "likes", "lastModified", "trendingScore":
-	default:
-		p.Sort = "downloads"
-	}
-	q.Set("sort", p.Sort)
+	q.Set("sort", "downloads")
 	q.Set("direction", "-1")
-	if p.Limit <= 0 || p.Limit > 200 {
-		p.Limit = 100
-	}
-	q.Set("limit", fmt.Sprint(p.Limit))
+	q.Set("limit", fmt.Sprint(min(p.Max, 1000)))
 	for _, f := range expandFields {
 		q.Add("expand[]", f)
 	}
-	var out []Repo
-	if err := c.getJSON(ctx, "/api/models?"+q.Encode(), &out); err != nil {
-		return nil, err
+	next := c.base + "/api/models?" + q.Encode()
+	for next != "" {
+		var page []Repo
+		header, err := c.getJSONURL(ctx, next, &page)
+		if err != nil {
+			return nil, false, err
+		}
+		repos = append(repos, page...)
+		next = nextLink(header.Get("Link"))
+		// Only follow links back to the same host, so the token stays there.
+		if next != "" && !strings.HasPrefix(next, c.base+"/") {
+			next = ""
+		}
+		if len(repos) >= p.Max {
+			return repos[:p.Max], next != "" || len(repos) > p.Max, nil
+		}
 	}
-	return out, nil
+	return repos, false, nil
+}
+
+var nextLinkPattern = regexp.MustCompile(`<([^>]+)>\s*;\s*rel="?next"?`)
+
+// nextLink extracts the rel="next" URL from an HTTP Link header.
+func nextLink(header string) string {
+	if m := nextLinkPattern.FindStringSubmatch(header); m != nil {
+		return m[1]
+	}
+	return ""
 }
 
 // Info returns one repo's details.
@@ -216,9 +252,16 @@ func (c *Client) RecommendedParams(ctx context.Context, repo string) (map[string
 }
 
 func (c *Client) getJSON(ctx context.Context, path string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
+	_, err := c.getJSONURL(ctx, c.base+path, out)
+	return err
+}
+
+// getJSONURL fetches an absolute URL on the hub, decodes it into out and
+// returns the response headers.
+func (c *Client) getJSONURL(ctx context.Context, u string, out any) (http.Header, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
@@ -226,23 +269,23 @@ func (c *Client) getJSON(ctx context.Context, path string, out any) error {
 	resp, err := c.http.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
-			return ctx.Err() // the caller gave up; don't dress it up
+			return nil, ctx.Err() // the caller gave up; don't dress it up
 		}
 		var netErr net.Error
 		if errors.As(err, &netErr) && netErr.Timeout() {
-			return errors.New("Hugging Face didn't respond in time. Check your connection and try again")
+			return nil, errors.New("Hugging Face didn't respond in time. Check your connection and try again")
 		}
-		return errors.New("couldn't reach Hugging Face. Check your connection and try again")
+		return nil, errors.New("couldn't reach Hugging Face. Check your connection and try again")
 	}
 	defer resp.Body.Close()
 	switch {
 	case resp.StatusCode == http.StatusNotFound:
-		return ErrNotFound
+		return nil, ErrNotFound
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-		return fmt.Errorf("hugging face: access denied (gated or private repo; set HF_TOKEN)")
+		return nil, fmt.Errorf("hugging face: access denied (gated or private repo; set HF_TOKEN)")
 	case resp.StatusCode >= 300:
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
-		return fmt.Errorf("hugging face: %s: %s", resp.Status, strings.TrimSpace(string(b)))
+		return nil, fmt.Errorf("hugging face: %s: %s", resp.Status, strings.TrimSpace(string(b)))
 	}
-	return json.NewDecoder(io.LimitReader(resp.Body, 32<<20)).Decode(out)
+	return resp.Header, json.NewDecoder(io.LimitReader(resp.Body, 64<<20)).Decode(out)
 }

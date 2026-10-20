@@ -109,7 +109,7 @@ func TestLoadUnload(t *testing.T) {
 		bodies = append(bodies, b)
 		io.WriteString(w, `{"done":true}`)
 	})
-	if err := c.Load(context.Background(), "m", "-1"); err != nil {
+	if err := c.Load(context.Background(), "m", "-1", nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.Unload(context.Background(), "m"); err != nil {

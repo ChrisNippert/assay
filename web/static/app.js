@@ -58,8 +58,11 @@
     }
     for (const m of models) {
       const row = el('div', 'loaded-row');
-      const name = el('div', 'loaded-name', m.name);
-      name.title = m.name;
+      const name = el('div', 'loaded-name');
+      const link = el('a', 'row-link', m.name);
+      link.href = '/chat?model=' + encodeURIComponent(m.name);
+      link.title = 'Chat with ' + m.name;
+      name.append(link);
       const pct = m.size ? Math.floor((m.sizeVram * 100) / m.size) : 100;
       let detail = fmtBytes(m.sizeVram);
       if (pct < 100) detail += ` · ${pct}% GPU`;
@@ -120,7 +123,7 @@
 
     const loading = !!btn.dataset.load;
     const name = btn.dataset.load || btn.dataset.eject;
-    const isText = !btn.classList.contains('icon-btn');
+    const isText = !btn.classList.contains('icon-btn') && !btn.classList.contains('keep-text');
     btn.disabled = true;
     if (isText) btn.textContent = loading ? 'Loading…' : 'Ejecting…';
     try {
@@ -140,8 +143,12 @@
       const name = row.dataset.model;
       const loaded = names.has(name);
       const status = row.querySelector('.status');
-      status.innerHTML = loaded ? '<span class="good">● Loaded</span>' : '<span class="muted">—</span>';
-      setLoadButton(row.querySelector('[data-load], [data-eject]'), name, loaded);
+      const sb = el('button', 'status-btn ' + (loaded ? 'good' : 'muted'), loaded ? '● Loaded' : '—');
+      sb.type = 'button';
+      sb.title = loaded ? 'Click to eject' : 'Click to load';
+      sb.dataset[loaded ? 'eject' : 'load'] = name;
+      status.replaceChildren(sb);
+      setLoadButton(row.querySelector('.actions [data-load], .actions [data-eject]'), name, loaded);
     }
   });
 
@@ -153,6 +160,12 @@
     return j.alias || j.model.replace(/^hf\.co\//, '');
   }
 
+  // "hf.co/owner/repo:quant" -> "owner/repo" ('' for anything else)
+  function hfRepo(model) {
+    const m = /^hf\.co\/([^/:]+\/[^/:]+)(?::.*)?$/.exec(model || '');
+    return m ? m[1] : '';
+  }
+
   function renderDownloads(jobs) {
     const box = document.getElementById('downloads');
     const list = document.getElementById('download-list');
@@ -161,8 +174,17 @@
     list.replaceChildren();
     for (const j of jobs) {
       const row = el('div', 'dl-row dl-' + j.state);
-      const name = el('div', 'dl-name', jobLabel(j));
-      name.title = j.model;
+      const name = el('div', 'dl-name');
+      const repo = hfRepo(j.model);
+      if (repo) {
+        const a = el('a', 'row-link', jobLabel(j));
+        a.href = '/discover/' + repo.split('/').map(encodeURIComponent).join('/');
+        a.title = j.model + ' · open on Discover';
+        name.append(a);
+      } else {
+        name.textContent = jobLabel(j);
+        name.title = j.model;
+      }
       row.append(name);
       if (j.state === 'running') {
         const pct = j.total ? Math.floor((j.completed * 100) / j.total) : 0;
@@ -178,7 +200,9 @@
         cancel.dataset.cancelPull = j.id;
         row.append(bar, el('div', 'dl-detail', detail), cancel);
       } else if (j.state === 'done') {
-        row.append(el('div', 'dl-detail good', j.warning || 'Downloaded'));
+        const chat = el('a', 'row-link small', 'Chat');
+        chat.href = '/chat?model=' + encodeURIComponent(j.alias || j.model);
+        row.append(el('div', 'dl-detail good', j.warning || 'Downloaded'), chat);
       } else if (j.state === 'failed') {
         row.append(el('div', 'dl-detail bad', j.error));
       } else {
@@ -285,5 +309,5 @@
     else alert(`Couldn't delete: ${await errorText(res)}`);
   });
 
-  window.ollamui = { post, errorText, refreshLoaded, setLoadButton, el, fmtBytes };
+  window.ollamui = { post, errorText, refreshLoaded, setLoadButton, el, fmtBytes, pollDownloads };
 })();

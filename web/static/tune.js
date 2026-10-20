@@ -56,6 +56,8 @@
     if (p?.options && key in p.options) return { value: p.options[key], from: 'preset' };
     if (key in defaults.options) return { value: defaults.options[key], from: 'model' };
     if (key in OLLAMA_DEFAULTS) return { value: OLLAMA_DEFAULTS[key], from: 'Ollama' };
+    if (key === 'num_ctx' && defaults.auto?.ctx) return { value: defaults.auto.ctx, from: 'auto' };
+    if (key === 'num_ctx' && defaults.ollamaContext) return { value: defaults.ollamaContext, from: 'Ollama' };
     return { value: null, from: null };
   }
 
@@ -119,8 +121,12 @@
         if (def.key === 'num_ctx' && defaults.contextLength) range.max = defaults.contextLength;
         range.value = val ?? def.min;
       }
-      let text = has ? (inh.value != null ? `${inh.from} value: ${fmt(inh.value)}` : 'changed') : inh.from ? `from ${inh.from}` : 'Ollama decides';
+      let text = has ? (inh.value != null ? `${inh.from} value: ${fmt(inh.value)}` : 'changed') : inh.from === 'auto' ? 'auto-picked' : inh.from ? `from ${inh.from}` : 'Ollama decides';
       if (def.hint) text += ` · ${def.hint}`;
+      if (def.key === 'num_ctx' && !has && defaults.auto?.reason) text += ` (${defaults.auto.reason})`;
+      if (def.key === 'num_ctx' && defaults.contextLength) {
+        text += ` · model supports up to ${Math.round(defaults.contextLength / 1024)}k. Prompt, thinking and reply all share this`;
+      }
       hint.textContent = text;
       reset.hidden = !has;
     }
@@ -290,6 +296,7 @@
       return { options: state.options, system: state.system, think: state.think };
     },
     baseModel,
+    open() { setOpen(true); },
   };
 
   loadDefaults();

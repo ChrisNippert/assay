@@ -222,8 +222,11 @@ func (c *Client) Copy(ctx context.Context, src, dst string) error {
 
 // Load loads a model into memory and keeps it there for keepAlive
 // (a duration like "30m", or "-1" for until ejected; empty means Ollama's default).
-func (c *Client) Load(ctx context.Context, model, keepAlive string) error {
+func (c *Client) Load(ctx context.Context, model, keepAlive string, options map[string]any) error {
 	req := map[string]any{"model": model, "stream": false}
+	if len(options) > 0 {
+		req["options"] = options
+	}
 	if keepAlive != "" {
 		req["keep_alive"] = keepAliveValue(keepAlive)
 	}

@@ -102,7 +102,7 @@ func TestClient(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := New(srv.URL, "")
-	repos, err := c.Search(context.Background(), SearchParams{Query: "qwen3", Author: "unsloth"})
+	repos, _, err := c.Search(context.Background(), SearchParams{Query: "qwen3", Author: "unsloth"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,8 +125,57 @@ func TestClient(t *testing.T) {
 func TestUnreachableIsReadable(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	srv.Close() // nothing listens here any more
-	_, err := New(srv.URL, "").Search(context.Background(), SearchParams{Query: "x"})
+	_, _, err := New(srv.URL, "").Search(context.Background(), SearchParams{Query: "x"})
 	if err == nil || err.Error() != "couldn't reach Hugging Face. Check your connection and try again" {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestSearchFollowsCursor(t *testing.T) {
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("cursor") {
+		case "":
+			w.Header().Set("Link", "<"+srv.URL+`/api/models?filter=gguf&cursor=two>; rel="next"`)
+			io.WriteString(w, `[{"id":"a/one-GGUF"},{"id":"a/two-GGUF"}]`)
+		case "two":
+			w.Header().Set("Link", "<"+srv.URL+`/api/models?filter=gguf&cursor=three>; rel="next"`)
+			io.WriteString(w, `[{"id":"a/three-GGUF"},{"id":"a/four-GGUF"}]`)
+		case "three":
+			io.WriteString(w, `[{"id":"a/five-GGUF"}]`)
+		}
+	}))
+	defer srv.Close()
+	c := New(srv.URL, "")
+
+	repos, truncated, err := c.Search(context.Background(), SearchParams{})
+	if err != nil || len(repos) != 5 || truncated {
+		t.Fatalf("all pages: %d repos, truncated=%v, err=%v", len(repos), truncated, err)
+	}
+	repos, truncated, err = c.Search(context.Background(), SearchParams{Max: 3})
+	if err != nil || len(repos) != 3 || !truncated || repos[2].ID != "a/three-GGUF" {
+		t.Fatalf("capped: %+v, truncated=%v, err=%v", repos, truncated, err)
+	}
+}
+
+func TestSearchIgnoresForeignNextLink(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Link", `<https://evil.example/api/models?cursor=x>; rel="next"`)
+		io.WriteString(w, `[{"id":"a/one-GGUF"}]`)
+	}))
+	defer srv.Close()
+	repos, _, err := New(srv.URL, "secret").Search(context.Background(), SearchParams{})
+	if err != nil || len(repos) != 1 || calls != 1 {
+		t.Fatalf("repos=%d calls=%d err=%v", len(repos), calls, err)
+	}
+}
+
+func TestIsChatModel(t *testing.T) {
+	for tag, want := range map[string]bool{"": true, "text-generation": true, "image-text-to-text": true, "text-to-image": false, "image-to-image": false} {
+		if got := (Repo{PipelineTag: tag}).IsChatModel(); got != want {
+			t.Errorf("IsChatModel(%q) = %v", tag, got)
+		}
 	}
 }

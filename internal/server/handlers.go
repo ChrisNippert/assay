@@ -94,8 +94,14 @@ func (s *Server) handleLoad(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
+	// Load with the context chats will use, so the first message doesn't
+	// have to reload the model.
+	var opts map[string]any
+	if auto := s.pickContext(r.Context(), req.Name, true); auto.Ctx > 0 {
+		opts = map[string]any{"num_ctx": auto.Ctx}
+	}
 	// Loaded from the UI means loaded until ejected, like Unsloth/LM Studio.
-	if err := s.ollama.Load(r.Context(), req.Name, "-1"); err != nil {
+	if err := s.ollama.Load(r.Context(), req.Name, "-1", opts); err != nil {
 		writeError(w, ollamaStatus(err), err.Error())
 		return
 	}
@@ -230,6 +236,15 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 	if system != "" {
 		msgs = append([]ollama.Message{{Role: "system", Content: system}}, msgs...)
 	}
+	// Without a context length from the chat or preset, Ollama would use its
+	// small default (4k on most GPUs), which thinking models fill quickly.
+	// Pick the largest that fits on the GPU instead.
+	var auto autoContext
+	if _, set := options["num_ctx"]; !set {
+		if auto = s.pickContext(r.Context(), c.Model, true); auto.Ctx > 0 {
+			options = presets.Merge(options, map[string]any{"num_ctx": auto.Ctx})
+		}
+	}
 	chatReq := ollama.ChatRequest{Model: c.Model, Messages: msgs, Options: options}
 	if think != nil {
 		chatReq.Think = *think
@@ -257,6 +272,12 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 		}
 		if resp.Done {
 			stats = statsFrom(resp)
+			switch n := options["num_ctx"].(type) {
+			case int:
+				stats.Context, stats.AutoContext = n, auto.Ctx > 0
+			case int64:
+				stats.Context = int(n)
+			}
 		}
 		return nil
 	})

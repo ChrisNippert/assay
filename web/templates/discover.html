@@ -1,6 +1,6 @@
 {{define "content"}}
 <div class="discover" id="discover" data-memory="{{json .Data}}">
-  <aside class="filters" aria-label="Filters">
+  <aside class="filters" id="filters" aria-label="Filters">
     <div class="filters-head"><span class="filters-title">Filters</span><button type="button" class="link-btn" id="f-clear">Clear all</button></div>
 
     <fieldset>
@@ -33,6 +33,7 @@
 
     <fieldset>
       <legend>Architecture</legend>
+      <p class="muted small hint">Tick some to show only those</p>
       <div id="f-arch" class="checklist"><span class="muted small">Search to see architectures</span></div>
     </fieldset>
 
@@ -57,6 +58,7 @@
 
   <section class="results-pane">
     <div class="search-row">
+      <button type="button" class="btn" id="filters-toggle" hidden aria-expanded="false" aria-controls="filters">Filters</button>
       <label class="sr-only" for="q">Search Hugging Face</label>
       <input id="q" type="search" placeholder="Search GGUF models on Hugging Face" autocomplete="off">
       <label class="sr-only" for="author">Uploader</label>
@@ -77,6 +79,11 @@
     </div>
     <div class="result-meta muted small" id="result-meta" aria-live="polite"></div>
     <div class="results" id="results"></div>
+    <button type="button" class="btn show-more" id="show-more" hidden></button>
   </section>
+
+  <aside class="detail-panel" id="detail-panel" aria-label="Model details" hidden>
+    <div id="detail-body"></div>
+  </aside>
 </div>
 {{end}}
