@@ -33,11 +33,15 @@
   let speaker = null;
   let state = '';
 
-  // With a model, this also has the server load the talker ahead of time.
+  // With a model, this also has the server load the talker ahead of time
+  // and start the speech service if it isn't running.
   async function checkStatus(model) {
-    try { status = await (await fetch('/api/voice' + (model ? '?model=' + encodeURIComponent(model) : ''))).json(); } catch { status = { available: false, error: 'Couldn’t reach ollamui.' }; }
-    btn.classList.toggle('unavailable', !status.available);
-    btn.title = status.available ? 'Talk (voice mode)' : status.error;
+    const q = model ? `?start=1&model=${encodeURIComponent(model)}` : '';
+    try { status = await (await fetch('/api/voice' + q)).json(); } catch { status = { available: false, error: 'Couldn’t reach ollamui.' }; }
+    // Stopped means "starts when you press it", which is fine.
+    const usable = status.available || status.stopped || status.starting;
+    btn.classList.toggle('unavailable', !usable);
+    btn.title = usable ? 'Talk (voice mode)' : status.error;
   }
   checkStatus();
 
@@ -67,7 +71,14 @@
       return;
     }
     await checkStatus(chat.model());
-    if (!status.available) { setState('error', status.error); return; }
+    // The first start installs the speech packages, which takes a minute.
+    for (let i = 0; status.starting && i < 240 && !bar.hidden; i++) {
+      setState('', i < 10 ? 'Starting speech…' : 'Starting speech… the first time downloads about 400 MB');
+      await new Promise((r) => setTimeout(r, 500));
+      await checkStatus(chat.model());
+    }
+    if (bar.hidden) return; // ended while starting
+    if (!status.available) { setState('error', status.error || 'The speech service didn’t start.'); return; }
     const st = status.settings || {};
     if (st.pauseMs >= 0) SENTENCE_PAUSE = st.pauseMs;
     [START_VOICED, LOUDNESS] = SENSITIVITY[st.sensitivity] || SENSITIVITY.normal;

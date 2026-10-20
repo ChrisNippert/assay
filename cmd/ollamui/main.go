@@ -25,6 +25,7 @@ import (
 	"ollamui/internal/scores"
 	"ollamui/internal/server"
 	"ollamui/internal/voice"
+	voiceserver "ollamui/tools/voice"
 )
 
 func main() {
@@ -41,6 +42,8 @@ func run() error {
 	configDir := flag.String("config", defaultDir("XDG_CONFIG_HOME", ".config"), "where presets and settings are stored")
 	voiceURL := flag.String("voice", envOr("OLLAMUI_VOICE", "http://127.0.0.1:8485"), "speech service for voice mode (OpenAI audio API); empty turns voice off")
 	sttModel := flag.String("stt-model", "", "speech-to-text model name to ask the speech service for")
+	voiceLaunch := flag.Bool("voice-launch", true, "start the bundled speech service (with uv) when voice mode is used, and stop it when idle")
+	voiceIdle := flag.Duration("voice-idle", 10*time.Minute, "stop the speech service ollamui started after this long without voice use (0 never)")
 	ttsVoice := flag.String("tts-voice", "", "voice to ask the speech service for")
 	debug := flag.Bool("debug", false, "log extra detail, e.g. how context lengths are picked")
 	var allowHosts []string
@@ -78,6 +81,11 @@ func run() error {
 		}
 		speech.STTModel, speech.TTSVoice = *sttModel, *ttsVoice
 	}
+	var launcher *voice.Launcher
+	if speech != nil && *voiceLaunch {
+		launcher = voice.NewLauncher(speech, voiceserver.Script, log)
+		launcher.Idle = *voiceIdle
+	}
 	voiceSettings, err := voice.OpenSettings(filepath.Join(*configDir, "voice.json"))
 	if err != nil {
 		return fmt.Errorf("voice settings: %w", err)
@@ -90,6 +98,7 @@ func run() error {
 		Pulls:         pulls.New(client, log),
 		Scores:        scoreStore,
 		Voice:         speech,
+		VoiceLauncher: launcher,
 		VoiceSettings: voiceSettings,
 		Memory:        mem,
 		AllowHosts:    allowHosts,
@@ -103,6 +112,13 @@ func run() error {
 	defer stop()
 
 	go scoreStore.Run(ctx)
+	launcherDone := make(chan struct{})
+	go func() {
+		defer close(launcherDone)
+		if launcher != nil {
+			launcher.Run(ctx) // stops the speech service when ollamui exits
+		}
+	}()
 
 	checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	if v, err := client.Version(checkCtx); err != nil {
@@ -133,6 +149,7 @@ func run() error {
 	}
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	<-launcherDone
 	if err := hs.Shutdown(shutdownCtx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		return err
 	}

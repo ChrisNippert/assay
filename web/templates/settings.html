@@ -3,7 +3,8 @@
 <div class="column settings">
   {{with .Data.Voice}}
   <h2 class="group-title" id="voice">Voice</h2>
-  {{if .Status.Available}}<p class="muted small">Used by the mic button in chat. Changes save right away.</p>
+  {{if .Status.Available}}<p class="muted small">Used by the mic button in chat. The speech service is running{{if .Status.Managed}}; ollamui stops it after 10 minutes without voice use{{end}}. Changes save right away.</p>
+  {{else if .Status.Stopped}}<p class="muted small">Used by the mic button in chat. The speech service isn't running: it {{.Status.Error | lower}} Changes save right away.</p>
   {{else}}<p class="small settings-warn">{{.Status.Error}}</p>{{end}}
   <div class="boxed-list" id="voice-list" data-settings="{{json .Settings}}">
     <div class="row">

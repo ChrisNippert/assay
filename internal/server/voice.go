@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -78,6 +79,11 @@ type voiceStatus struct {
 	Talker string `json:"talker"`
 	// Settings carries what the browser needs: pause and sensitivity.
 	Settings voice.Settings `json:"settings"`
+	// Starting: ollamui is starting the service. Stopped: it isn't running
+	// and will be started on demand. Managed: ollamui started it.
+	Starting bool `json:"starting,omitempty"`
+	Stopped  bool `json:"stopped,omitempty"`
+	Managed  bool `json:"managed,omitempty"`
 }
 
 func (s *Server) handleVoiceStatus(w http.ResponseWriter, r *http.Request) {
@@ -85,21 +91,61 @@ func (s *Server) handleVoiceStatus(w http.ResponseWriter, r *http.Request) {
 	if m := r.URL.Query().Get("model"); m != "" {
 		st.Talker = s.warmTalker(m)
 	}
-	if s.voice == nil {
-		st.Error = "no speech service configured (start ollamui with -voice URL)"
-	} else if err := s.voice.Available(r.Context()); err != nil {
-		st.URL = s.voice.URL()
-		st.Error = "speech service at " + s.voice.URL() + " isn't answering. Start it with: uv run tools/voice/voice_server.py"
-	} else {
-		st.Available, st.URL = true, s.voice.URL()
-	}
+	s.fillSpeechStatus(r.Context(), &st, r.URL.Query().Get("start") == "1")
 	writeJSON(w, http.StatusOK, st)
+}
+
+// fillSpeechStatus says whether the speech service is up, starting it
+// first if start is set and ollamui manages it.
+func (s *Server) fillSpeechStatus(ctx context.Context, st *voiceStatus, start bool) {
+	if s.voice == nil {
+		st.Error = "Voice mode is off (ollamui was started with -voice \"\")."
+		return
+	}
+	st.URL = s.voice.URL()
+	err := s.speechReady(ctx, start, false)
+	switch {
+	case err == nil:
+		st.Available = true
+	case errors.Is(err, voice.ErrStarting):
+		st.Starting = true
+	case s.speech != nil && !start:
+		st.Error = "Starts when you press the mic in chat, and stops after 10 minutes without voice use."
+		st.Stopped = true
+	case s.speech != nil:
+		st.Error = err.Error()
+	default:
+		st.Error = "The speech service at " + s.voice.URL() + " isn't answering. Start it with: uv run tools/voice/voice_server.py"
+	}
+	st.Managed = s.speech != nil && s.speech.Managed()
+}
+
+// speechReady checks the speech service. With start, a service ollamui
+// manages is started; with wait, it waits (up to two minutes, the first
+// start installs packages) until it answers.
+func (s *Server) speechReady(ctx context.Context, start, wait bool) error {
+	if s.voice == nil {
+		return errors.New("no speech service configured")
+	}
+	if s.speech == nil {
+		return s.voice.Available(ctx)
+	}
+	if wait {
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer cancel()
+		return s.speech.Wait(ctx)
+	}
+	return s.speech.Ready(ctx, start)
 }
 
 // handleTranscribe turns a recording (the request body) into text.
 func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 	if s.voice == nil {
 		writeError(w, http.StatusServiceUnavailable, "no speech service configured")
+		return
+	}
+	if err := s.speechReady(r.Context(), true, true); err != nil {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
 	audio, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 25<<20))
@@ -127,6 +173,10 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSpeak(w http.ResponseWriter, r *http.Request) {
 	if s.voice == nil {
 		writeError(w, http.StatusServiceUnavailable, "no speech service configured")
+		return
+	}
+	if err := s.speechReady(r.Context(), true, true); err != nil {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
 	// Voice and Speed override the saved settings, for previews.
@@ -654,13 +704,7 @@ func (s *Server) voicePage(ctx context.Context) voicePage {
 	for _, m := range voice.STTModels {
 		v.STTModels = append(v.STTModels, sttChoice{m.Name, m.Note})
 	}
-	if s.voice == nil {
-		v.Status.Error = "No speech service configured (start ollamui with -voice URL)."
-	} else if err := s.voice.Available(ctx); err != nil {
-		v.Status.Error = "The speech service at " + s.voice.URL() + " isn't answering. Start it with: uv run tools/voice/voice_server.py"
-	} else {
-		v.Status.Available, v.Status.URL = true, s.voice.URL()
-	}
+	s.fillSpeechStatus(ctx, &v.Status, false)
 	ids := kokoroVoices
 	if v.Status.Available {
 		if list, err := s.voice.Voices(ctx); err == nil && len(list) > 0 {

@@ -43,6 +43,8 @@ type Options struct {
 	Voice *voice.Client
 	// VoiceSettings are voice mode's preferences. Required.
 	VoiceSettings *voice.SettingsStore
+	// VoiceLauncher, if set, starts the speech service on demand.
+	VoiceLauncher *voice.Launcher
 	Memory        hw.Memory
 	// AllowHosts are extra hostnames (besides localhost and IP addresses)
 	// the UI may be reached by, e.g. a Tailscale machine name.
@@ -60,6 +62,7 @@ type Server struct {
 	scores  *scores.Store
 	voice   *voice.Client
 	voiceSt *voice.SettingsStore
+	speech  *voice.Launcher
 	search  searchCache
 	env     envCache
 	ctxBase sync.Map // model name → measured weight memory, for picking context
@@ -79,7 +82,7 @@ type Server struct {
 func New(opts Options) (*Server, error) {
 	s := &Server{
 		ollama: opts.Ollama, chats: opts.Chats, presets: opts.Presets,
-		hf: opts.HF, pulls: opts.Pulls, scores: opts.Scores, voice: opts.Voice, voiceSt: opts.VoiceSettings, memory: opts.Memory, log: opts.Logger,
+		hf: opts.HF, pulls: opts.Pulls, scores: opts.Scores, voice: opts.Voice, voiceSt: opts.VoiceSettings, speech: opts.VoiceLauncher, memory: opts.Memory, log: opts.Logger,
 		vramUsed: hw.VRAMUsed,
 	}
 	if s.voiceSt == nil {
@@ -332,6 +335,12 @@ var templateFuncs = template.FuncMap{
 		return string(b), err
 	},
 	"deref":     func(b *bool) bool { return b != nil && *b },
+	"lower": func(s string) string {
+		if s == "" {
+			return s
+		}
+		return strings.ToLower(s[:1]) + s[1:]
+	},
 	"hasChoice": func(list []string, v string) bool { return slices.Contains(list, v) },
 	"billions": func(n int64) string {
 		if n <= 0 {

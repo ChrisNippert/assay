@@ -55,7 +55,7 @@ browser ──HTTP──► ollamui (Go) ──HTTP──► Ollama :11434 ◄�
                      ├── internal/voice    client for an OpenAI-style audio API (STT + TTS)
                      ├── internal/server   pages, JSON API, streaming, host/CSRF guards
                      └── web/              templates, CSS, small vanilla JS (embedded)
-tools/voice/voice_server.py   the speech service: faster-whisper + Kokoro, run with uv
+tools/voice/voice_server.py   the speech service: faster-whisper + Kokoro (embedded, run with uv on demand)
 ```
 
 ### internal/ollama
@@ -140,8 +140,16 @@ transcript ─► /api/chat {voice: true} ─► main model on the GPU (thinks, 
   CPU, so the GPU stays free; Whisper, Kokoro and the talker each get their
   own share of the cores, since on a shared pool transcription slowed from
   1 s to 7.5 s mid-reply); `-voice URL` points ollamui at it or at any
-  compatible server (speaches, …). It's the one exception to "single
-  binary": optional, and Ollama is already a separate service too.
+  compatible server (speaches, …).
+- **Started on demand.** The script is embedded in the ollamui binary. When
+  the mic is pressed and nothing answers on the speech URL, ollamui writes it
+  to `~/.cache/ollamui/` and runs it with `uv run --script` in its own
+  process group; it stops it after `-voice-idle` (10 min) without voice use
+  and when ollamui exits. The first start installs the Python packages
+  (about a minute); later starts take seconds. A service someone else
+  started is used and left alone. `-voice-launch=false` turns this off,
+  `-voice ""` turns voice off. Nothing about voice is needed for the rest of
+  the app.
 - **Browser.** An AudioWorklet feeds 20 ms frames to a speech detector with
   an adaptive noise floor and 300 ms of pre-roll. A frame counts as voice
   when it's loud without being a click (peak/RMS under 7), and an utterance

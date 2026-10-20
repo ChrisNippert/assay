@@ -24,8 +24,6 @@ Voice mode shipped 2026-10-20 (see Done). Open:
 - **Better speech detection.** Typing no longer triggers it (click filter,
   sustained-voice window, duck-then-confirm interrupts). Silero VAD
   (onnxruntime-web, ~2 MB) if other noise still causes false starts. (M)
-- **Speech service as a user service.** A systemd `--user` unit snippet so
-  it starts with the session. (S)
 
 ### 1. Intelligence score and benchmarks (L)
 
@@ -128,6 +126,10 @@ Most of the 2026-10-20 list is done (see Done). Still open:
 - **Chat search** across saved chats. (M)
 
 ## Done
+
+- The speech service is started by ollamui when the mic is pressed (embedded
+  script, `uv run`), and stopped after 10 idle minutes or when ollamui exits;
+  nothing runs in the background otherwise (2026-10-20).
 
 - Settings → Voice (2026-10-20): filler model, voice + preview, speed,
   sentence pause, Whisper model, detection sensitivity, prose prompt; saved
