@@ -60,14 +60,68 @@
     return html;
   }
 
-  // Code fences alternate with prose. An unclosed fence (mid-stream) still
-  // renders as code.
-  function renderMarkdown(src) {
-    return src
-      .split(/^```.*$/m)
-      .map((part, i) => (i % 2 ? `<pre><code>${esc(part.replace(/^\n/, '').replace(/\n$/, ''))}</code></pre>` : blocks(part)))
-      .join('');
+  function codeBlock(code, lang) {
+    return `<div class="code"><div class="code-head"><span>${esc(lang)}</span>` +
+      '<button type="button" class="copy-btn" title="Copy code">Copy</button></div>' +
+      `<pre><code>${esc(code)}</code></pre></div>`;
   }
+
+  // Splits out ``` fences; the rest is prose. An unclosed fence (mid-stream)
+  // still renders as code.
+  function renderMarkdown(src) {
+    let html = '';
+    let prose = [];
+    let code = null;
+    let lang = '';
+    const flushProse = () => {
+      if (prose.length) html += blocks(prose.join('\n'));
+      prose = [];
+    };
+    for (const line of src.split('\n')) {
+      const fence = line.match(/^\s*```\s*([\w+#.-]*)/);
+      if (fence && code === null) {
+        flushProse();
+        code = [];
+        lang = fence[1];
+      } else if (fence) {
+        html += codeBlock(code.join('\n'), lang);
+        code = null;
+      } else if (code !== null) {
+        code.push(line);
+      } else {
+        prose.push(line);
+      }
+    }
+    if (code !== null) html += codeBlock(code.join('\n'), lang);
+    flushProse();
+    return html;
+  }
+
+  // The clipboard API needs a secure context (localhost or HTTPS); over plain
+  // HTTP, e.g. a Tailscale address, fall back to a hidden textarea.
+  async function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+    const area = el('textarea');
+    area.value = text;
+    area.style.cssText = 'position:fixed;opacity:0';
+    document.body.append(area);
+    area.select();
+    const ok = document.execCommand('copy');
+    area.remove();
+    if (!ok) throw new Error('copy failed');
+  }
+
+  list.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.copy-btn');
+    if (!btn) return;
+    try {
+      await copyText(btn.closest('.code').querySelector('code').textContent);
+      btn.textContent = 'Copied';
+    } catch {
+      btn.textContent = 'Couldn’t copy';
+    }
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+  });
 
   for (const md of list.querySelectorAll('.md')) md.innerHTML = renderMarkdown(md.textContent);
 
