@@ -23,8 +23,9 @@ Voice mode shipped 2026-10-20 (see Done). Open:
 - **Overthinking.** Qwen3.5-9B still thinks 20–90 s on easy questions. A
   router (talker decides "easy → answer without thinking") or a think
   budget would cut that. (M)
-- **Better speech detection.** The energy detector is fine in a quiet room;
-  Silero VAD (onnxruntime-web, ~2 MB) if noise causes false starts. (M)
+- **Better speech detection.** Typing no longer triggers it (click filter,
+  sustained-voice window, duck-then-confirm interrupts). Silero VAD
+  (onnxruntime-web, ~2 MB) if other noise still causes false starts. (M)
 - **Speech service as a user service.** A systemd `--user` unit snippet so
   it starts with the session. (S)
 

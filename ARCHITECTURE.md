@@ -137,7 +137,9 @@ transcript ─► /api/chat {voice: true} ─► main model on the GPU (thinks, 
 - **Speech service.** A separate local process with OpenAI's audio API
   (`/v1/audio/transcriptions`, `/v1/audio/speech`). `tools/voice/voice_server.py`
   is the bundled one (faster-whisper `small.en` + Kokoro int8, both on the
-  CPU, so the GPU stays free); `-voice URL` points ollamui at it or at any
+  CPU, so the GPU stays free; Whisper, Kokoro and the talker each get their
+  own share of the cores, since on a shared pool transcription slowed from
+  1 s to 7.5 s mid-reply); `-voice URL` points ollamui at it or at any
   compatible server (speaches, …). It's the one exception to "single
   binary": optional, and Ollama is already a separate service too.
 - **Browser.** An AudioWorklet feeds 20 ms frames to a speech detector with
@@ -158,7 +160,7 @@ transcript ─► /api/chat {voice: true} ─► main model on the GPU (thinks, 
   short first-person line at a time ("I'm checking how the angle of the sun
   changes things"): a lead-in at once, then a new line whenever the speech
   is about to run out and there's enough new thinking, with growing gaps on
-  long thinks. It runs on the CPU (`num_gpu: 0`, 4k context): no VRAM, no GPU
+  long thinks. It runs on the CPU (`num_gpu: 0`, 4k context, 4 threads): no VRAM, no GPU
   contention, and no need for Ollama to serve two requests on one model,
   which hybrid models like Qwen3.5 can't. ollamui picks the largest
   installed chat model under 3 GB and loads it when voice mode starts.
