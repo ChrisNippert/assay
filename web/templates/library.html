@@ -1,39 +1,82 @@
 {{define "appbar"}}<h1 class="appbar-title">Library</h1><span class="muted small">{{len .ModelGroups}} installed</span>{{end}}
 {{define "content"}}
-<div class="page">
+<div class="page lib">
 
   {{if .Models}}
-  <div class="table-wrap">
-    <table class="models">
-      <thead>
-        <tr><th>Model</th><th>Family</th><th>Params</th><th>Quant</th><th>Size</th><th>Modified</th><th>Memory</th><th><span class="sr-only">Actions</span></th></tr>
-      </thead>
-      <tbody>
-      {{range .ModelGroups}}
-        {{$g := .}}{{with .Primary}}
-        <tr data-model="{{.Name}}" data-names="{{$g.NamesJoined}}">
-          <td class="name">{{if $g.HFRepo}}<a class="row-link" href="/discover?author={{$g.Owner}}&amp;open={{$g.HFRepo}}" title="Open on Discover">{{.Name}}</a>{{else}}<a class="row-link" href="/chat?model={{.Name}}" title="Chat with {{.Name}}">{{.Name}}</a>{{end}}{{with $g.Others}}<div class="muted small">also: {{range $i, $o := .}}{{if $i}}, {{end}}{{$o}}{{end}}</div>{{end}}</td>
-          <td>{{.Details.Family}}</td>
-          <td>{{.Details.ParameterSize}}</td>
-          <td class="mono">{{.Details.QuantizationLevel}}</td>
-          <td>{{bytes .Size}}</td>
-          <td class="muted">{{ago .ModifiedAt}}</td>
-          <td class="status">{{if $g.Loaded}}<button type="button" class="status-btn good" data-eject="{{$g.EjectName}}" title="Click to eject">● Loaded</button>{{else}}<button type="button" class="status-btn muted" data-load="{{.Name}}" title="Click to load">—</button>{{end}}</td>
-          <td><div class="actions">
-            {{if $g.Loaded}}<button type="button" class="btn" data-eject="{{$g.EjectName}}">Eject</button>{{else}}<button type="button" class="btn" data-load="{{.Name}}">Load</button>{{end}}
-            <a class="btn" href="/chat?model={{.Name}}">Chat</a>
-            <button type="button" class="btn danger" data-delete="{{.Name}}">Delete</button>
-          </div></td>
-        </tr>
-        {{end}}
-      {{end}}
-      </tbody>
-    </table>
+  <div class="lib-tools">
+    <div class="lib-summary muted"><span id="lib-count">{{len .ModelGroups}}</span> models · {{bytes .DiskUsed}} on disk</div>
+    <div class="lib-bar">
+      <input type="search" id="lib-filter" class="lib-filter" placeholder="Filter models" aria-label="Filter models" autocomplete="off">
+      <div class="chips" role="group" aria-label="Sort">
+        <button type="button" class="chip on" data-sort="name">Name</button>
+        <button type="button" class="chip" data-sort="size">Size</button>
+        <button type="button" class="chip" data-sort="recent">Recent</button>
+      </div>
+    </div>
   </div>
+  <div class="boxed-list" id="lib-list">
+    {{range .ModelGroups}}
+    {{$g := .}}{{with .Primary}}
+    <div class="row lib-row" data-model="{{.Name}}" data-names="{{$g.NamesJoined}}" data-size="{{.Size}}" data-mod="{{.ModifiedAt.Unix}}">
+      <div class="row-text">
+        <div class="row-title lib-title">
+          {{if $g.HFRepo}}<a class="row-link" href="/discover?author={{$g.Owner}}&amp;open={{$g.HFRepo}}" title="{{.Name}} (open on Discover)">{{$g.ShortName}}</a>{{else}}<a class="row-link" href="/chat?model={{.Name}}" title="{{.Name}} (chat)">{{.Name}}</a>{{end}}
+          {{with $g.PrimaryOwner}}<span class="lib-owner muted">{{.}}</span>{{end}}
+          <span class="status">{{if $g.Loaded}}<button type="button" class="status-btn tag good" data-eject="{{$g.EjectName}}" title="Loaded. Click to eject">● Loaded</button>{{end}}</span>
+        </div>
+        <div class="row-sub">{{with .Details.Family}}{{.}}{{end}}{{with .Details.ParameterSize}} · {{.}}{{end}}{{with .Details.QuantizationLevel}} · <span class="mono">{{.}}</span>{{end}} · {{bytes .Size}} · {{ago .ModifiedAt}}{{with $g.Others}} · also: {{range $i, $o := .}}{{if $i}}, {{end}}{{$o}}{{end}}{{end}}</div>
+      </div>
+      <div class="row-ctrl actions">
+        {{if $g.Loaded}}<button type="button" class="btn" data-eject="{{$g.EjectName}}">Eject</button>{{else}}<button type="button" class="btn" data-load="{{.Name}}">Load</button>{{end}}
+        <a class="btn primary" href="/chat?model={{.Name}}">Chat</a>
+        <button type="button" class="icon-btn lib-del" data-delete="{{.Name}}" title="Delete {{.Name}}" aria-label="Delete {{.Name}}"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9h6.6L12 4M6.5 6.5v4.5M9.5 6.5v4.5"/></svg></button>
+      </div>
+    </div>
+    {{end}}
+    {{end}}
+  </div>
+  <p class="muted lib-none" id="lib-none" hidden>No models match.</p>
+  <script>
+  (() => {
+    const list = document.getElementById('lib-list');
+    const filter = document.getElementById('lib-filter');
+    const none = document.getElementById('lib-none');
+    const count = document.getElementById('lib-count');
+    let sort = 'name';
+    const rows = () => [...list.querySelectorAll('.lib-row')];
+    function apply() {
+      const q = filter.value.trim().toLowerCase();
+      let shown = 0;
+      for (const r of rows()) {
+        const hit = !q || (r.dataset.names + ' ' + r.textContent).toLowerCase().includes(q);
+        r.hidden = !hit;
+        if (hit) shown++;
+      }
+      none.hidden = shown > 0 || rows().length === 0;
+      count.textContent = rows().length;
+    }
+    function order() {
+      const key = {
+        name: (a, b) => a.dataset.model.localeCompare(b.dataset.model),
+        size: (a, b) => b.dataset.size - a.dataset.size,
+        recent: (a, b) => b.dataset.mod - a.dataset.mod,
+      }[sort];
+      list.append(...rows().sort(key));
+    }
+    filter.addEventListener('input', apply);
+    document.querySelectorAll('[data-sort]').forEach((c) => c.addEventListener('click', () => {
+      sort = c.dataset.sort;
+      document.querySelectorAll('[data-sort]').forEach((o) => o.classList.toggle('on', o === c));
+      order();
+    }));
+    new MutationObserver(apply).observe(list, { childList: true });
+  })();
+  </script>
   {{else if not .OllamaErr}}
-  <div class="empty">
-    <p>No models installed yet. Until Discover lands, pull one from a terminal:</p>
-    <pre>ollama pull hf.co/unsloth/Qwen3-8B-GGUF:Q4_K_M</pre>
+  <div class="lib-empty">
+    <h2>No models yet</h2>
+    <p class="muted">Find a GGUF model on Hugging Face and pull it into Ollama in one click.</p>
+    <a class="btn primary" href="/discover">Browse Discover</a>
   </div>
   {{end}}
 </div>

@@ -110,13 +110,13 @@
 
     if (btn.dataset.delete) {
       const name = btn.dataset.delete;
-      const all = (btn.closest('tr')?.dataset.names || name).split(' ');
+      const all = (btn.closest('[data-names]')?.dataset.names || name).split(' ');
       const label = all.length > 1 ? `${name}\n(also ${all.slice(1).join(', ')})` : name;
       if (!confirm(`Delete ${label} from disk?\n\nOther apps using Ollama will lose it too.`)) return;
       btn.disabled = true;
       try {
         await post('/api/models/delete', { names: all });
-        btn.closest('tr')?.remove();
+        btn.closest('[data-names]')?.remove();
         refreshLoaded();
       } catch (err) {
         alert(`Couldn't delete ${name}: ${err.message}`);
@@ -142,18 +142,22 @@
   // Library rows follow load/eject changes made anywhere on the page.
   document.addEventListener('loaded-changed', (e) => {
     const names = new Set(e.detail.map((m) => m.name));
-    for (const row of document.querySelectorAll('tr[data-model]')) {
+    for (const row of document.querySelectorAll('.lib-row[data-model]')) {
       if (!row.querySelector('.status')) continue;
       const rowNames = (row.dataset.names || row.dataset.model).split(' ');
       const loadedAs = rowNames.find((n) => names.has(n));
       const loaded = !!loadedAs;
       const name = loadedAs || row.dataset.model;
       const status = row.querySelector('.status');
-      const sb = el('button', 'status-btn ' + (loaded ? 'good' : 'muted'), loaded ? '● Loaded' : '—');
-      sb.type = 'button';
-      sb.title = loaded ? 'Click to eject' : 'Click to load';
-      sb.dataset[loaded ? 'eject' : 'load'] = name;
-      status.replaceChildren(sb);
+      if (loaded) {
+        const sb = el('button', 'status-btn tag good', '● Loaded');
+        sb.type = 'button';
+        sb.title = 'Loaded. Click to eject';
+        sb.dataset.eject = name;
+        status.replaceChildren(sb);
+      } else {
+        status.replaceChildren();
+      }
       setLoadButton(row.querySelector('.actions [data-load], .actions [data-eject]'), name, loaded);
     }
   });
@@ -315,5 +319,75 @@
     else alert(`Couldn't delete: ${await errorText(res)}`);
   });
 
-  window.ollamui = { post, errorText, refreshLoaded, setLoadButton, el, fmtBytes, pollDownloads };
+  // ---- sidebar chats ----
+  const trashIcon = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>';
+  const chatListEl = document.getElementById('chat-list');
+  const chatFilter = document.getElementById('chat-filter');
+
+  function applyChatFilter() {
+    if (!chatListEl) return;
+    const q = (chatFilter?.value || '').trim().toLowerCase();
+    for (const row of chatListEl.querySelectorAll('.chat-row')) {
+      row.hidden = !!q && !row.querySelector('.chat-link').textContent.toLowerCase().includes(q);
+    }
+    for (const g of chatListEl.querySelectorAll('.chat-group')) {
+      g.hidden = !g.querySelector('.chat-row:not([hidden])');
+    }
+  }
+  chatFilter?.addEventListener('input', applyChatFilter);
+
+  // Adds a newly created chat to the top of the Today group (creating it if missing).
+  function addSidebarChat(id, title) {
+    if (!chatListEl) return;
+    for (const a of chatListEl.querySelectorAll('.active')) a.classList.remove('active');
+    let group = chatListEl.querySelector('.chat-group');
+    if (group?.querySelector('.chat-group-label')?.textContent !== 'Today') {
+      group = el('div', 'chat-group');
+      group.append(el('div', 'chat-group-label', 'Today'));
+      chatListEl.prepend(group);
+    }
+    const row = el('div', 'chat-row');
+    const a = el('a', 'chat-link active', title.split('\n')[0].slice(0, 60));
+    a.href = `/chat/${id}`;
+    a.title = a.textContent;
+    const del = el('button', 'icon-btn chat-del');
+    del.type = 'button';
+    del.dataset.chatDel = id;
+    del.title = 'Delete chat';
+    del.setAttribute('aria-label', 'Delete chat');
+    del.innerHTML = trashIcon;
+    row.append(a, del);
+    group.querySelector('.chat-group-label').after(row);
+    group.hidden = false;
+    if (chatFilter && chatListEl.querySelectorAll('.chat-row').length > 8) chatFilter.hidden = false;
+  }
+
+  chatListEl?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-chat-del]');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const id = btn.dataset.chatDel;
+    const row = btn.closest('.chat-row');
+    btn.disabled = true;
+    const res = await fetch(`/api/chats/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (!res.ok) {
+      btn.disabled = false;
+      alert(`Couldn't delete chat: ${await errorText(res)}`);
+      return;
+    }
+    if (document.getElementById('chat')?.dataset.chatId === id || row.querySelector('.chat-link.active')) {
+      location.href = '/chat';
+      return;
+    }
+    row.classList.add('removing');
+    setTimeout(() => {
+      const group = row.closest('.chat-group');
+      row.remove();
+      if (group && !group.querySelector('.chat-row')) group.remove();
+      applyChatFilter();
+    }, 200);
+  });
+
+  window.ollamui = { addSidebarChat, post, errorText, refreshLoaded, setLoadButton, el, fmtBytes, pollDownloads };
 })();

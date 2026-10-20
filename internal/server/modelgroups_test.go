@@ -45,3 +45,21 @@ func TestDeleteMultipleNames(t *testing.T) {
 		t.Fatalf("empty: %d", rec.Code)
 	}
 }
+
+func TestShortNameAndDiskUsed(t *testing.T) {
+	ms := []ollama.Model{
+		{Name: "hf.co/unsloth/Qwen3-8B-GGUF:Q4_K_M", Digest: "a", Size: 5e9},
+		{Name: "qwen3:8b", Digest: "a", Size: 5e9},
+		{Name: "hf.co/x/y:Q4", Digest: "b", Size: 2e9},
+	}
+	g := groupModels(ms)
+	if g[0].ShortName() != "y:Q4" || g[0].PrimaryOwner() != "x" {
+		t.Fatalf("short %q owner %q", g[0].ShortName(), g[0].PrimaryOwner())
+	}
+	if g[1].ShortName() != "qwen3:8b" || g[1].PrimaryOwner() != "" {
+		t.Fatalf("plain name: %q", g[1].ShortName())
+	}
+	if got := (&page{Models: ms}).DiskUsed(); got != 7e9 {
+		t.Fatalf("disk used %d", got)
+	}
+}

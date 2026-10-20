@@ -162,6 +162,9 @@ type sendRequest struct {
 	Options map[string]any `json:"options"`
 	System  string         `json:"system"`
 	Think   *bool          `json:"think"`
+	// FromUser, when set, drops that user message (counting user messages
+	// from 0) and everything after it before sending: edit and regenerate.
+	FromUser *int `json:"fromUser"`
 }
 
 // event is one line of the NDJSON stream sent back to the browser.
@@ -217,6 +220,12 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 	} else {
 		c = chats.New(req.Model)
 		c.Title = titleFrom(req.Content)
+	}
+	if req.FromUser != nil {
+		if !c.TruncateAtUser(*req.FromUser) {
+			writeError(w, http.StatusBadRequest, "no such message")
+			return
+		}
 	}
 	c.Model = req.Model // switching models mid-chat is allowed
 	c.Preset, c.Options, c.System, c.Think = req.Preset, overrides, req.System, req.Think

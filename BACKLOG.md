@@ -73,22 +73,15 @@ installed version (0.40.x) before building UI for it.
   same family, draft token count. If not, record that and drop it or
   revisit later.
 
-### 3. Design ideas (proposed 2026-10-20, not yet chosen)
+### 3. Design ideas (remaining)
 
-In the order I'd suggest:
+Most of the 2026-10-20 list is done (see Done). Still open:
 
 1. **Downloads in the app bar.** A progress indicator beside the memory
    pills, with a popover for details, replacing the sidebar list.
-2. **Model switcher card.** A searchable popover instead of the plain
-   `<select>`, showing size, fit, context, and presets with a ★.
-3. **Message actions.** Copy a whole reply, regenerate, and edit and resend
-   the last message.
-4. **Chat sidebar.** Group chats by Today, Yesterday and Earlier; rename and
-   delete on hover; search.
-5. **Empty chat screen.** Show the loaded model, suggested prompts, and
-   recent presets.
-6. **Library as rows instead of a table,** each with a GPU-fit bar at the
-   current context.
+2. **Polish on what shipped:** renaming chats from the sidebar; a GPU-fit
+   bar on Library rows; "fits on GPU" hints and a ★ for presets in the model
+   switcher; showing recent presets on the empty chat screen.
 
 ## Later
 
@@ -116,6 +109,15 @@ In the order I'd suggest:
 
 ## Done
 
+- Chat polish (2026-10-20):
+  - A model switcher card replaces the plain select. It is searchable and
+    shows loaded state and size.
+  - Message actions: copy, edit and resend (any user message), and
+    regenerate. On the server this is `fromUser` on `/api/chat`.
+  - The empty chat screen has suggested prompts and a load-state hint.
+  - Sidebar chats have a + button, delete on hover, date groups, and a
+    search box when there are more than 8.
+  - Library is rows with a filter, sort, and a disk total.
 - App bar on every page, with loaded models as pills (size, context, eject).
   Tune is restyled like GNOME/libadwaita, with collapsible Sampling and More
   settings groups. Code blocks get a copy button. Models that share a digest

@@ -191,6 +191,22 @@ func TestChatStreamsAndSaves(t *testing.T) {
 	if len(last.Messages) != 3 || last.Messages[1].Thinking != "" {
 		t.Fatalf("history sent = %+v", last.Messages)
 	}
+
+	// Editing the second user message replaces it and its reply.
+	rec = do(s, "POST", "/api/chat", `{"chatId":"`+c.ID+`","model":"qwen3:8b","content":"edited","fromUser":1}`)
+	if rec.Code != 200 {
+		t.Fatalf("status %d", rec.Code)
+	}
+	last = fake.chatReqs[len(fake.chatReqs)-1]
+	if len(last.Messages) != 3 || last.Messages[2].Content != "edited" {
+		t.Fatalf("history after edit = %+v", last.Messages)
+	}
+	if c, _ = store.Get(c.ID); len(c.Messages) != 4 || c.Messages[2].Content != "edited" {
+		t.Fatalf("chat after edit = %+v", c.Messages)
+	}
+	if rec = do(s, "POST", "/api/chat", `{"chatId":"`+c.ID+`","model":"qwen3:8b","content":"x","fromUser":5}`); rec.Code != 400 {
+		t.Errorf("out-of-range fromUser: status %d, want 400", rec.Code)
+	}
 }
 
 func TestChatErrorEvent(t *testing.T) {

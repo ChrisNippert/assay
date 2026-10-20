@@ -1,15 +1,24 @@
 {{define "appbar"}}
-    <label class="sr-only" for="model">Model or preset</label>
-    <select id="model" class="model-select">
+        <select id="model" hidden>
       {{if .Presets}}<optgroup label="Presets">
         {{range .Presets}}<option value="preset:{{.Name}}" data-base="{{.Base}}"{{if eq .Name $.Data.Preset}} selected{{end}}>{{.Name}}</option>{{end}}
       </optgroup>{{end}}
       <optgroup label="Models">
-        {{range .ModelGroups}}{{$g := .}}{{with .Primary}}<option value="{{.Name}}" data-base="{{.Name}}" data-names="{{$g.NamesJoined}}" data-meta="{{.Details.Family}} · {{.Details.ParameterSize}} · {{.Details.QuantizationLevel}}"{{if and (not $.Data.Preset) ($g.Has $.Data.Model)}} selected{{end}}>{{.Name}}</option>{{end}}{{end}}
+        {{range .ModelGroups}}{{$g := .}}{{with .Primary}}<option value="{{.Name}}" data-base="{{.Name}}" data-names="{{$g.NamesJoined}}" data-meta="{{.Details.Family}} · {{.Details.ParameterSize}} · {{.Details.QuantizationLevel}}" data-size="{{bytes .Size}}"{{if and (not $.Data.Preset) ($g.Has $.Data.Model)}} selected{{end}}>{{.Name}}</option>{{end}}{{end}}
       </optgroup>
       {{if not .Models}}<option value="">No models installed</option>{{end}}
     </select>
-    <span class="muted small" id="model-meta"></span>
+    <div class="switcher">
+      <button type="button" class="switcher-btn" id="switcher-btn" aria-haspopup="listbox" aria-expanded="false" aria-controls="switcher-card" title="Choose a model or preset">
+        <span class="switcher-label"><span class="switcher-name" id="switcher-name">Choose a model</span><span class="switcher-meta" id="model-meta"></span></span>
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="switcher-card" id="switcher-card" hidden>
+        <input type="search" class="switcher-filter" id="switcher-filter" placeholder="Search models and presets" aria-label="Search models and presets" autocomplete="off">
+        <div class="switcher-list" id="switcher-list" role="listbox" aria-label="Models and presets"></div>
+        <div class="switcher-foot"><a href="/discover">Find more models</a><a href="/library">Manage library</a></div>
+      </div>
+    </div>
     <button type="button" class="btn load-btn" id="load-btn" hidden></button>
 {{end}}
 {{define "appbar-end"}}
@@ -28,7 +37,7 @@
         <div class="column" id="message-list">
           {{with .Data.Chat}}{{range .Messages}}
             {{if eq .Role "user"}}
-            <div class="msg user">{{.Content}}</div>
+            <div class="msg user"><div class="bubble">{{.Content}}</div></div>
             {{else}}
             <div class="msg assistant">
               {{if .Thinking}}<details class="thinking"><summary>Thinking</summary><div class="thinking-text">{{.Thinking}}</div></details>{{end}}
@@ -38,9 +47,21 @@
             </div>
             {{end}}
           {{end}}{{else}}
-            <div class="empty" id="empty">
-              {{if $.Models}}<p>Pick a model and say something.</p>
-              {{else}}<p>No models installed yet. Find one in <a href="/discover">Discover</a>.</p>{{end}}
+            <div class="welcome" id="empty">
+              {{if $.Models}}
+              <h2 class="welcome-title">What’s on your mind?</h2>
+              <p class="welcome-hint" id="welcome-hint"></p>
+              <div class="suggestions">
+                <button type="button" class="suggestion" data-prompt="Explain how attention works in a transformer, with a small worked example."><span class="suggestion-title">Explain a concept</span><span class="suggestion-sub">How attention works in transformers</span></button>
+                <button type="button" class="suggestion" data-prompt="Write a shell one-liner that lists the 10 largest files under the current directory."><span class="suggestion-title">Write some code</span><span class="suggestion-sub">A one-liner to find large files</span></button>
+                <button type="button" class="suggestion" data-prompt="Summarize the following text in five bullet points:\n\n"><span class="suggestion-title">Summarize text</span><span class="suggestion-sub">Paste something to condense</span></button>
+                <button type="button" class="suggestion" data-prompt="Brainstorm ten names for a self-hosted home server."><span class="suggestion-title">Brainstorm</span><span class="suggestion-sub">Names for a home server</span></button>
+              </div>
+              {{else}}
+              <h2 class="welcome-title">No models yet</h2>
+              <p class="welcome-hint">Download one to start chatting. Unsloth’s quants are a good place to begin.</p>
+              <a class="btn primary" href="/discover?author=unsloth">Browse Discover</a>
+              {{end}}
             </div>
           {{end}}
         </div>

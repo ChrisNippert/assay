@@ -60,6 +60,22 @@ type Chat struct {
 	Messages []Message      `json:"messages"`
 }
 
+// TruncateAtUser drops the n-th user message (from 0) and everything after
+// it. It reports false if the chat has no such message.
+func (c *Chat) TruncateAtUser(n int) bool {
+	for i, m := range c.Messages {
+		if m.Role != "user" {
+			continue
+		}
+		if n == 0 {
+			c.Messages = c.Messages[:i]
+			return true
+		}
+		n--
+	}
+	return false
+}
+
 // Summary is what the sidebar needs to list a chat.
 type Summary struct {
 	ID      string

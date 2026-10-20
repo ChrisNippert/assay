@@ -123,3 +123,34 @@ func (g modelGroup) Owner() string {
 	o, _, _ := strings.Cut(g.HFRepo, "/")
 	return o
 }
+
+// ShortName is the primary name without a leading "hf.co/owner/" prefix.
+func (g modelGroup) ShortName() string {
+	n := g.Primary.Name
+	if rest, ok := strings.CutPrefix(n, "hf.co/"); ok {
+		if _, tail, found := strings.Cut(rest, "/"); found {
+			return tail
+		}
+	}
+	return n
+}
+
+// PrimaryOwner is the HF owner when the primary name is an hf.co name.
+func (g modelGroup) PrimaryOwner() string {
+	rest, ok := strings.CutPrefix(g.Primary.Name, "hf.co/")
+	if !ok {
+		return ""
+	}
+	owner, _, _ := strings.Cut(rest, "/")
+	return owner
+}
+
+// DiskUsed is the total size of all models on disk. Names sharing a digest
+// share blobs, so each group counts once.
+func (p *page) DiskUsed() int64 {
+	var n int64
+	for _, g := range groupModels(p.Models) {
+		n += g.Primary.Size
+	}
+	return n
+}
