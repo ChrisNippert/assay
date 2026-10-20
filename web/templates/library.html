@@ -1,9 +1,6 @@
+{{define "appbar"}}<h1 class="appbar-title">Library</h1><span class="muted small">{{len .ModelGroups}} installed</span>{{end}}
 {{define "content"}}
 <div class="page">
-  <header class="page-head">
-    <h1>Library</h1>
-    <span class="muted">{{len .ModelGroups}} installed</span>
-  </header>
 
   {{if .Models}}
   <div class="table-wrap">

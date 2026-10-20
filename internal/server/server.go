@@ -212,6 +212,7 @@ type loadedModel struct {
 	SizeVRAM  int64     `json:"sizeVram"`
 	Pinned    bool      `json:"pinned"`
 	ExpiresAt time.Time `json:"expiresAt"`
+	Context   int       `json:"context"`
 }
 
 // pinnedAfter is how far away an expiry has to be for us to treat the model
@@ -232,6 +233,7 @@ func (s *Server) loaded(ctx context.Context) ([]loadedModel, error) {
 			SizeVRAM:  m.SizeVRAM,
 			Pinned:    time.Until(m.ExpiresAt) > pinnedAfter,
 			ExpiresAt: m.ExpiresAt,
+			Context:   m.ContextLength,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })

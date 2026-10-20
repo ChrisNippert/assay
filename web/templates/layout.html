@@ -32,20 +32,23 @@
     <div id="download-list" class="download-list"></div>
   </div>
 
-  <div class="section-label">In memory</div>
-  <div class="loaded-list" id="loaded-list">
-    {{range .Loaded}}
-    <div class="loaded-row">
-      <div class="loaded-name"><a class="row-link" href="/chat?model={{.Name}}" title="Chat with {{.Name}}">{{.Name}}</a></div>
-      <div class="loaded-detail">{{bytes .SizeVRAM}}{{if lt (gpuPct .) 100}} · {{gpuPct .}}% GPU{{end}} · {{if .Pinned}}until ejected{{else}}auto-unloads{{end}}</div>
-      <button type="button" class="icon-btn" data-eject="{{.Name}}" aria-label="Eject {{.Name}}" title="Eject">{{template "icon-eject"}}</button>
-    </div>
-    {{else}}<div class="muted small">Nothing loaded</div>{{end}}
-  </div>
-
   <button type="button" class="nav-item theme-toggle" id="theme-toggle">{{template "icon-moon"}}<span>Dark mode</span></button>
 </nav>
-<main class="content">
+<main class="content content-{{.Active}}">
+  <header class="appbar">
+    <div class="appbar-start">{{block "appbar" .}}<h1 class="appbar-title">{{.Title}}</h1>{{end}}</div>
+    <div class="mem-list" id="loaded-list" aria-label="Models in memory">
+      {{range .Loaded}}
+      <div class="mem-pill{{if lt (gpuPct .) 100}} partial{{end}}" title="{{if .Pinned}}Stays loaded until ejected{{else}}Unloads after a few idle minutes{{end}}">
+        <span class="mem-dot" aria-hidden="true"></span>
+        <a class="row-link mem-name" href="/chat?model={{.Name}}" title="Chat with {{.Name}}">{{.Name}}</a>
+        <span class="mem-detail">{{bytes .SizeVRAM}}{{with .Context}} · {{kib .}}k{{end}}{{if lt (gpuPct .) 100}} · {{gpuPct .}}% GPU{{end}}</span>
+        <button type="button" class="icon-btn mem-eject" data-eject="{{.Name}}" aria-label="Eject {{.Name}}" title="Eject {{.Name}}">{{template "icon-eject"}}</button>
+      </div>
+      {{else}}<span class="mem-empty">No model loaded</span>{{end}}
+    </div>
+    {{block "appbar-end" .}}{{end}}
+  </header>
   {{if .OllamaErr}}<div class="banner error" role="alert">Can't reach Ollama at {{.OllamaURL}}. Is it running? <span class="muted">({{.OllamaErr}})</span></div>{{end}}
   {{template "content" .}}
 </main>

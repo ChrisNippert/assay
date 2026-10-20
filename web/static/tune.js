@@ -1,6 +1,6 @@
 // Tune panel: per-chat settings layered over the preset (if any), the
-// model's own defaults and Ollama's defaults. Chat.js reads the result via
-// window.ollamuiTune when sending.
+// model's own defaults, ollamui's auto-picked context and Ollama's defaults.
+// Chat.js reads the result via window.ollamuiTune when sending.
 (() => {
   const chatEl = document.getElementById('chat');
   if (!chatEl) return;
@@ -12,9 +12,7 @@
   const openBtn = $('tune-btn');
   const summary = $('tune-summary');
   const sourceEl = $('tune-source');
-  const thinkSel = $('tune-think');
   const systemEl = $('tune-system');
-  const noteEl = $('tune-note');
   const saveBtn = $('tune-save');
   const saveNewBtn = $('tune-save-new');
   const resetBtn = $('tune-reset');
@@ -29,20 +27,39 @@
   const state = { options: { ...(initial.options || {}) }, system: initial.system || '', think: initial.think ?? null };
   let defaults = { options: {}, system: '', contextLength: 0, thinking: false };
 
-  const SAMPLING = [
-    { key: 'temperature', label: 'Temperature', min: 0, max: 2, step: 0.05 },
-    { key: 'top_p', label: 'Top P', min: 0, max: 1, step: 0.01 },
-    { key: 'top_k', label: 'Top K', min: 0, max: 200, step: 1, int: true },
-    { key: 'min_p', label: 'Min P', min: 0, max: 1, step: 0.01 },
-    { key: 'repeat_penalty', label: 'Repeat penalty', min: 0.8, max: 2, step: 0.01 },
+  const CTX_STEPS = [4096, 8192, 16384, 32768, 65536, 131072, 262144];
+  const kib = (n) => (n >= 1024 ? Math.round(n / 1024) + 'k' : String(n));
+
+  // Each setting is one row. kind: combo (dropdown), think (dropdown),
+  // spin (number with − +), scale (slider plus number).
+  const MAIN = [
+    { key: 'num_ctx', label: 'Context length', kind: 'combo', int: true,
+      help: 'Prompt, thinking and reply all share it' },
+    { key: 'think', label: 'Thinking', kind: 'think' },
+    { key: 'num_predict', label: 'Max reply length', kind: 'spin', min: -1, max: 262144, step: 256, int: true,
+      help: 'Tokens' },
   ];
-  const LENGTH = [
-    { key: 'num_ctx', label: 'Context length', min: 2048, max: 131072, step: 1024, int: true },
-    { key: 'num_predict', label: 'Max reply tokens', min: -1, max: 32768, step: 64, int: true, hint: '-1 = no limit' },
-    { key: 'seed', label: 'Seed', min: 0, max: 2147483647, step: 1, int: true, noSlider: true, hint: 'blank = random' },
+  const SAMPLING = [
+    { key: 'temperature', label: 'Temperature', kind: 'scale', min: 0, max: 2, step: 0.05, short: 'temp',
+      help: 'Higher is more varied, lower more focused' },
+    { key: 'top_p', label: 'Top P', kind: 'scale', min: 0, max: 1, step: 0.01, short: 'top-p' },
+    { key: 'top_k', label: 'Top K', kind: 'scale', min: 0, max: 200, step: 1, int: true, short: 'top-k' },
+    { key: 'min_p', label: 'Min P', kind: 'scale', min: 0, max: 1, step: 0.01, short: 'min-p' },
+    { key: 'repeat_penalty', label: 'Repeat penalty', kind: 'scale', min: 0.8, max: 2, step: 0.01, short: 'repeat' },
+  ];
+  const ADVANCED = [
+    { key: 'presence_penalty', label: 'Presence penalty', kind: 'scale', min: 0, max: 2, step: 0.05,
+      help: 'Nudges the model toward new topics' },
+    { key: 'frequency_penalty', label: 'Frequency penalty', kind: 'scale', min: 0, max: 2, step: 0.05,
+      help: 'Discourages repeating the same words' },
+    { key: 'repeat_last_n', label: 'Repeat window', kind: 'spin', min: -1, max: 4096, step: 16, int: true,
+      help: 'Tokens the repeat penalty looks back over' },
+    { key: 'seed', label: 'Seed', kind: 'spin', min: 0, max: 2147483647, step: 1, int: true, placeholder: 'Random',
+      help: 'Same seed and settings give the same reply' },
   ];
   // Ollama's documented fallbacks, shown when neither preset nor model sets a value.
-  const OLLAMA_DEFAULTS = { temperature: 0.8, top_p: 0.9, top_k: 40, min_p: 0, repeat_penalty: 1.1, num_predict: -1 };
+  const OLLAMA_DEFAULTS = { temperature: 0.8, top_p: 0.9, top_k: 40, min_p: 0, repeat_penalty: 1.1, num_predict: -1,
+    presence_penalty: 0, frequency_penalty: 0, repeat_last_n: 64 };
 
   const currentPreset = () => {
     const v = select.value;
@@ -62,83 +79,206 @@
   }
 
   const fmt = (v) => (typeof v === 'number' ? String(+v.toFixed(3)) : String(v));
+  const icon = (d) => `<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">${d}</svg>`;
 
-  // ---- parameter rows ----
+  // ---- rows ----
   const rows = [];
-  function buildRow(def, parent) {
-    const row = el('div', 'param');
-    const head = el('div', 'param-head');
-    const label = el('label', null, def.label);
-    label.htmlFor = 'tp-' + def.key;
-    const num = el('input', 'num');
-    Object.assign(num, { type: 'number', id: 'tp-' + def.key, step: def.step, min: def.min, max: def.max });
-    const reset = el('button', 'icon-btn reset', '↺');
-    reset.type = 'button';
-    reset.title = 'Back to inherited value';
-    reset.setAttribute('aria-label', `Reset ${def.label}`);
-    head.append(label, num, reset);
-    row.append(head);
-    let range = null;
-    if (!def.noSlider) {
-      range = el('input');
-      Object.assign(range, { type: 'range', min: def.min, max: def.max, step: def.step, tabIndex: -1 });
-      range.setAttribute('aria-hidden', 'true'); // the number box is the accessible control
-      row.append(range);
-    }
-    const hint = el('div', 'param-hint');
-    row.append(hint);
 
-    const set = (v) => {
-      if (v === null || v === '' || Number.isNaN(v)) delete state.options[def.key];
-      else state.options[def.key] = v;
-      render();
-    };
-    const parse = (s) => (s === '' ? null : def.int ? Math.round(+s) : +s);
-    num.addEventListener('change', () => set(parse(num.value)));
-    range?.addEventListener('input', () => set(parse(range.value)));
-    reset.addEventListener('click', () => set(null));
-    rows.push({ def, row, num, range, hint, reset });
+  function rowShell(def) {
+    const row = el('div', 'row');
+    const text = el('div', 'row-text');
+    const title = el('label', 'row-title', def.label);
+    title.htmlFor = 'tp-' + def.key;
+    const sub = el('div', 'row-sub');
+    text.append(title, sub);
+    const ctrl = el('div', 'row-ctrl');
+    const reset = el('button', 'icon-btn row-reset');
+    reset.type = 'button';
+    reset.innerHTML = icon('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>');
+    reset.title = 'Back to the inherited value';
+    reset.setAttribute('aria-label', `Reset ${def.label}`);
+    ctrl.append(reset);
+    row.append(text, ctrl);
+    return { row, sub, ctrl, reset };
+  }
+
+  function setOption(def, v) {
+    if (v === null || v === '' || Number.isNaN(v)) delete state.options[def.key];
+    else state.options[def.key] = v;
+    render();
+  }
+  const parse = (def, s) => (s === '' ? null : def.int ? Math.round(+s) : +s);
+  const clamp = (def, v) => Math.min(def.max, Math.max(def.min, v));
+
+  function spinButton(def, num, delta, label, path) {
+    const b = el('button', 'spin-btn');
+    b.type = 'button';
+    b.tabIndex = -1;
+    b.setAttribute('aria-label', label);
+    b.innerHTML = icon(path);
+    b.addEventListener('click', () => {
+      const cur = num.value === '' ? (inherited(def.key).value ?? def.min) : +num.value;
+      const v = clamp(def, +(cur + delta * def.step).toFixed(4));
+      setOption(def, def.int ? Math.round(v) : v);
+    });
+    return b;
+  }
+
+  function buildRow(def, parent) {
+    const { row, sub, ctrl, reset } = rowShell(def);
+    const r = { def, row, sub, reset };
+
+    if (def.kind === 'combo' || def.kind === 'think') {
+      const sel = el('select', 'combo');
+      sel.id = 'tp-' + def.key;
+      sel.addEventListener('change', () => {
+        if (def.kind === 'think') {
+          state.think = sel.value === '' ? null : sel.value === 'on';
+          render();
+        } else {
+          setOption(def, parse(def, sel.value));
+        }
+      });
+      ctrl.append(sel);
+      r.select = sel;
+      reset.addEventListener('click', () => {
+        if (def.kind === 'think') { state.think = null; render(); } else setOption(def, null);
+      });
+    } else {
+      const spin = el('div', 'spin');
+      const num = el('input', 'spin-input');
+      Object.assign(num, { type: 'number', id: 'tp-' + def.key, step: def.step, min: def.min, max: def.max });
+      num.inputMode = def.int ? 'numeric' : 'decimal';
+      if (def.placeholder) num.placeholder = def.placeholder;
+      num.addEventListener('change', () => setOption(def, parse(def, num.value)));
+      spin.append(spinButton(def, num, -1, `Decrease ${def.label}`, '<path d="M5 12h14"/>'), num,
+        spinButton(def, num, 1, `Increase ${def.label}`, '<path d="M12 5v14M5 12h14"/>'));
+      ctrl.append(spin);
+      r.num = num;
+      reset.addEventListener('click', () => setOption(def, null));
+      if (def.kind === 'scale') {
+        const range = el('input', 'scale');
+        Object.assign(range, { type: 'range', min: def.min, max: def.max, step: def.step, tabIndex: -1 });
+        range.setAttribute('aria-hidden', 'true'); // the number box is the accessible control
+        range.addEventListener('input', () => setOption(def, parse(def, range.value)));
+        row.classList.add('has-scale');
+        row.append(range);
+        r.range = range;
+      }
+    }
+    rows.push(r);
     parent.append(row);
   }
-  SAMPLING.forEach((d) => buildRow(d, $('tune-sampling')));
-  LENGTH.forEach((d) => buildRow(d, $('tune-length')));
+
+  // An expander row (like GNOME's AdwExpanderRow) that hides a group of rows.
+  function buildExpander(id, title, defs, parent) {
+    const box = el('details', 'expander');
+    box.id = id;
+    const head = el('summary', 'row');
+    const text = el('div', 'row-text');
+    const sub = el('div', 'row-sub');
+    text.append(el('div', 'row-title', title), sub);
+    const chevron = el('span', 'chevron');
+    chevron.innerHTML = icon('<path d="M6 9l6 6 6-6"/>');
+    head.append(text, chevron);
+    const body = el('div', 'expander-body');
+    box.append(head, body);
+    defs.forEach((d) => buildRow(d, body));
+    try {
+      box.open = localStorage.getItem('tune:' + id) === '1';
+      box.addEventListener('toggle', () => localStorage.setItem('tune:' + id, box.open ? '1' : ''));
+    } catch {}
+    parent.append(box);
+    return sub;
+  }
+
+  MAIN.forEach((d) => buildRow(d, $('tune-main')));
+  const samplingSub = buildExpander('tune-sampling', 'Sampling', SAMPLING, $('tune-sampling-box'));
+  const advancedSub = buildExpander('tune-advanced', 'More settings', ADVANCED, $('tune-advanced-box'));
 
   // ---- rendering ----
   function changedCount() {
     return Object.keys(state.options).length + (state.system ? 1 : 0) + (state.think !== null ? 1 : 0);
   }
 
+  function describe(inh) {
+    switch (inh.from) {
+      case 'preset': return 'From preset';
+      case 'model': return 'Model default';
+      case 'auto': return 'Auto';
+      case 'Ollama': return 'Ollama default';
+      default: return 'Default';
+    }
+  }
+
+  function renderCombo(r) {
+    const { def, select: sel } = r;
+    const inh = inherited(def.key);
+    const own = state.options[def.key];
+    const max = defaults.contextLength || 262144;
+    const steps = CTX_STEPS.filter((c) => c <= max);
+    if (own != null && !steps.includes(own)) steps.push(own);
+    const first = inh.value != null ? `${describe(inh)} (${kib(inh.value)})` : describe(inh);
+    const opts = [['', first], ...steps.sort((a, b) => a - b).map((c) => [String(c), kib(c)])];
+    const same = sel.options.length === opts.length && [...sel.options].every((o, i) => o.value === opts[i][0] && o.text === opts[i][1]);
+    if (!same) sel.replaceChildren(...opts.map(([v, t]) => new Option(t, v)));
+    sel.value = own != null ? String(own) : '';
+    let text = own != null ? 'Changed' : describe(inh);
+    if (own == null && inh.from === 'auto') text = 'Largest that fits on your GPU';
+    else if (own == null && inh.from === 'Ollama' && defaults.auto?.reason) text = `Not auto: ${defaults.auto.reason}`;
+    if (defaults.contextLength) text += ` · max ${kib(defaults.contextLength)}`;
+    r.sub.textContent = text;
+    r.row.title = def.help;
+    return own != null;
+  }
+
+  function renderThink(r) {
+    const sel = r.select;
+    if (!sel.options.length) sel.append(new Option('Default', ''), new Option('On', 'on'), new Option('Off', 'off'));
+    const p = currentPreset();
+    sel.options[0].text = p?.think != null ? `Preset (${p.think ? 'on' : 'off'})` : 'Default';
+    sel.value = state.think === null ? '' : state.think ? 'on' : 'off';
+    r.sub.textContent = defaults.thinking ? 'Reason step by step before answering' : 'This model doesn’t report thinking support';
+    return state.think !== null;
+  }
+
+  function renderNumber(r) {
+    const { def, num, range, sub } = r;
+    const own = state.options[def.key];
+    const inh = inherited(def.key);
+    const has = own !== undefined;
+    const val = has ? own : inh.value;
+    const unlimited = def.key === 'num_predict' && val === -1;
+    if (document.activeElement !== num) num.value = unlimited ? '' : val ?? '';
+    if (def.key === 'num_predict') num.placeholder = 'No limit';
+    if (range) {
+      range.value = val ?? def.min;
+      const pct = ((clamp(def, +range.value) - def.min) / (def.max - def.min)) * 100;
+      range.style.setProperty('--pct', pct + '%');
+    }
+    const source = has ? (inh.value != null ? `${describe(inh)}: ${fmt(inh.value)}` : 'Changed') : describe(inh);
+    sub.textContent = def.help ? `${source} · ${def.help}` : source;
+    if (unlimited) sub.textContent = `${source} · Tokens`;
+    return has;
+  }
+
+  const effective = (key) => state.options[key] ?? inherited(key).value;
+
   function render() {
     const preset = currentPreset();
-    for (const { def, row, num, range, hint, reset } of rows) {
-      const own = state.options[def.key];
-      const inh = inherited(def.key);
-      const has = own !== undefined;
-      const val = has ? own : inh.value;
-      row.classList.toggle('changed', has);
-      if (document.activeElement !== num) num.value = val ?? '';
-      if (range) {
-        if (def.key === 'num_ctx' && defaults.contextLength) range.max = defaults.contextLength;
-        range.value = val ?? def.min;
-      }
-      let text = has ? (inh.value != null ? `${inh.from} value: ${fmt(inh.value)}` : 'changed') : inh.from === 'auto' ? 'auto-picked' : inh.from ? `from ${inh.from}` : 'Ollama decides';
-      if (def.hint) text += ` · ${def.hint}`;
-      if (def.key === 'num_ctx' && !has && defaults.auto?.reason) text += ` (${defaults.auto.reason})`;
-      if (def.key === 'num_ctx' && defaults.contextLength) {
-        text += ` · model supports up to ${Math.round(defaults.contextLength / 1024)}k. Prompt, thinking and reply all share this`;
-      }
-      hint.textContent = text;
-      reset.hidden = !has;
+    for (const r of rows) {
+      const changed = r.def.kind === 'combo' ? renderCombo(r) : r.def.kind === 'think' ? renderThink(r) : renderNumber(r);
+      r.row.classList.toggle('changed', changed);
+      r.reset.hidden = !changed;
     }
+    samplingSub.textContent = SAMPLING.map((d) => `${d.short} ${fmt(effective(d.key))}`).join(' · ');
+    const advChanged = ADVANCED.filter((d) => d.key in state.options).length;
+    advancedSub.textContent = advChanged ? `${advChanged} changed` : 'Penalties, seed';
 
-    thinkSel.value = state.think === null ? '' : state.think ? 'on' : 'off';
-    thinkSel.closest('.tune-row').classList.toggle('changed', state.think !== null);
     if (document.activeElement !== systemEl) systemEl.value = state.system;
-    systemEl.placeholder = preset?.system || defaults.system || 'None';
+    systemEl.placeholder = preset?.system || defaults.system || 'None. Describe how the model should behave';
 
-    const base = baseModel();
-    sourceEl.textContent = preset ? `preset ${preset.name} · ${preset.base}` : base;
-    noteEl.textContent = defaults.thinking ? '' : 'This model doesn’t report thinking support, so the Thinking setting may be ignored or rejected.';
+    sourceEl.textContent = preset ? `preset ${preset.name} · ${preset.base}` : baseModel();
 
     saveBtn.hidden = !preset;
     if (preset) saveBtn.textContent = `Save to “${preset.name}”`;
@@ -151,12 +291,10 @@
     }
 
     const parts = [];
-    const show = (key, label) => {
-      const v = state.options[key] ?? (inherited(key).from !== 'Ollama' ? inherited(key).value : null);
-      if (v != null) parts.push(`${label} ${key === 'num_ctx' ? Math.round(v / 1024) + 'k' : fmt(v)}`);
-    };
-    show('temperature', 'temp');
-    show('num_ctx', 'ctx');
+    const t = effective('temperature');
+    if (t != null) parts.push(`temp ${fmt(t)}`);
+    const c = effective('num_ctx');
+    if (c != null) parts.push(`${kib(c)} ctx`);
     const n = changedCount();
     summary.textContent = ['Tune', ...parts, n ? `${n} changed` : ''].filter(Boolean).join(' · ');
     openBtn.classList.toggle('has-changes', n > 0);
@@ -180,7 +318,7 @@
     panel.inert = !open;
     openBtn.setAttribute('aria-expanded', String(open));
     try { localStorage.setItem('tuneOpen', open ? '1' : ''); } catch {}
-    if (open) panel.querySelector('input, select, textarea')?.focus({ preventScroll: true });
+    if (open) panel.querySelector('select, input, textarea')?.focus({ preventScroll: true });
   }
   openBtn.addEventListener('click', () => setOpen(!panel.classList.contains('open')));
   $('tune-close').addEventListener('click', () => { setOpen(false); openBtn.focus(); });
@@ -188,15 +326,13 @@
     if (e.key === 'Escape' && panel.classList.contains('open')) { setOpen(false); openBtn.focus(); }
     if (e.key === '.' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); setOpen(!panel.classList.contains('open')); }
   });
-  try { if (localStorage.getItem('tuneOpen')) setOpen(true); } catch {}
+  try { if (localStorage.getItem('tuneOpen') || location.hash === '#tune') setOpen(true); } catch {}
 
   // ---- inputs ----
-  thinkSel.addEventListener('change', () => {
-    state.think = thinkSel.value === '' ? null : thinkSel.value === 'on';
-    render();
-  });
   systemEl.addEventListener('input', () => { state.system = systemEl.value; render(); });
   select.addEventListener('change', loadDefaults);
+  // Loading or ejecting changes what auto context can pick.
+  document.addEventListener('loaded-changed', loadDefaults);
   resetBtn.addEventListener('click', () => {
     state.options = {};
     state.system = '';

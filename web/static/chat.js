@@ -7,7 +7,6 @@
 
   const select = document.getElementById('model');
   const meta = document.getElementById('model-meta');
-  const loadState = document.getElementById('load-state');
   const loadBtn = document.getElementById('load-btn');
   const list = document.getElementById('message-list');
   const scroller = document.getElementById('messages');
@@ -79,21 +78,17 @@
   const baseOf = (opt) => opt?.dataset.base || '';
   let loadedNames = new Set(JSON.parse(chatEl.dataset.loaded || '[]'));
 
+  // The app bar shows what's in memory (with eject). Next to the picker we
+  // only offer "Load" when the picked model isn't loaded yet.
   function showLoadState() {
     const base = baseOf(selectedOption());
-    loadBtn.hidden = true; // the chip below does the same job
-    if (!base) { loadState.textContent = ''; loadState.hidden = true; return; }
     const names = (selectedOption()?.dataset.names || base).split(' ');
-    const loadedAs = names.find((n) => loadedNames.has(n));
-    const loaded = !!loadedAs;
-    loadState.hidden = false;
-    loadState.disabled = false;
-    loadState.textContent = loaded ? '● Loaded' : '○ Not loaded';
-    loadState.classList.toggle('on', loaded);
-    loadState.title = loaded ? 'Click to eject' : 'Click to load';
-    delete loadState.dataset.load;
-    delete loadState.dataset.eject;
-    loadState.dataset[loaded ? 'eject' : 'load'] = loadedAs || base;
+    const loaded = !base || names.some((n) => loadedNames.has(n));
+    loadBtn.hidden = loaded;
+    if (!loaded) {
+      setLoadButton(loadBtn, base, false);
+      loadBtn.title = `Load ${base} into memory now, so the first reply starts faster`;
+    }
   }
 
   function syncPicker() {

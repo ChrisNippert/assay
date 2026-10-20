@@ -48,33 +48,35 @@
   const ejectIcon = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5l7 9H5z"/><path d="M5 19h14"/></svg>';
 
   // ---- loaded models ----
+  // The app bar's "in memory" pills, one per loaded model.
   function renderLoaded(models) {
     const box = document.getElementById('loaded-list');
     if (!box) return;
     box.replaceChildren();
     if (!models.length) {
-      box.append(el('div', 'muted small', 'Nothing loaded'));
+      box.append(el('span', 'mem-empty', 'No model loaded'));
       return;
     }
     for (const m of models) {
-      const row = el('div', 'loaded-row');
-      const name = el('div', 'loaded-name');
-      const link = el('a', 'row-link', m.name);
+      const pct = m.size ? Math.floor((m.sizeVram * 100) / m.size) : 100;
+      const pill = el('div', 'mem-pill' + (pct < 100 ? ' partial' : ''));
+      pill.title = m.pinned ? 'Stays loaded until ejected' : 'Unloads after a few idle minutes';
+      const dot = el('span', 'mem-dot');
+      dot.setAttribute('aria-hidden', 'true');
+      const link = el('a', 'row-link mem-name', m.name);
       link.href = '/chat?model=' + encodeURIComponent(m.name);
       link.title = 'Chat with ' + m.name;
-      name.append(link);
-      const pct = m.size ? Math.floor((m.sizeVram * 100) / m.size) : 100;
       let detail = fmtBytes(m.sizeVram);
+      if (m.context) detail += ` · ${Math.round(m.context / 1024)}k`;
       if (pct < 100) detail += ` · ${pct}% GPU`;
-      detail += m.pinned ? ' · until ejected' : ' · auto-unloads';
-      const btn = el('button', 'icon-btn');
+      const btn = el('button', 'icon-btn mem-eject');
       btn.type = 'button';
       btn.dataset.eject = m.name;
-      btn.title = 'Eject';
+      btn.title = 'Eject ' + m.name;
       btn.setAttribute('aria-label', 'Eject ' + m.name);
       btn.innerHTML = ejectIcon;
-      row.append(name, el('div', 'loaded-detail', detail), btn);
-      box.append(row);
+      pill.append(dot, link, el('span', 'mem-detail', detail), btn);
+      box.append(pill);
     }
   }
 

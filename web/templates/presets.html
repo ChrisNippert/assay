@@ -1,9 +1,6 @@
+{{define "appbar"}}<h1 class="appbar-title">Presets</h1><span class="muted small">{{len .Presets}} saved · tune a chat, then “Save as new preset”</span>{{end}}
 {{define "content"}}
 <div class="page">
-  <header class="page-head">
-    <h1>Presets</h1>
-    <span class="muted">{{len .Presets}} saved · tune a chat, then “Save as new preset”</span>
-  </header>
 
   {{if .Presets}}
   <div class="table-wrap">
