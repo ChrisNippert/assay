@@ -242,6 +242,9 @@ type turn struct {
 	auto autoContext
 	// spoken is what voice mode said before the reply (lead-in only).
 	spoken string
+	// replyModel is the model that wrote the reply, when it isn't the
+	// chat's (voice mode's talker answering small talk).
+	replyModel string
 }
 
 // stats turns Ollama's final chunk into the stats saved with the reply.
@@ -314,6 +317,9 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 		return nil, false
 	}
 
+	if req.Voice {
+		system = strings.TrimSpace(system + "\n\n" + voiceSystem)
+	}
 	msgs := toOllama(c.Messages)
 	if system != "" {
 		msgs = append([]ollama.Message{{Role: "system", Content: system}}, msgs...)
@@ -363,12 +369,16 @@ func (s *Server) saveReply(t *turn, content, thinking, spoken string, stats *cha
 	if content == "" && thinking == "" && spoken == "" {
 		return
 	}
+	model := t.chat.Model
+	if t.replyModel != "" {
+		model = t.replyModel
+	}
 	t.chat.Messages = append(t.chat.Messages, chats.Message{
 		Role:     "assistant",
 		Content:  content,
 		Thinking: thinking,
 		Spoken:   spoken,
-		Model:    t.chat.Model,
+		Model:    model,
 		Stats:    stats,
 		Created:  time.Now(),
 	})

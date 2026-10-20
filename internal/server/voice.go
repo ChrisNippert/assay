@@ -17,6 +17,7 @@ import (
 	"ollamui/internal/chats"
 	"ollamui/internal/ollama"
 	"ollamui/internal/presets"
+	"ollamui/internal/voice"
 )
 
 // Voice mode. The browser records speech, ollamui has it transcribed and
@@ -27,15 +28,29 @@ import (
 // grows, shares where it's heading. When the real answer starts the talker
 // stops and the answer is spoken.
 
-// The reply itself gets no extra instructions about being spoken: thinking
-// models spend their thinking weighing any such rules (Qwen3.5-9B took 95 s
-// instead of 8 s over "what is 2 plus 2" with a two-line style prompt). The
-// browser strips markdown and skips code blocks before speaking instead.
+// voiceSystem is added to the system prompt of a spoken reply. Measured
+// on Gemma 4 12B it removes all markup and costs no extra time (answers
+// get shorter). Keep it to this one line: a longer list of style rules made
+// Qwen3.5-9B think for 95 s instead of 8 s over "what is 2 plus 2", weighing
+// each rule. The browser still strips markdown before speaking.
+const voiceSystem = `Your reply will be read aloud, so write plain spoken prose: no markdown, LaTeX, code, tables or lists.`
 
 // The talker's prompts are written for a small model: one short sentence,
 // in a fixed shape, about what's being worked on rather than facts, so it
 // can't contradict the real answer or give it away.
-const talkerOpener = `You speak for a voice assistant while it thinks about the user's question. Reply with exactly one short spoken sentence, under 15 words, that acknowledges the question and says what you'll think about. Never answer the question and never state facts. No markdown. Examples: "Let me think about how light travels through the air." "Good question, let me work through the numbers." "Let me think about what changes between those two cases."`
+//
+// Its first call also decides whether the big model is needed at all: a
+// greeting or small talk gets a REPLY from the talker, which becomes the
+// answer, and the big model's request is cancelled.
+const talkerOpener = `You speak for a voice assistant. Read the user's last message and answer in one of two ways.
+If it is only a greeting, thanks, goodbye or small talk that needs no facts or reasoning, write REPLY: and then a short, friendly spoken reply of one or two sentences.
+Otherwise a slower, careful part of you will answer it. Write WAIT: and then one short spoken sentence, under 15 words, that acknowledges it and says what you'll think about. Never answer it and never state facts.
+No markdown.
+Examples:
+"hey there" -> REPLY: Hey! What can I do for you?
+"thanks, that helped" -> REPLY: Glad it helped. Anything else?
+"why is the sky blue?" -> WAIT: Let me think about how light travels through the air.
+"what's 17 times 23?" -> WAIT: Good one, let me work through the numbers.`
 
 const talkerInterim = `You speak for a voice assistant while it thinks about the user's question. From its private notes below, say in one short spoken sentence, under 15 words, what it is working on right now, in the first person. Never give the final answer, and don't repeat what was already said. No markdown. Examples: "I'm checking how the angle of the sun changes things." "Now I'm comparing the two options on cost." "I'm double-checking that count."`
 
@@ -122,7 +137,7 @@ func (s *Server) handleSpeak(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "text must be 1–4000 characters")
 		return
 	}
-	body, ctype, err := s.voice.Speak(r.Context(), text)
+	body, ctype, err := s.voice.Speak(r.Context(), voice.SpeechText(text))
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -156,17 +171,29 @@ func (s *Server) voiceTurn(w http.ResponseWriter, r *http.Request, t *turn, talk
 		return
 	}
 	ctx := r.Context()
+	// mainCtx is the big model's request; small talk cancels it.
+	mainCtx, cancelMain := context.WithCancel(ctx)
+	defer cancelMain()
+	smallTalk := make(chan string, 1)
 	var tk *talker
 	if s.thinks(ctx, t.req) && talkerName != "off" {
 		if name := s.pickTalker(ctx, t.req.Model, talkerName); name != "" {
 			tk = s.newTalker(ctx, t, name, emit)
+			tk.onReply = func(text string) {
+				smallTalk <- text
+				cancelMain()
+			}
 		} else {
 			// One model, one request at a time: lead-in first. That delays
 			// the reply by about as long as the lead-in takes to generate,
 			// which its own speech covers.
 			lead := &talker{s: s, t: t, req: ollama.ChatRequest{Model: t.req.Model, Options: t.req.Options, KeepAlive: t.req.KeepAlive, Think: false}, emit: emit}
+			lead.onReply = func(text string) { smallTalk <- text }
 			lead.line(ctx, "")
 			t.spoken = strings.Join(lead.said, " ")
+			if len(smallTalk) > 0 {
+				cancelMain()
+			}
 		}
 	}
 
@@ -185,7 +212,49 @@ func (s *Server) voiceTurn(w http.ResponseWriter, r *http.Request, t *turn, talk
 		}
 	}()
 
-	err := s.ollama.Chat(ctx, t.req, func(resp ollama.ChatResponse) error {
+	var err error
+	if mainCtx.Err() == nil {
+		err = s.ollama.Chat(mainCtx, t.req, s.voiceChunk(emit, &mu, &content, &thinking, notes, &stats, t, stopTalking, talkerDone))
+	}
+	stopTalking()
+	<-talkerDone
+	select {
+	case text := <-smallTalk:
+		// The talker answered on its own; whatever the big model started
+		// (thinking about "hi") is dropped.
+		if emit(event{Type: "content", Text: text}) != nil {
+			return
+		}
+		model := t.req.Model
+		if tk != nil {
+			model = tk.req.Model
+		}
+		t.replyModel = model
+		s.saveReply(t, text, "", "", nil)
+		emit(event{Type: "done"})
+		return
+	default:
+	}
+	if err == nil {
+		s.noteThinking(t.req, thinking.Len() > 0)
+	}
+	spoken := t.spoken
+	if tk != nil {
+		spoken = strings.Join(tk.said, " ")
+	}
+	s.saveReply(t, content.String(), thinking.String(), spoken, stats)
+	if err != nil {
+		if ctx.Err() == nil {
+			emit(event{Type: "error", Message: err.Error()})
+		}
+		return
+	}
+	emit(event{Type: "done", Stats: stats})
+}
+
+// voiceChunk handles one streamed chunk of the big model's spoken reply.
+func (s *Server) voiceChunk(emit func(event) error, mu *sync.Mutex, content, thinking *strings.Builder, notes chan struct{}, stats **chats.Stats, t *turn, stopTalking func(), talkerDone chan struct{}) func(ollama.ChatResponse) error {
+	return func(resp ollama.ChatResponse) error {
 		if txt := resp.Message.Thinking; txt != "" {
 			mu.Lock()
 			thinking.WriteString(txt)
@@ -214,27 +283,10 @@ func (s *Server) voiceTurn(w http.ResponseWriter, r *http.Request, t *turn, talk
 			}
 		}
 		if resp.Done {
-			stats = t.stats(resp)
+			*stats = t.stats(resp)
 		}
 		return nil
-	})
-	stopTalking()
-	<-talkerDone
-	if err == nil {
-		s.noteThinking(t.req, thinking.Len() > 0)
 	}
-	spoken := t.spoken
-	if tk != nil {
-		spoken = strings.Join(tk.said, " ")
-	}
-	s.saveReply(t, content.String(), thinking.String(), spoken, stats)
-	if err != nil {
-		if ctx.Err() == nil {
-			emit(event{Type: "error", Message: err.Error()})
-		}
-		return
-	}
-	emit(event{Type: "done", Stats: stats})
 }
 
 // thinks reports whether req will probably think. Ollama's capability list
@@ -334,7 +386,10 @@ type talker struct {
 	t    *turn
 	req  ollama.ChatRequest // model, options and think for talker requests
 	emit func(event) error
-	said []string
+	// onReply, if set, takes over when the lead-in call decides the message
+	// is small talk and answers it itself.
+	onReply func(string)
+	said    []string
 	// until is when the speech sent so far is expected to finish.
 	until time.Time
 }
@@ -397,7 +452,18 @@ func (tk *talker) line(ctx context.Context, notes string) bool {
 		b.WriteString(resp.Message.Content)
 		return nil
 	})
-	text := firstSentence(cleanSpoken(b.String()))
+	raw := cleanSpoken(b.String())
+	if notes == "" {
+		if reply, ok := cutPrefixFold(raw, "REPLY:"); ok && tk.onReply != nil && err == nil && ctx.Err() == nil {
+			if reply = strings.TrimSpace(reply); reply != "" {
+				tk.onReply(reply)
+				return true
+			}
+		}
+		raw, _ = cutPrefixFold(raw, "WAIT:")
+		raw = strings.TrimSpace(raw)
+	}
+	text := firstSentence(raw)
 	if !goodLine(text, question, tk.said) {
 		tk.s.log.Debug("talker line dropped", "line", b.String())
 		return false
@@ -476,6 +542,14 @@ func wordSet(s string) map[string]bool {
 		set[w] = true
 	}
 	return set
+}
+
+// cutPrefixFold is strings.CutPrefix ignoring case.
+func cutPrefixFold(s, prefix string) (string, bool) {
+	if len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix) {
+		return s[len(prefix):], true
+	}
+	return s, false
 }
 
 // firstSentence keeps the first sentence of s, which is all a talker line

@@ -169,9 +169,19 @@ transcript ─► /api/chat {voice: true} ─► main model on the GPU (thinks, 
   out wrong intermediate results. Lines are dropped when cut off, near
   repeats, phrased as conclusions, or containing numbers the question
   didn't; dropped lines back off the next attempt.
-- **No style prompt for the answer.** Telling a thinking model its reply
-  will be spoken made Qwen3.5-9B think for 95 s instead of 8 s over "what is
-  2 plus 2". The browser cleans the text for speech instead.
+- **Small talk skips the big model.** The talker's first call either
+  answers ("REPLY: Hey! What can I do for you?") for greetings, thanks and
+  small talk, which cancels the big model's request, or gives the lead-in
+  ("WAIT: …"). So "hi" gets one reply in about a second, not a lead-in plus
+  an answer. The reply is saved with the talker as its model.
+- **Prose for the ear.** Spoken replies get one system line asking for plain
+  prose (no markdown, LaTeX, code, tables or lists). On Gemma 4 12B that
+  took markup from 144 marks to 0 at no extra thinking time. Keep it one
+  line: a longer list of style rules made Qwen3.5-9B think 95 s instead of
+  8 s over "what is 2 plus 2".
+- **Numbers.** espeak-based engines read "1.67" as two sentences, so
+  `voice.SpeechText` spells out decimals ("1 point 6 7"), money, percents,
+  multipliers, ranges and a few abbreviations before synthesis.
 - What was said aloud is saved with the reply (`spoken`) and shown above it.
 
 ### internal/chats

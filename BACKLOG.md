@@ -20,9 +20,10 @@ Voice mode shipped 2026-10-20 (see Done). Open:
 - **Talker quality.** Qwen3.5-2B sometimes states a wrong fact in the
   lead-in ("water scatters blue light"). Try a 4B, or tighter few-shot
   prompts. The filters in `goodLine` catch numbers and conclusions only. (S)
-- **Overthinking.** Qwen3.5-9B still thinks 20–90 s on easy questions. A
-  router (talker decides "easy → answer without thinking") or a think
-  budget would cut that. (M)
+- **Overthinking.** Qwen3.5-9B still thinks 20–90 s on easy questions.
+  Small talk is now routed to the talker; simple factual questions could be
+  too ("answer without thinking"), or a think budget. Watch whether the
+  one-line prose prompt slows Qwen down. (M)
 - **Better speech detection.** Typing no longer triggers it (click filter,
   sustained-voice window, duck-then-confirm interrupts). Silero VAD
   (onnxruntime-web, ~2 MB) if other noise still causes false starts. (M)
