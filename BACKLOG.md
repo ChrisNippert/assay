@@ -127,6 +127,10 @@ Most of the 2026-10-20 list is done (see Done). Still open:
 
 ## Done
 
+- Voice mode's ~800 MB of speech models downloads only after the user agrees
+  (prompt in the voice bar on the first mic press), and Settings → Voice can
+  remove all of it again (2026-10-20).
+
 - The speech service is started by ollamui when the mic is pressed (embedded
   script, `uv run`), and stopped after 10 idle minutes or when ollamui exits;
   nothing runs in the background otherwise (2026-10-20).

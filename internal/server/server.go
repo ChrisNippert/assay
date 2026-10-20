@@ -127,6 +127,7 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("POST /api/voice/speak", s.handleSpeak)
 	mux.HandleFunc("GET /api/voice/settings", s.handleVoiceSettings)
 	mux.HandleFunc("PUT /api/voice/settings", s.handleVoiceSettingsSave)
+	mux.HandleFunc("POST /api/voice/remove", s.handleVoiceRemove)
 
 	mux.HandleFunc("GET /api/hf/search", s.handleSearch)
 	mux.HandleFunc("GET /api/pulls", s.handlePullList)

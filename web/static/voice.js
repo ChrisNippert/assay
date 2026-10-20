@@ -61,7 +61,9 @@
 
   // ---- turning voice mode on and off ----
   btn.addEventListener('click', () => (active ? stop() : start()));
-  document.getElementById('voice-end').addEventListener('click', stop);
+  const endBtn = document.getElementById('voice-end');
+  const dl = document.getElementById('voice-download');
+  endBtn.addEventListener('click', stop);
   hush.addEventListener('click', () => { speaker?.stop(); chat.stop(); });
 
   async function start() {
@@ -71,9 +73,27 @@
       return;
     }
     await checkStatus(chat.model());
+    // Voice mode is optional: its speech models download only after a yes.
+    if (status.needsDownload) {
+      setState('', `Voice mode needs a one-time download (${status.downloadSize}).`);
+      stateEl.title = 'Speech recognition and a voice, kept in your cache folder. Remove them any time in Settings → Voice.';
+      endBtn.textContent = 'Not now';
+      dl.hidden = false;
+      const ok = await new Promise((resolve) => {
+        dl.onclick = () => resolve(true);
+        endBtn.onclick = () => resolve(false);
+      });
+      dl.hidden = true;
+      endBtn.onclick = null;
+      endBtn.textContent = 'End voice';
+      stateEl.title = '';
+      if (!ok) return;
+      setState('', 'Downloading…');
+      try { status = await (await fetch(`/api/voice?install=1&start=1&model=${encodeURIComponent(chat.model())}`)).json(); } catch {}
+    }
     // The first start installs the speech packages, which takes a minute.
-    for (let i = 0; status.starting && i < 240 && !bar.hidden; i++) {
-      setState('', i < 10 ? 'Starting speech…' : 'Starting speech… the first time downloads about 400 MB');
+    for (let i = 0; status.starting && i < 480 && !bar.hidden; i++) {
+      setState('', i < 10 ? 'Starting speech…' : 'Downloading voice mode… this takes a minute or two the first time');
       await new Promise((r) => setTimeout(r, 500));
       await checkStatus(chat.model());
     }

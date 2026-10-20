@@ -4,6 +4,7 @@
   {{with .Data.Voice}}
   <h2 class="group-title" id="voice">Voice</h2>
   {{if .Status.Available}}<p class="muted small">Used by the mic button in chat. The speech service is running{{if .Status.Managed}}; ollamui stops it after 10 minutes without voice use{{end}}. Changes save right away.</p>
+  {{else if .Status.NeedsDownload}}<p class="muted small">Used by the mic button in chat. {{.Status.Error}} You can choose settings now.</p>
   {{else if .Status.Stopped}}<p class="muted small">Used by the mic button in chat. The speech service isn't running: it {{.Status.Error | lower}} Changes save right away.</p>
   {{else}}<p class="small settings-warn">{{.Status.Error}}</p>{{end}}
   <div class="boxed-list" id="voice-list" data-settings="{{json .Settings}}">
@@ -48,6 +49,14 @@
       <input type="checkbox" class="switch" id="v-prose">
     </label>
   </div>
+  {{if .Downloaded}}
+  <div class="boxed-list">
+    <div class="row">
+      <div class="row-text"><span class="row-title">Voice mode downloads</span><span class="row-sub">Speech models and packages, {{bytes .Downloaded}}. Removing them frees the space; pressing the mic again downloads them again.</span></div>
+      <div class="row-ctrl"><button type="button" class="btn danger" id="v-remove">Remove</button></div>
+    </div>
+  </div>
+  {{end}}
   <p class="small muted" id="voice-saved" role="status"></p>
   {{end}}
 
@@ -121,6 +130,13 @@
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
       status.textContent = 'Saved.';
     } catch (err) { status.textContent = `Couldn’t save: ${err.message}`; }
+  });
+  f('v-remove')?.addEventListener('click', async (e) => {
+    if (!confirm('Remove voice mode’s downloads? Pressing the mic again downloads them again.')) return;
+    e.currentTarget.disabled = true;
+    const res = await fetch('/api/voice/remove', { method: 'POST' });
+    if (res.ok) location.reload();
+    else status.textContent = `Couldn’t remove: ${(await res.json().catch(() => ({}))).error || res.statusText}`;
   });
   f('v-preview').addEventListener('click', async (e) => {
     const btn = e.currentTarget;

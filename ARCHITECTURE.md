@@ -150,6 +150,18 @@ transcript ─► /api/chat {voice: true} ─► main model on the GPU (thinks, 
   started is used and left alone. `-voice-launch=false` turns this off,
   `-voice ""` turns voice off. Nothing about voice is needed for the rest of
   the app.
+- **Downloads only after a yes.** A fresh install has no voice files. Until
+  the service has been downloaded (a marker in `~/.cache/ollamui/`, or the
+  Kokoro model already present), `/api/voice` reports `needsDownload` and
+  won't start it; the voice bar asks "Download / Not now" and only
+  `?install=1` starts the first run (~800 MB: uv's environment, Kokoro,
+  whisper small.en). Settings → Voice shows the space used (hard links
+  counted once) and **Remove** deletes it all: the marker and script,
+  `~/.cache/ollamui-voice`, the faster-whisper models in Hugging Face's cache
+  plus the blobs their symlinks point to (newer hub versions share one
+  `blobs/` folder), uv's `voice-server-*` environments, and the script's
+  packages from uv's cache (`uv cache clean <pkgs>`, since environments are
+  hard-linked to it).
 - **Browser.** An AudioWorklet feeds 20 ms frames to a speech detector with
   an adaptive noise floor and 300 ms of pre-roll. A frame counts as voice
   when it's loud without being a click (peak/RMS under 7), and an utterance

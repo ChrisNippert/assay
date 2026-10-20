@@ -44,6 +44,9 @@ func NewLauncher(client *Client, script []byte, log *slog.Logger) *Launcher {
 func (l *Launcher) Ready(ctx context.Context, start bool) error {
 	l.touch()
 	if l.client.Available(ctx) == nil {
+		if l.Managed() {
+			l.markInstalled()
+		}
 		return nil
 	}
 	l.mu.Lock()
@@ -92,15 +95,24 @@ func (l *Launcher) touch() {
 	l.mu.Unlock()
 }
 
-func (l *Launcher) startLocked() error {
-	uv, err := findUV()
-	if err != nil {
-		return errors.New("voice mode needs uv to run its speech service (https://docs.astral.sh/uv/), or start one yourself and pass -voice URL")
+// CanStart reports why the bundled service couldn't be started, if so.
+func (l *Launcher) CanStart() error {
+	if _, err := findUV(); err != nil {
+		return errors.New("voice mode is optional and needs uv to run its speech service (https://docs.astral.sh/uv/), or start one yourself and pass -voice URL")
 	}
 	u, _ := url.Parse(l.client.URL())
 	if h := u.Hostname(); h != "127.0.0.1" && h != "localhost" {
 		return errors.New("the speech service at " + l.client.URL() + " isn't answering")
 	}
+	return nil
+}
+
+func (l *Launcher) startLocked() error {
+	if err := l.CanStart(); err != nil {
+		return err
+	}
+	uv, _ := findUV()
+	u, _ := url.Parse(l.client.URL())
 	path, err := l.writeScript()
 	if err != nil {
 		return err

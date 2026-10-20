@@ -84,6 +84,10 @@ type voiceStatus struct {
 	Starting bool `json:"starting,omitempty"`
 	Stopped  bool `json:"stopped,omitempty"`
 	Managed  bool `json:"managed,omitempty"`
+	// NeedsDownload: the bundled service hasn't been downloaded yet, and
+	// starting it fetches DownloadSize, so the browser asks first.
+	NeedsDownload bool   `json:"needsDownload,omitempty"`
+	DownloadSize  string `json:"downloadSize,omitempty"`
 }
 
 func (s *Server) handleVoiceStatus(w http.ResponseWriter, r *http.Request) {
@@ -91,9 +95,17 @@ func (s *Server) handleVoiceStatus(w http.ResponseWriter, r *http.Request) {
 	if m := r.URL.Query().Get("model"); m != "" {
 		st.Talker = s.warmTalker(m)
 	}
+	// install=1 is the go-ahead to download the bundled service.
+	if r.URL.Query().Get("install") == "1" && s.speech != nil {
+		s.speech.Ready(r.Context(), true)
+	}
 	s.fillSpeechStatus(r.Context(), &st, r.URL.Query().Get("start") == "1")
 	writeJSON(w, http.StatusOK, st)
 }
+
+// errNotDownloaded keeps the bundled service from downloading itself
+// until someone agrees to it.
+var errNotDownloaded = errors.New("voice mode hasn't been downloaded yet")
 
 // fillSpeechStatus says whether the speech service is up, starting it
 // first if start is set and ollamui manages it.
@@ -109,6 +121,9 @@ func (s *Server) fillSpeechStatus(ctx context.Context, st *voiceStatus, start bo
 		st.Available = true
 	case errors.Is(err, voice.ErrStarting):
 		st.Starting = true
+	case errors.Is(err, errNotDownloaded):
+		st.Error = "Voice mode is optional. Pressing the mic the first time downloads its speech models (" + voice.DownloadSize + "), after asking."
+		st.Stopped, st.NeedsDownload, st.DownloadSize = true, true, voice.DownloadSize
 	case s.speech != nil && !start:
 		st.Error = "Starts when you press the mic in chat, and stops after 10 minutes without voice use."
 		st.Stopped = true
@@ -129,6 +144,15 @@ func (s *Server) speechReady(ctx context.Context, start, wait bool) error {
 	}
 	if s.speech == nil {
 		return s.voice.Available(ctx)
+	}
+	if !s.speech.Installed() && !s.speech.Managed() {
+		if s.voice.Available(ctx) == nil {
+			return nil // a service someone started themselves
+		}
+		if err := s.speech.CanStart(); err != nil {
+			return err
+		}
+		return errNotDownloaded
 	}
 	if wait {
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
@@ -661,6 +685,19 @@ func (s *Server) handleVoiceSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.voiceSt.Get())
 }
 
+// handleVoiceRemove deletes the bundled speech service's downloads.
+func (s *Server) handleVoiceRemove(w http.ResponseWriter, r *http.Request) {
+	if s.speech == nil {
+		writeError(w, http.StatusBadRequest, "ollamui doesn't manage a speech service")
+		return
+	}
+	if err := s.speech.Remove(); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) handleVoiceSettingsSave(w http.ResponseWriter, r *http.Request) {
 	var in voice.Settings
 	if !readJSON(w, r, &in) {
@@ -683,6 +720,8 @@ type voicePage struct {
 	STTModels  []sttChoice
 	Speeds     []float64
 	Pauses     []int
+	// Downloaded is the size of the bundled service's downloads, if any.
+	Downloaded int64
 }
 
 type talkerChoice struct {
@@ -705,6 +744,9 @@ func (s *Server) voicePage(ctx context.Context) voicePage {
 		v.STTModels = append(v.STTModels, sttChoice{m.Name, m.Note})
 	}
 	s.fillSpeechStatus(ctx, &v.Status, false)
+	if s.speech != nil {
+		v.Downloaded = s.speech.Downloads()
+	}
 	ids := kokoroVoices
 	if v.Status.Available {
 		if list, err := s.voice.Voices(ctx); err == nil && len(list) > 0 {
