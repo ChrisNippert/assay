@@ -151,7 +151,8 @@ transcript ─► /api/chat {voice: true} ─► main model on the GPU (thinks, 
   that aren't mostly what the assistant just said (echo). A false alarm
   restores the volume. Replies are cut into sentences as
   they stream and synthesized ahead of playback; markdown is stripped and
-  code blocks are skipped. Mic access needs a secure context: localhost or
+  code blocks are skipped. Clips are spaced 450 ms after a full stop, 200 ms
+  after a comma (Kokoro trims silence off each clip). Mic access needs a secure context: localhost or
   HTTPS (e.g. `tailscale serve`).
 - **Does it think?** Ollama's capability list misses some thinkers (Gemma 4
   thinks without listing `thinking`), so a model counts as thinking unless

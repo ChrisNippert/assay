@@ -22,6 +22,10 @@
   const MIN_SPEECH = 12; // loud frames for an utterance to count (240 ms)
   const MAX_FRAMES = 1500; // 30 s
   const PARTIAL_MS = 900;
+  // Silence between spoken clips (ms), by how the clip ended.
+  const SENTENCE_PAUSE = 450;
+  const CLAUSE_PAUSE = 200;
+  const WORD_PAUSE = 120;
 
   let status = null;
   let active = false;
@@ -349,6 +353,7 @@
     constructor(ctx) {
       this.ctx = ctx; this.queue = []; this.source = null; this.gen = 0; this.running = false; this.waiters = [];
       this.recent = []; // the last few lines, to recognize our own voice in the mic
+      this.resumeAt = 0; // when the pause after the last clip ends
       this.gain = ctx.createGain();
       this.gain.connect(ctx.destination);
     }
@@ -361,15 +366,23 @@
         .then((r) => (r.ok ? r.arrayBuffer() : null))
         .then((b) => (b && gen === this.gen ? this.ctx.decodeAudioData(b) : null))
         .catch(() => null);
-      this.queue.push(buf);
+      // Each sentence is its own clip, and Kokoro trims the silence off its
+      // ends, so the pause a full stop deserves is added between clips.
+      const pause = /[.!?…]["'”’)\]]*$/.test(text) ? SENTENCE_PAUSE : /[,;:]$/.test(text) ? CLAUSE_PAUSE : WORD_PAUSE;
+      this.queue.push({ buf, pause });
       if (!this.running) this.pump(gen);
     }
     async pump(gen) {
       this.running = true;
       if (state !== 'hearing') setState('speaking');
       while (this.queue.length && gen === this.gen) {
-        const buf = await this.queue.shift();
+        const { buf: next, pause } = this.queue.shift();
+        const buf = await next;
         if (!buf || gen !== this.gen) continue;
+        // Leave the previous clip's pause, however soon this one was ready.
+        const wait = this.resumeAt - performance.now();
+        if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+        if (gen !== this.gen) continue;
         if (state !== 'hearing') setState('speaking');
         await new Promise((done) => {
           const src = this.ctx.createBufferSource();
@@ -380,6 +393,7 @@
           src.start();
         });
         this.source = null;
+        this.resumeAt = performance.now() + pause;
       }
       if (gen !== this.gen) return;
       this.running = false;
