@@ -535,6 +535,19 @@ input.switch:checked::after { transform: translateX(20px); }
   .tune { position: fixed; inset: 0 0 0 auto; z-index: 10; }
   .tune.open { width: min(380px, 100vw); box-shadow: -8px 0 24px rgba(0, 0, 0, .25); }
   .tune > * { min-width: 0; }
+  /* Discover's model panel takes the whole screen (the sidebar is a drawer). */
+  .discover.panel-open .detail-panel { left: 0; padding: var(--s4); }
+  .detail-panel .quant-row { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "name size action" "fit qual action"; }
+  .detail-panel .quant-name { overflow-wrap: anywhere; }
+  /* Presets as cards: a wide table would scroll sideways. */
+  .presets-table, .presets-table tbody, .presets-table tr, .presets-table td { display: block; }
+  .presets-table thead { display: none; }
+  .presets-table tr { padding: var(--s3) var(--s4); }
+  .presets-table tr + tr { border-top: 1px solid var(--border); }
+  .presets-table td { padding: 2px 0; border: none; white-space: normal; overflow-wrap: anywhere; min-width: 0; }
+  .presets-table td.name { min-width: 0; }
+  .presets-table .actions { justify-content: flex-start; margin-top: var(--s2); }
+  .presets-table .settings-cell { max-width: none; }
   .filters { flex: 1 1 100%; max-width: none; border-right: none; border-bottom: 1px solid var(--border); }
   .quant-row { grid-template-columns: 1fr auto; }
   .quant-row .fit, .quant-row .quality { grid-column: 1 / -1; }
@@ -763,3 +776,9 @@ a.tag-link:hover { border-color: var(--accent-line); color: var(--accent-text); 
 .src-file { display: block; font-weight: 500; color: var(--text-2); }
 .src-text { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; color: var(--muted); white-space: pre-line; }
 @media (max-width: 760px) { .proj-chip select { max-width: 110px; } }
+
+/* Phones and tablets zoom into text fields under 16px when tapped, and the
+   page then no longer fits the screen. */
+@media (pointer: coarse) {
+  html input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), html select, html textarea { font-size: 16px !important; }
+}

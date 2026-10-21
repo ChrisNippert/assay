@@ -467,7 +467,9 @@
     if (e.key === 'Escape' && panel.classList.contains('open')) { setOpen(false); openBtn.focus(); }
     if (e.key === '.' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); setOpen(!panel.classList.contains('open')); }
   });
-  try { if (localStorage.getItem('tuneOpen') || location.hash === '#tune') setOpen(true); } catch {}
+  // On a phone the panel covers the chat, so it only opens when asked.
+  const narrow = matchMedia('(max-width: 760px)').matches;
+  try { if ((localStorage.getItem('tuneOpen') && !narrow) || location.hash === '#tune') setOpen(true); } catch {}
 
   // ---- inputs ----
   systemEl.addEventListener('input', () => { state.system = systemEl.value; render(); });
