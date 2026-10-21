@@ -117,6 +117,13 @@ All of the 2026-10-20 polish list is done (see Done).
 
 ## Done
 
+- Draft models are labelled as drafts (2026-10-20): DSpark/DFlash/EAGLE
+  files inside a repo are listed apart from the real quants (they used to
+  show as the model's "Q8_0"/"BF16" with "Fits on GPU"), draft repos say
+  "Draft model" on Discover with a filter to hide them and a banner on their
+  page, and get no score. Also: every DeepSeek architecture since V2
+  (deepseek4, deepseek41, …) counts as MoE.
+
 - Polish and runtime settings (2026-10-20):
   - Rename chats from the sidebar (pencil on hover; `PATCH /api/chats/{id}`).
   - Library rows show how each model fits (measured if a speed test ran,

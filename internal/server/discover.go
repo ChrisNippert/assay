@@ -48,6 +48,10 @@ type searchResult struct {
 	// the repo is a quantization of a rated model; ScoreOf names that model.
 	Score   *float64 `json:"score,omitempty"`
 	ScoreOf string   `json:"scoreOf,omitempty"`
+	// Draft marks a speculative-decoding draft model, which can't chat on
+	// its own; DraftFor is the model it speeds up, when known.
+	Draft    bool   `json:"draft,omitempty"`
+	DraftFor string `json:"draftFor,omitempty"`
 }
 
 // discoverCtx is the context length fit estimates assume unless the user
@@ -87,9 +91,16 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 			Installed: installed[strings.ToLower(repo.ID)],
 		}
 		res.Score, res.ScoreOf = s.scoreFor(repo.Tags)
+		res.Draft, res.DraftFor = repo.IsDraft(), repo.DraftFor()
 		if params > 0 {
 			res.Q4Size = params * 48 / 80 // ~4.8 bits per weight, typical of Q4_K_M
 			res.Fit = hw.Classify(hw.EstimateKV(res.Q4Size, params, discoverCtx, moe, kvf), s.memory)
+		}
+		if res.Draft {
+			// Fitting on the GPU says nothing useful about a draft, and it
+			// has no score of its own.
+			res.Fit = hw.Fit{Level: "draft", Label: "Draft model"}
+			res.Score, res.ScoreOf = nil, ""
 		}
 		out = append(out, res)
 	}
@@ -215,6 +226,11 @@ type modelPageData struct {
 	Ctx         int
 	CtxOptions  []int
 	KVType      string // server K/V cache type; the estimates assume it
+	// Drafts are speculative-decoding draft models in the repo, kept apart
+	// from the real quants. A repo that is itself a draft has only these.
+	Drafts   []quantRow
+	Draft    bool
+	DraftFor string
 	Memory      hw.Memory
 	Score       float64 // of the base model, 0 if unrated
 	ScoreOf     string
@@ -267,7 +283,7 @@ func (s *Server) handleModelPage(w http.ResponseWriter, r *http.Request) {
 	data.Repo = repo
 	data.MoE = hf.IsMoE(repo.Arch(), repo.ID)
 	data.ScoreURL = scores.AttributionURL
-	if sc, of := s.scoreFor(repo.Tags); sc != nil {
+	if sc, of := s.scoreFor(repo.Tags); sc != nil && !repo.IsDraft() {
 		data.Score, data.ScoreOf = *sc, of
 		if top := s.scores.Max(); top > 0 {
 			data.ScorePct = min(100, int(*sc/top*100+0.5))
@@ -290,9 +306,14 @@ func (s *Server) handleModelPage(w http.ResponseWriter, r *http.Request) {
 	}
 	kvf := s.kvFactor(r.Context())
 	data.KVType = s.ollamaEnv(r.Context()).KVCacheType()
-	quants, vision := hf.Quants(files)
+	quants, vision := hf.Quants(repo.ID, files)
 	data.Vision = vision || repo.Vision()
+	data.Draft, data.DraftFor = repo.IsDraft(), repo.DraftFor()
 	for _, q := range quants {
+		if q.Draft || data.Draft {
+			data.Drafts = append(data.Drafts, quantRow{Quant: q})
+			continue
+		}
 		tag := hf.OllamaName(repo.ID, q.Name)
 		data.Quants = append(data.Quants, quantRow{
 			Quant:     q,

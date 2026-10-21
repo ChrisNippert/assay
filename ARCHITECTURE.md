@@ -91,6 +91,29 @@ hybrid/sliding-window attention, so it's pessimistic for those models.
 Reading layer counts from the GGUF header via an HTTP range request would
 make it exact; that's a later improvement.
 
+### Draft models (speculative decoding)
+
+Repos increasingly ship small draft models (DSpark, DFlash, EAGLE3) for
+speculative decoding, both as their own repos and as files next to the real
+quants (unsloth's DeepSeek-V4.1-Flash-1017 has `dspark-…-Q8_0.gguf` and
+`dspark/…-BF16.gguf` beside 200+ GB quants). They can't chat on their own,
+so they must never pass for the model:
+
+- **Files:** `hf.Quants(repo, files)` flags a file as a draft when its path,
+  with the repo's own model name removed, matches dspark / dflash / eagleN /
+  draft / drafter (so a full model called "…-DSpark-MTP" isn't one). Drafts
+  are named "DSpark Q8_0", sorted after the real quants, and the model page
+  lists them in their own "Draft models" section with no Download button
+  (Ollama 0.40.6 ignores draft GGUFs; see BACKLOG).
+- **Repos:** `Repo.IsDraft` trusts the GGUF architecture when HF knows it
+  (real drafts report `dflash`, `deepseek4-dspark`, `…-dflash-draft`; full
+  models with draft heads keep `qwen35`, `deepseek4`), then the
+  `draft-model` / `speculative-decoding-draft` tags, then the name. Discover
+  shows "Draft model" (and what it's for, from `base_model`) instead of a
+  fit label, drafts get no intelligence score, a "Hide draft models" filter
+  exists, and the model page opens with a banner saying it isn't a model to
+  chat with.
+
 ### Downloads (M2)
 
 The main path is `POST /api/pull` with `hf.co/{repo}:{quant}`. Ollama handles

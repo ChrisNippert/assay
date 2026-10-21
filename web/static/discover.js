@@ -15,7 +15,7 @@
   const minIn = $('f-min');
   const maxIn = $('f-max');
   const archBox = $('f-arch');
-  const checks = { vision: 'f-vision', long: 'f-longctx', rated: 'f-rated', fits: 'f-fits', hideInstalled: 'f-hide-installed', hideGated: 'f-hide-gated' };
+  const checks = { vision: 'f-vision', long: 'f-longctx', rated: 'f-rated', fits: 'f-fits', hideInstalled: 'f-hide-installed', hideGated: 'f-hide-gated', hideDrafts: 'f-hide-drafts' };
 
   const PAGE = 20;
   const memory = JSON.parse(root.dataset.memory || '{}');
@@ -149,6 +149,7 @@
     if ($('f-fits').checked && r.fit.level !== 'gpu' && r.fit.level !== 'tight') return false;
     if ($('f-hide-installed').checked && r.installed) return false;
     if ($('f-hide-gated').checked && r.gated) return false;
+    if ($('f-hide-drafts').checked && r.draft) return false;
     return true;
   }
 
@@ -277,12 +278,21 @@
     if (r.context >= 131072) {
       tags.append(filterTag(`${Math.round(r.context / 1024)}k ctx`, 'Only models with 128k+ context', () => { $('f-longctx').checked = true; changed(); }));
     }
+    if (r.draft) {
+      const t = el('span', 'tag draft', 'draft model');
+      t.title = 'A small helper for speculative decoding, not a model to chat with';
+      tags.append(t);
+    }
     if (r.installed) tags.append(el('span', 'tag good', 'installed'));
     if (r.gated) tags.append(el('span', 'tag warn', 'gated'));
     main.append(tags);
 
     const side = el('div', 'r-side small');
-    if (r.q4Size) {
+    if (r.draft) {
+      const fit = el('div', 'r-fit fit-draft', 'Draft model');
+      fit.title = 'Speeds up another model through speculative decoding; it can\u2019t chat on its own';
+      side.append(fit, el('div', 'muted', r.draftFor ? `for ${r.draftFor.split('/').pop()}` : 'not the actual model'));
+    } else if (r.q4Size) {
       const fit = el('div', `r-fit fit-${r.fit.level}`, r.fit.label);
       fit.title = `~${fmtBytes(r.q4Size)} at Q4 with 8k context`;
       side.append(fit, el('div', 'muted', `~${fmtBytes(r.q4Size)} · ${sortFact(r)}`));

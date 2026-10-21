@@ -12,6 +12,7 @@
   {{with .Data.Error}}<div class="banner error" role="alert">{{.}}</div>{{end}}
 
   {{with .Data.Repo}}
+  {{if $.Data.Draft}}<div class="banner draft-banner" role="note"><strong>This is a draft model, not a model to chat with.</strong> It's a small helper for speculative decoding: it guesses the next few tokens so {{with $.Data.DraftFor}}<a href="/discover?open={{.}}">{{.}}</a>{{else}}the big model it was trained for{{end}} can confirm them in one step and write faster. Ollama {{if $.Data.Drafts}}can't use draft GGUFs yet, so there's nothing to download here.{{else}}can't use it.{{end}}</div>{{end}}
   <header class="model-head">
     <div class="model-title">
       <h1>{{.Name}}</h1>
@@ -32,6 +33,7 @@
 
   <div class="model-body">
     <section class="card quants">
+      {{if $.Data.Draft}}<div class="card-head"><h2>Files</h2></div>{{else}}
       <div class="card-head">
         <h2>Pick a quant</h2>
         <form method="get" class="ctx-form small">
@@ -46,7 +48,8 @@
         {{with $.Data.Memory}}{{if .VRAM}}{{.GPU}}: {{bytes .VRAM}} VRAM · {{bytes .RAM}} RAM.{{else}}No GPU detected · {{bytes .RAM}} RAM.{{end}}{{end}}
         Estimates are rough: weights + context cache + overhead{{if and $.Data.KVType (ne $.Data.KVType "f16")}}, with the {{$.Data.KVType}} cache{{end}}.
       </p>
-      {{if not $.Data.Quants}}<p class="muted">No GGUF quants found in this repo.</p>{{end}}
+      {{if not $.Data.Quants}}<p class="muted">{{if $.Data.Drafts}}No quants of a model to chat with here, only draft models (below).{{else}}No GGUF quants found in this repo.{{end}}</p>{{end}}
+      {{end}}
       <div class="quant-list">
         {{range $.Data.Quants}}
         <div class="quant-row{{if .Best}} best{{end}}" data-tag="{{.Tag}}">
@@ -65,6 +68,22 @@
         </div>
         {{end}}
       </div>
+      {{with $.Data.Drafts}}
+      {{if not $.Data.Draft}}
+      <h3 class="draft-head">Draft models <span class="tag draft">speculative decoding</span></h3>
+      <p class="muted small">Small helpers that guess ahead so the full model writes faster. They can't chat on their own, and Ollama can't use draft GGUFs yet, so they aren't offered for download.</p>
+      {{end}}
+      <div class="quant-list">
+        {{range .}}
+        <div class="quant-row draft-row">
+          <span class="quant-name mono">{{.Name}}</span>
+          <span class="quant-size">{{bytes .Size}}</span>
+          <span class="tag draft" title="Not the actual model: a draft for speculative decoding">Draft, not the model</span>
+          <span class="quant-action"><a class="btn subtle" href="https://huggingface.co/{{$.Data.Repo.ID}}/blob/main/{{index .Files 0}}" target="_blank" rel="noopener">View file ↗</a></span>
+        </div>
+        {{end}}
+      </div>
+      {{end}}
       {{if $.Data.Quants}}<label class="alias-opt small"><input type="checkbox" id="add-alias" checked> Also give it a short name (e.g. <span class="mono">{{(index $.Data.Quants 0).Alias}}</span>) so it's easy to pick in Zed</label>{{end}}
     </section>
 

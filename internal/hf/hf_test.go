@@ -22,7 +22,7 @@ func TestQuants(t *testing.T) {
 		{Type: "file", Path: "mmproj-F16.gguf", Size: 1},
 		{Type: "file", Path: "Qwen_Qwen3-8B-Q6_K_L.gguf", Size: 9},
 	}
-	got, vision := Quants(files)
+	got, vision := Quants("unsloth/Qwen3.8-27B-GGUF", files)
 	if !vision {
 		t.Error("vision projector not detected")
 	}
@@ -78,6 +78,8 @@ func TestIsMoE(t *testing.T) {
 		{"gptoss", "unsloth/gpt-oss-20b-GGUF", true},
 		{"granitehybrid", "unsloth/granite-4.0-h-tiny-GGUF", false},
 		{"", "someone/Thing-21B-A3.5B-GGUF", true},
+		{"deepseek41", "unsloth/DeepSeek-V4.1-Flash-1017-GGUF", true},
+		{"deepseek4", "antirez/deepseek-v4-flash-gguf", true},
 	}
 	for _, c := range cases {
 		if got := IsMoE(c.arch, c.repo); got != c.want {
@@ -177,5 +179,73 @@ func TestIsChatModel(t *testing.T) {
 		if got := (Repo{PipelineTag: tag}).IsChatModel(); got != want {
 			t.Errorf("IsChatModel(%q) = %v", tag, got)
 		}
+	}
+}
+
+func TestDraftFiles(t *testing.T) {
+	// unsloth/DeepSeek-V4.1-Flash-1017-GGUF ships DSpark drafts next to the
+	// real quants; a 7 GB "Q8_0" must not pass for the 280 GB model.
+	files := []File{
+		{Type: "file", Path: "UD-Q2_K_XL/DeepSeek-V4.1-Flash-1017-UD-Q2_K_XL-00001-of-00002.gguf", Size: 100e9},
+		{Type: "file", Path: "UD-Q2_K_XL/DeepSeek-V4.1-Flash-1017-UD-Q2_K_XL-00002-of-00002.gguf", Size: 100e9},
+		{Type: "file", Path: "dspark-DeepSeek-V4.1-Flash-1017-Q8_0.gguf", Size: 7e9},
+		{Type: "file", Path: "dspark/dspark-DeepSeek-V4.1-Flash-1017-BF16.gguf", Size: 8e9},
+		{Type: "file", Path: "DeepSeek-V4.1-Flash-1017-DSpark-draft-Q2K-Q4K.gguf", Size: 5e9},
+	}
+	quants, _ := Quants("unsloth/DeepSeek-V4.1-Flash-1017-GGUF", files)
+	if len(quants) != 4 {
+		t.Fatalf("got %d quants: %+v", len(quants), quants)
+	}
+	if q := quants[0]; q.Name != "UD-Q2_K_XL" || q.Draft || q.Size != 200e9 {
+		t.Errorf("first should be the real quant, got %+v", q)
+	}
+	for _, q := range quants[1:] {
+		if !q.Draft {
+			t.Errorf("%s should be a draft", q.Files[0])
+		}
+	}
+	if quants[3].Name != "DSpark BF16" {
+		t.Errorf("draft name = %q, want DSpark BF16", quants[3].Name)
+	}
+	if quants[1].Name != "DeepSeek-V4.1-Flash-1017-DSpark-draft-Q2K-Q4K" {
+		t.Errorf("a draft without a quant suffix is named by its file, got %q", quants[1].Name)
+	}
+}
+
+func TestDraftRepos(t *testing.T) {
+	cases := []struct {
+		repo  Repo
+		draft bool
+		of    string
+	}{
+		{Repo{ID: "deepseek-ai/DeepSeek-V4-Flash-DSpark"}, true, ""},
+		{Repo{ID: "z-lab/Qwen3.8-27B-DFlash2-GGUF", Tags: []string{"gguf", "draft-model", "base_model:Qwen/Qwen3.8-27B"}}, true, "Qwen/Qwen3.8-27B"},
+		{Repo{ID: "AtomicChat/Qwen3.5-9B-DFlash-GGUF", Tags: []string{"base_model:z-lab/Qwen3.5-9B-DFlash", "base_model:quantized:z-lab/Qwen3.5-9B-DFlash"}}, true, ""},
+		{Repo{ID: "yuhuili/EAGLE3-LLaMA3.1-Instruct-8B"}, true, ""},
+		{Repo{ID: "RWKV/v5-Eagle-7B"}, false, ""},
+		{Repo{ID: "unsloth/DeepSeek-V4.1-Flash-1017-GGUF", Tags: []string{"speculative-decoding"}}, false, ""},
+		// The architecture beats the name: full models with DSpark heads...
+		{Repo{ID: "Solstice-AI/Qwen3.8-27B-UltraOptimised-DSpark-MTP", GGUF: &GGUF{Architecture: "qwen35"}}, false, ""},
+		{Repo{ID: "twaggs88/DeepSeek-V4-Flash-REAP25-DSpark-ds4-GGUF", GGUF: &GGUF{Architecture: "deepseek4"}}, false, ""},
+		// ...and drafts whose names don't say so.
+		{Repo{ID: "someone/Speedy-Helper-GGUF", GGUF: &GGUF{Architecture: "deepseek41-dflash-draft"}}, true, ""},
+	}
+	for _, c := range cases {
+		if got := c.repo.IsDraft(); got != c.draft {
+			t.Errorf("%s IsDraft = %v", c.repo.ID, got)
+		}
+		if got := c.repo.DraftFor(); got != c.of {
+			t.Errorf("%s DraftFor = %q, want %q", c.repo.ID, got, c.of)
+		}
+	}
+}
+
+func TestDraftFileIgnoresRepoName(t *testing.T) {
+	repo := "Solstice-AI/Qwen3.8-27B-UltraOptimised-DSpark-MTP-GGUF"
+	if IsDraftFile(repo, "Qwen3.8-27B-UltraOptimised-DSpark-MTP-Q4_K_M.gguf") {
+		t.Error("the model's own file was taken for a draft")
+	}
+	if !IsDraftFile(repo, "dspark/Qwen3.8-27B-UltraOptimised-DSpark-MTP-draft-Q8_0.gguf") {
+		t.Error("a draft beside it was missed")
 	}
 }

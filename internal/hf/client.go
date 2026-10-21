@@ -117,6 +117,35 @@ var generativeMedia = map[string]bool{
 // an image, video or audio generator.
 func (r Repo) IsChatModel() bool { return !generativeMedia[r.PipelineTag] }
 
+// IsDraft reports whether the repo is a draft model for speculative
+// decoding (DSpark, DFlash, EAGLE): small, fast, and only useful next to
+// the model it was trained for. The GGUF architecture decides when HF
+// knows it, then tags, then the name.
+func (r Repo) IsDraft() bool {
+	// A draft's GGUF says so in its architecture ("dflash", "deepseek4-dspark",
+	// "...-draft"); a full model with draft heads built in keeps its own.
+	if a := r.Arch(); a != "" {
+		return draftPattern.MatchString(a)
+	}
+	for _, t := range r.Tags {
+		if t == "draft-model" || t == "speculative-decoding-draft" {
+			return true
+		}
+	}
+	return draftPattern.MatchString(r.Name())
+}
+
+// DraftFor is the model a draft repo speeds up, from its base_model tags,
+// skipping bases that are themselves drafts (a GGUF of a DFlash model).
+func (r Repo) DraftFor() string {
+	for _, t := range r.Tags {
+		if b, ok := strings.CutPrefix(t, "base_model:"); ok && !strings.Contains(b, ":") && !draftPattern.MatchString(b) {
+			return b
+		}
+	}
+	return ""
+}
+
 // IsGated reports whether downloading requires accepting terms on the website.
 func (r Repo) IsGated() bool {
 	b, ok := r.Gated.(bool)
@@ -134,7 +163,10 @@ var activeParamsPattern = regexp.MustCompile(`(?i)-A\d+(\.\d+)?B\b`)
 // architecture name, or from an "A3B"-style active-parameter suffix.
 func IsMoE(arch, repoID string) bool {
 	a := strings.ToLower(arch)
-	return strings.Contains(a, "moe") || moeArchs[a] || activeParamsPattern.MatchString(repoID)
+	// Every DeepSeek architecture since V2 (deepseek2, 3, 4, 41, ...) is a
+	// mixture of experts; V1 shipped as plain "llama".
+	deepseek := strings.HasPrefix(a, "deepseek") && a != "deepseek"
+	return strings.Contains(a, "moe") || moeArchs[a] || deepseek || activeParamsPattern.MatchString(repoID)
 }
 
 var expandFields = []string{"gguf", "downloads", "likes", "lastModified", "tags", "pipeline_tag", "gated", "trendingScore"}
