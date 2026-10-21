@@ -257,6 +257,9 @@ func (s *Server) voiceTurn(w http.ResponseWriter, r *http.Request, t *turn, talk
 	if emit(event{Type: "chat", ID: t.chat.ID}) != nil {
 		return
 	}
+	if len(t.sources) > 0 && emit(event{Type: "sources", Sources: t.sources}) != nil {
+		return
+	}
 	ctx := r.Context()
 	if talkerName == "" {
 		talkerName = s.voiceSt.Get().Talker

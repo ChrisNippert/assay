@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"slices"
 	"sort"
 	"strconv"
@@ -25,6 +26,7 @@ import (
 	"ollamui/internal/hw"
 	"ollamui/internal/ollama"
 	"ollamui/internal/presets"
+	"ollamui/internal/projects"
 	"ollamui/internal/pulls"
 	"ollamui/internal/scores"
 	"ollamui/internal/voice"
@@ -42,6 +44,10 @@ type Options struct {
 	Scores *scores.Store
 	// Bench keeps speed tests; without it they aren't saved.
 	Bench *bench.Store
+	// Projects and RAGSettings hold projects, their files and the RAG
+	// preferences. Nil keeps them in a temporary folder / in memory.
+	Projects    *projects.Store
+	RAGSettings *projects.SettingsStore
 	// Voice is the speech service for voice mode; nil turns it off.
 	Voice *voice.Client
 	// VoiceSettings are voice mode's preferences. Required.
@@ -64,12 +70,16 @@ type Server struct {
 	pulls   *pulls.Manager
 	scores  *scores.Store
 	bench   *bench.Store
-	voice   *voice.Client
-	voiceSt *voice.SettingsStore
-	speech  *voice.Launcher
-	search  searchCache
-	env     envCache
-	ctxBase sync.Map // model name → measured weight memory, for picking context
+	// projects, their RAG settings, and files waiting to be indexed.
+	projects   *projects.Store
+	ragSt      *projects.SettingsStore
+	indexQueue chan indexJob
+	voice      *voice.Client
+	voiceSt    *voice.SettingsStore
+	speech     *voice.Launcher
+	search     searchCache
+	env        envCache
+	ctxBase    sync.Map // model name → measured weight memory, for picking context
 	// ctxCap is model name → largest context worth trying, learned when a
 	// bigger one spilled onto the CPU.
 	ctxCap sync.Map
@@ -91,11 +101,23 @@ type Server struct {
 func New(opts Options) (*Server, error) {
 	s := &Server{
 		ollama: opts.Ollama, chats: opts.Chats, presets: opts.Presets,
-		hf: opts.HF, pulls: opts.Pulls, scores: opts.Scores, bench: opts.Bench, voice: opts.Voice, voiceSt: opts.VoiceSettings, speech: opts.VoiceLauncher, memory: opts.Memory, log: opts.Logger,
+		hf: opts.HF, pulls: opts.Pulls, scores: opts.Scores, bench: opts.Bench, projects: opts.Projects, ragSt: opts.RAGSettings, indexQueue: make(chan indexJob, 256), voice: opts.Voice, voiceSt: opts.VoiceSettings, speech: opts.VoiceLauncher, memory: opts.Memory, log: opts.Logger,
 		vramUsed: hw.VRAMUsed,
 	}
 	if s.bench == nil {
 		s.bench = bench.Open("")
+	}
+	if s.projects == nil {
+		dir, err := os.MkdirTemp("", "ollamui-projects-")
+		if err != nil {
+			return nil, err
+		}
+		if s.projects, err = projects.Open(dir); err != nil {
+			return nil, err
+		}
+	}
+	if s.ragSt == nil {
+		s.ragSt, _ = projects.OpenSettings("")
 	}
 	if s.voiceSt == nil {
 		s.voiceSt, _ = voice.OpenSettings("") // in memory
@@ -105,7 +127,7 @@ func New(opts Options) (*Server, error) {
 		s.log = slog.Default()
 	}
 	s.pages = map[string]*template.Template{}
-	for _, name := range []string{"chat", "library", "discover", "model", "presets", "settings", "compare"} {
+	for _, name := range []string{"chat", "library", "discover", "model", "presets", "settings", "compare", "project"} {
 		t, err := template.New("").Funcs(templateFuncs).ParseFS(web.FS, "templates/layout.html", "templates/"+name+".html")
 		if err != nil {
 			return nil, fmt.Errorf("parse %s template: %w", name, err)
@@ -126,6 +148,16 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("GET /presets", s.handlePresetsPage)
 	mux.HandleFunc("GET /settings", s.handleSettingsPage)
 	mux.HandleFunc("GET /compare", s.handleComparePage)
+	mux.HandleFunc("GET /projects/{id}", s.handleProjectPage)
+	mux.HandleFunc("POST /api/projects", s.handleProjectCreate)
+	mux.HandleFunc("GET /api/projects/{id}", s.handleProjectGet)
+	mux.HandleFunc("PATCH /api/projects/{id}", s.handleProjectUpdate)
+	mux.HandleFunc("DELETE /api/projects/{id}", s.handleProjectDelete)
+	mux.HandleFunc("POST /api/projects/{id}/files", s.handleProjectUpload)
+	mux.HandleFunc("DELETE /api/projects/{id}/files/{name}", s.handleProjectFileDelete)
+	mux.HandleFunc("POST /api/projects/{id}/reindex", s.handleProjectReindex)
+	mux.HandleFunc("GET /api/knowledge/settings", s.handleRAGSettings)
+	mux.HandleFunc("PUT /api/knowledge/settings", s.handleRAGSettingsSave)
 	mux.HandleFunc("POST /api/bench", s.handleBench)
 	mux.HandleFunc("GET /api/ollama/env", s.handleOllamaEnv)
 
@@ -183,9 +215,12 @@ func hostGuard(extra []string, next http.Handler) http.Handler {
 
 // page is the data every template gets.
 type page struct {
-	Title     string
-	Active    string
-	ChatID    string
+	Title  string
+	Active string
+	ChatID string
+	// ProjectID is the project the page is about or in, for the sidebar.
+	ProjectID string
+	Projects  []*projects.Project
 	Chats     []chats.Summary
 	Models    []ollama.Model
 	Loaded    []loadedModel
@@ -225,6 +260,11 @@ func (s *Server) basePage(ctx context.Context, active, title string) *page {
 		p.Chats = list
 	} else {
 		s.log.Error("list chats", "err", err)
+	}
+	if list, err := s.projects.List(); err == nil {
+		p.Projects = list
+	} else {
+		s.log.Error("list projects", "err", err)
 	}
 	if list, err := s.presets.List(); err == nil {
 		p.Presets = list
@@ -402,4 +442,9 @@ func ago(t time.Time) string {
 	default:
 		return t.Format("2 Jan 2006")
 	}
+}
+
+// Run does the server's background work until ctx ends.
+func (s *Server) Run(ctx context.Context) {
+	s.runIndexer(ctx)
 }

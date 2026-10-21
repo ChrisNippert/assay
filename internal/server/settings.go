@@ -71,13 +71,14 @@ type serverSetting struct {
 
 // settingsData is what the settings page renders.
 type settingsData struct {
-	Version  string
-	Source   string // where the environment was read from
-	Local    bool
-	KVType   string // effective K/V cache type
-	Settings []serverSetting
-	Memory   hw.Memory
-	Voice    voicePage
+	Version   string
+	Source    string // where the environment was read from
+	Local     bool
+	KVType    string // effective K/V cache type
+	Settings  []serverSetting
+	Memory    hw.Memory
+	Voice     voicePage
+	Knowledge knowledgePage
 }
 
 // knownSettings are the server variables worth showing, in display order.
@@ -122,6 +123,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		d.Settings = append(d.Settings, st)
 	}
 	d.Voice = s.voicePage(ctx)
+	d.Knowledge = s.knowledgePage(ctx, r.URL.Query().Get("pulled"))
 	p.Data = d
 	s.render(w, "settings", p)
 }

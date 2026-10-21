@@ -20,12 +20,27 @@
   <a href="/compare" class="nav-item{{if eq .Active "compare"}} active{{end}}">{{template "icon-chart"}}Compare</a>
   <a href="/presets" class="nav-item{{if eq .Active "presets"}} active{{end}}">{{template "icon-sliders"}}Presets<span class="grow"></span><span class="count">{{len .Presets}}</span></a>
 
-  <div class="section-label chats-head"><span>Chats</span><a href="/chat" class="icon-btn chats-new" aria-label="New chat" title="New chat">{{template "icon-plus"}}</a></div>
+  <div class="section-label chats-head"><span>Chats</span><span class="chats-actions"><button type="button" class="icon-btn chats-new" id="new-project" aria-label="New project" title="New project">{{template "icon-folder-plus"}}</button><a href="/chat" class="icon-btn chats-new" aria-label="New chat" title="New chat">{{template "icon-plus"}}</a></span></div>
   <input type="search" class="chat-filter" id="chat-filter" placeholder="Search chats" aria-label="Search chats"{{if le (len .Chats) 8}} hidden{{end}}>
   <div class="chat-list" id="chat-list">
+    <div class="project-list" id="project-list">{{range .ProjectGroups}}
+      <div class="project" data-project="{{.ID}}"{{if eq .ID $.ProjectID}} data-active="1"{{end}}>
+        <div class="project-row">
+          <button type="button" class="icon-btn project-toggle" aria-expanded="false" aria-label="Show chats in {{.Name}}" title="Show or hide chats">{{template "icon-chevron"}}</button>
+          <a href="/projects/{{.ID}}" class="project-link" title="{{.Name}}">{{template "icon-folder"}}<span class="project-name">{{.Name}}</span></a>
+          <span class="project-count">{{len .Chats}}</span>
+          <a href="/chat?project={{.ID}}" class="icon-btn project-new" aria-label="New chat in {{.Name}}" title="New chat in this project">{{template "icon-plus"}}</a>
+        </div>
+        <div class="project-chats" hidden>
+          {{range .Chats}}<div class="chat-row" draggable="true" data-chat="{{.ID}}"><a href="/chat/{{.ID}}" class="chat-link{{if eq .ID $.ChatID}} active{{end}}" title="{{.Title}}">{{.Title}}</a><button type="button" class="icon-btn chat-rename" data-chat-rename="{{.ID}}" aria-label="Rename chat" title="Rename chat">{{template "icon-pencil"}}</button><button type="button" class="icon-btn chat-del" data-chat-del="{{.ID}}" aria-label="Delete chat" title="Delete chat">{{template "icon-trash"}}</button></div>{{end}}
+        </div>
+      </div>{{end}}
+    </div>
+    <div class="loose-chats" id="loose-chats">
     {{range .ChatGroups}}<div class="chat-group"><div class="chat-group-label">{{.Label}}</div>
-      {{range .Chats}}<div class="chat-row"><a href="/chat/{{.ID}}" class="chat-link{{if eq .ID $.ChatID}} active{{end}}" title="{{.Title}}">{{.Title}}</a><button type="button" class="icon-btn chat-rename" data-chat-rename="{{.ID}}" aria-label="Rename chat" title="Rename chat">{{template "icon-pencil"}}</button><button type="button" class="icon-btn chat-del" data-chat-del="{{.ID}}" aria-label="Delete chat" title="Delete chat">{{template "icon-trash"}}</button></div>{{end}}
+      {{range .Chats}}<div class="chat-row" draggable="true" data-chat="{{.ID}}"><a href="/chat/{{.ID}}" class="chat-link{{if eq .ID $.ChatID}} active{{end}}" title="{{.Title}}">{{.Title}}</a><button type="button" class="icon-btn chat-rename" data-chat-rename="{{.ID}}" aria-label="Rename chat" title="Rename chat">{{template "icon-pencil"}}</button><button type="button" class="icon-btn chat-del" data-chat-del="{{.ID}}" aria-label="Delete chat" title="Delete chat">{{template "icon-trash"}}</button></div>{{end}}
     </div>{{end}}
+    </div>
   </div>
 
   <div class="grow"></div>
@@ -79,3 +94,6 @@
 {{define "icon-plus"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>{{end}}
 {{define "icon-pencil"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg>{{end}}
 {{define "icon-trash"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>{{end}}
+{{define "icon-folder"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>{{end}}
+{{define "icon-folder-plus"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10v6M9 13h6"/></svg>{{end}}
+{{define "icon-chevron"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>{{end}}

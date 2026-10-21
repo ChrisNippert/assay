@@ -60,6 +60,44 @@
   <p class="small muted" id="voice-saved" role="status"></p>
   {{end}}
 
+  {{with .Data.Knowledge}}
+  <h2 class="group-title" id="knowledge">Knowledge</h2>
+  <p class="muted small">Projects can use their files when you chat (RAG). Files are indexed with an embedding model from Ollama.{{if not .Current}} No model is chosen yet, so nothing is indexed until you pick one.{{end}} Changes save right away.</p>
+  <div class="boxed-list" id="kn-list" data-current="{{.Current}}" data-has-files="{{.HasFiles}}">
+    <div class="row">
+      <div class="row-text"><span class="row-title">Embedding model</span><span class="row-sub">{{if .Models}}Used to index project files and to find the right excerpts for a question.{{else}}None installed yet. Download one below.{{end}}</span></div>
+      <div class="row-ctrl"><select id="kn-model" aria-label="Embedding model">
+        <option value="">None</option>
+        {{range .Models}}<option value="{{.Name}}"{{if .Selected}} selected{{end}}>{{.Name}} · {{bytes .Size}}</option>{{end}}
+      </select></div>
+    </div>
+    <div class="row">
+      <div class="row-text"><span class="row-title">Excerpts per answer</span><span class="row-sub">How many pieces of your files go into each prompt. More gives more to work with but uses more context.</span></div>
+      <div class="row-ctrl"><select id="kn-topk" aria-label="Excerpts per answer">{{$k := .TopK}}{{range .TopKs}}<option value="{{.}}"{{if eq . $k}} selected{{end}}>{{.}}</option>{{end}}</select></div>
+    </div>
+  </div>
+  <p class="small muted" id="kn-note" role="status">{{if .Notice}}<span{{if .NoticeBad}} class="settings-warn"{{end}}>{{.Notice}}</span>{{end}}</p>
+
+  <h3 class="group-title kn-sub">Get an embedding model</h3>
+  <div class="boxed-list" id="kn-get">
+    {{range .Suggestions}}
+    <div class="row" data-model="{{.Name}}" data-installed="{{.Installed}}">
+      <div class="row-text"><span class="row-title">{{.Name}}</span><span class="row-sub">{{.Size}} · {{.Desc}}</span></div>
+      <div class="row-ctrl"><span class="kn-state muted small"></span><button type="button" class="btn kn-btn"></button></div>
+    </div>
+    {{end}}
+    <div class="row" id="kn-custom" data-model="">
+      <div class="row-text"><span class="row-title">Another model</span><span class="row-sub">Any embedding model name from the Ollama library.</span></div>
+      <div class="row-ctrl"><span class="kn-state muted small"></span><input type="text" id="kn-name" placeholder="e.g. all-minilm" aria-label="Embedding model name" size="18" autocomplete="off"><button type="button" class="btn" id="kn-dl">Download</button></div>
+    </div>
+  </div>
+  <style>
+    #knowledge + p + .boxed-list + p + .kn-sub { margin-top: 1.25rem; }
+    #kn-get .row-ctrl { gap: .6rem; }
+    #kn-get .kn-state:empty { display: none; }
+  </style>
+  {{end}}
+
   <h2 class="group-title">Ollama server</h2>
   {{if not .Data.Local}}<p class="muted small">Ollama runs on another machine ({{.OllamaURL}}), so its settings can't be read from here.</p>
   {{else if not .Data.Source}}<p class="muted small">Couldn't find the running Ollama or an <span class="mono">ollama</span> systemd service, so these show Ollama's defaults.</p>
@@ -150,6 +188,99 @@
       await audio.play();
     } catch (err) { status.textContent = `Couldn’t preview: ${err.message}`; btn.disabled = false; }
   });
+})();
+(() => {
+  // ---- knowledge ----
+  const list = document.getElementById('kn-list');
+  if (!list) return;
+  const model = document.getElementById('kn-model'), topk = document.getElementById('kn-topk'), note = document.getElementById('kn-note');
+  const hasFiles = list.dataset.hasFiles === 'true';
+  const norm = (n) => n.replace(/:latest$/, '');
+  let current = list.dataset.current;
+  if (current && model.value === '' ) { model.add(new Option(current + ' (not installed)', current)); model.value = current; }
+  const say = (t) => { note.textContent = t; };
+  async function save() {
+    say('Saving…');
+    try {
+      const res = await fetch('/api/knowledge/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ embedModel: model.value, topK: +topk.value }) });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+      const changed = model.value !== current;
+      current = model.value;
+      say('Saved.' + (changed && hasFiles && current ? ' Projects will be re-indexed with this model.' : ''));
+      refresh();
+    } catch (err) { say(`Couldn’t save: ${err.message}`); }
+  }
+  list.addEventListener('change', save);
+  const rows = [...document.querySelectorAll('#kn-get .row[data-model]')].filter(r => r.dataset.model);
+  const custom = document.getElementById('kn-custom');
+  function paint(row, state, text) { // state: idle | busy | installed
+    const btn = row.querySelector('button'), st = row.querySelector('.kn-state');
+    st.textContent = text || '';
+    if (row === custom) { btn.disabled = state === 'busy'; btn.textContent = 'Download'; return; }
+    if (state === 'installed') {
+      const inst = row.dataset.installed;
+      const isCur = current && norm(current) === norm(inst);
+      st.textContent = isCur ? 'Installed · In use' : 'Installed';
+      btn.textContent = 'Use'; btn.hidden = isCur; btn.disabled = false; btn.dataset.act = 'use';
+    } else {
+      btn.hidden = false; btn.textContent = 'Download'; btn.disabled = state === 'busy'; btn.dataset.act = 'dl';
+    }
+  }
+  function refresh() { rows.forEach(r => { if (r.dataset.installed && !r.dataset.busy) paint(r, 'installed'); else if (!r.dataset.busy) paint(r, 'idle'); }); }
+  function use(name) {
+    if (![...model.options].some(o => o.value === name)) model.add(new Option(name, name));
+    model.value = name; save();
+  }
+  function track(row, id) {
+    row.dataset.busy = '1';
+    paint(row, 'busy', 'Starting…');
+    const tick = async () => {
+      let job;
+      try { job = (await (await fetch('/api/pulls')).json()).find(j => j.id === id); } catch { job = null; }
+      if (job && job.state === 'running') {
+        const pct = job.total > 0 ? Math.floor(100 * job.completed / job.total) : 0;
+        paint(row, 'busy', job.total > 0 ? `Downloading ${pct}%` : 'Downloading…');
+        return setTimeout(tick, 1000);
+      }
+      delete row.dataset.busy;
+      if (job && job.state === 'done') {
+        if (row === custom) { location.href = '/settings?pulled=' + encodeURIComponent(row.dataset.model) + '#knowledge'; return; }
+        row.dataset.installed = row.dataset.model;
+        paint(row, 'installed');
+      } else {
+        paint(row, 'idle', job ? (job.state === 'canceled' ? 'Canceled' : `Failed: ${job.error || 'unknown error'}`) : 'Lost track of the download');
+      }
+    };
+    tick();
+  }
+  async function start(row, name) {
+    row.dataset.model = name;
+    row.dataset.busy = '1';
+    paint(row, 'busy', 'Starting…');
+    try {
+      const res = await fetch('/api/pulls', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: name, alias: '' }) });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || res.statusText);
+      track(row, body.id);
+    } catch (err) { delete row.dataset.busy; paint(row, 'idle', `Couldn’t start: ${err.message}`); }
+  }
+  rows.forEach(r => r.querySelector('button').addEventListener('click', () => {
+    if (r.querySelector('button').dataset.act === 'use') use(r.dataset.installed); else start(r, r.dataset.model);
+  }));
+  document.getElementById('kn-dl').addEventListener('click', () => {
+    const name = document.getElementById('kn-name').value.trim();
+    if (!name) { custom.querySelector('.kn-state').textContent = 'Enter a model name first.'; return; }
+    start(custom, name);
+  });
+  document.getElementById('kn-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('kn-dl').click(); });
+  refresh();
+  // Pick up downloads already running (started here earlier, or from the downloads menu).
+  fetch('/api/pulls').then(r => r.json()).then(jobs => {
+    for (const j of jobs) if (j.state === 'running') {
+      const r = rows.find(x => x.dataset.model === j.model);
+      if (r && !r.dataset.busy) track(r, j.id);
+    }
+  }).catch(() => {});
 })();
 (() => {
   const rows = [...document.querySelectorAll('#env-list .row')];

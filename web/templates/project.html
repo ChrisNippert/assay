@@ -1,0 +1,192 @@
+{{define "appbar"}}{{with .Data.Project}}<h1 class="appbar-title proj-title" id="proj-title" title="Click to rename">{{.Name}}</h1>{{end}}{{end}}
+{{define "appbar-end"}}{{with .Data.Project}}<a class="btn primary" href="/chat?project={{.ID}}">New chat</a>{{end}}{{end}}
+{{define "content"}}
+<style>
+.proj-title { cursor: text; }
+.proj-title-input { font: inherit; font-size: 17px; font-weight: 600; padding: 2px 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--surface); color: var(--text); min-width: 0; }
+.proj-instructions { width: 100%; box-sizing: border-box; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; line-height: 1.5; margin-bottom: var(--s3); }
+.drop { display: flex; align-items: center; justify-content: center; gap: var(--s2); padding: var(--s5); margin-bottom: var(--s3); border: 1.5px dashed var(--border-strong); border-radius: 10px; color: var(--muted); cursor: pointer; text-align: center; }
+.drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); }
+.drop.busy { opacity: .6; pointer-events: none; }
+.proj-file[data-status="indexing"] .row-sub, .proj-file[data-status="queued"] .row-sub { color: var(--accent-text); }
+.row-link-row { color: var(--text); text-decoration: none; }
+.row-link-row:hover { background: var(--soft); }
+</style>
+{{$d := .Data}}{{$p := $d.Project}}
+<div class="column settings proj" id="proj" data-id="{{$p.ID}}" data-embedder="{{if $d.Embedder}}1{{end}}">
+
+  <h2 class="group-title">Chats</h2>
+  {{if $d.Chats}}
+  <div class="boxed-list">
+    {{range $d.Chats}}<a class="row row-link-row" href="/chat/{{.ID}}"><span class="row-text"><span class="row-title">{{.Title}}</span><span class="row-sub">{{ago .Updated}}{{with .Model}} · {{.}}{{end}}</span></span></a>{{end}}
+  </div>
+  {{else}}<p class="muted small">No chats yet. <a href="/chat?project={{$p.ID}}">Start one</a>, or drag chats here from the sidebar.</p>{{end}}
+
+  <h2 class="group-title">Instructions</h2>
+  <p class="muted small">Added to the system prompt of every chat in this project.</p>
+  <textarea class="proj-instructions" id="proj-instructions" rows="5" placeholder="e.g. You're helping me plan a home server. Prefer Debian, keep answers short.">{{$p.Instructions}}</textarea>
+
+  <div class="boxed-list">
+    <div class="row">
+      <div class="row-text"><span class="row-title">New chats start with</span><span class="row-sub">A model or preset for chats started here.</span></div>
+      <div class="row-ctrl"><select id="proj-model" aria-label="Model for new chats">
+        <option value="">Whatever was used last</option>
+        {{with .Presets}}<optgroup label="Presets">{{range .}}<option value="preset:{{.Name}}"{{if eq .Name $p.Preset}} selected{{end}}>{{.Name}}</option>{{end}}</optgroup>{{end}}
+        <optgroup label="Models">{{range .ModelGroups}}<option value="{{.Primary.Name}}"{{if and (not $p.Preset) (.Has $p.Model)}} selected{{end}}>{{.Primary.Name}}</option>{{end}}</optgroup>
+      </select></div>
+    </div>
+  </div>
+  <p class="small muted" id="proj-saved" role="status"></p>
+
+  <h2 class="group-title">Files</h2>
+  {{if not $d.RAG.EmbedModel}}
+  <p class="small settings-warn">Files are stored, but nothing can be searched until you pick an embedding model in <a href="/settings#knowledge">Settings → Knowledge</a>.</p>
+  {{else if not $d.Embedder}}
+  <p class="small settings-warn">The embedding model {{$d.RAG.EmbedModel}} isn't installed. Download it in <a href="/settings#knowledge">Settings → Knowledge</a>.</p>
+  {{else if $d.Stale}}
+  <p class="small settings-warn">These files were indexed with {{$d.IndexOf}}, but Settings now uses {{$d.RAG.EmbedModel}}. <button type="button" class="btn" id="proj-reindex">Re-index</button></p>
+  {{else}}
+  <p class="muted small">Chats in this project search these files and quote the closest passages (indexed with {{$d.RAG.EmbedModel}}). Text, Markdown, code, HTML, PDF, Word and OpenDocument files, up to 20 MB each.</p>
+  {{end}}
+
+  <label class="drop" id="proj-drop">
+    <input type="file" id="proj-file" multiple accept="{{$d.Accept}}" hidden>
+    <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+    <span><strong>Add files</strong> or drop them here</span>
+  </label>
+
+  <div class="boxed-list" id="proj-files"{{if not $p.Files}} hidden{{end}}>
+    {{range $d.Files}}{{template "proj-file" .}}{{end}}
+  </div>
+
+  <h2 class="group-title">Project</h2>
+  <div class="boxed-list">
+    <div class="row">
+      <div class="row-text"><span class="row-title">Delete project</span><span class="row-sub">Deletes its instructions and files. Its chats are kept and move back to the main list.</span></div>
+      <div class="row-ctrl"><button type="button" class="btn danger" id="proj-delete">Delete</button></div>
+    </div>
+  </div>
+</div>
+<script>
+(() => {
+  const root = document.getElementById('proj');
+  const NO_MODEL = root.dataset.embedder !== '1';
+  const id = root.dataset.id;
+  const $ = (x) => document.getElementById(x);
+  const saved = $('proj-saved');
+  const api = (path, opts = {}) => fetch(`/api/projects/${id}${path}`, opts).then(async (res) => {
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+    return res.status === 204 ? null : res.json();
+  });
+  const patch = (body) => api('', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const save = async (body) => {
+    saved.textContent = 'Saving…';
+    try { await patch(body); saved.textContent = 'Saved.'; } catch (err) { saved.textContent = `Couldn’t save: ${err.message}`; }
+  };
+
+  // Rename by clicking the title.
+  const title = $('proj-title');
+  title.addEventListener('click', () => {
+    const input = Object.assign(document.createElement('input'), { value: title.textContent, className: 'proj-title-input' });
+    input.setAttribute('aria-label', 'Project name');
+    title.replaceWith(input);
+    input.select();
+    const done = async (ok) => {
+      if (!input.isConnected) return;
+      const name = input.value.trim();
+      if (ok && name && name !== title.textContent) {
+        try { const p = await patch({ name }); title.textContent = p.name; document.title = `${p.name} · ollamui`; } catch (err) { saved.textContent = err.message; }
+      }
+      input.replaceWith(title);
+    };
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') done(true); if (e.key === 'Escape') done(false); });
+    input.addEventListener('blur', () => done(true));
+  });
+
+  const instr = $('proj-instructions');
+  let lastInstr = instr.value;
+  instr.addEventListener('blur', () => { if (instr.value !== lastInstr) { lastInstr = instr.value; save({ instructions: instr.value }); } });
+
+  $('proj-model').addEventListener('change', (e) => {
+    const v = e.target.value;
+    save(v.startsWith('preset:') ? { preset: v.slice(7), model: '' } : { model: v, preset: '' });
+  });
+
+  // ---- files ----
+  const list = $('proj-files');
+  const drop = $('proj-drop');
+  const fmtSize = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1e3)) + ' kB';
+  const statusText = (f) => ({
+    queued: NO_MODEL ? 'Waiting for an embedding model' : 'Waiting to be indexed',
+    indexing: f.total ? `Indexing… ${f.done} of ${f.total} passages` : 'Reading…',
+    ready: `Ready · ${f.chunks} passage${f.chunks === 1 ? '' : 's'}`,
+    error: f.error || 'Couldn’t index this file',
+  }[f.status] || f.status);
+
+  function render(files) {
+    list.hidden = !files.length;
+    const rows = files.slice().sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase())).map((f) => {
+      const row = document.createElement('div');
+      row.className = 'row proj-file';
+      row.dataset.status = f.status;
+      row.innerHTML = `<div class="row-text"><span class="row-title"></span><span class="row-sub"></span></div><div class="row-ctrl"><button type="button" class="icon-btn" aria-label="Remove">${TRASH}</button></div>`;
+      row.querySelector('.row-title').textContent = f.name;
+      const sub = row.querySelector('.row-sub');
+      sub.textContent = `${fmtSize(f.size)} · ${statusText(f)}`;
+      sub.classList.toggle('settings-warn', f.status === 'error');
+      const del = row.querySelector('button');
+      del.title = `Remove ${f.name}`;
+      del.addEventListener('click', async () => {
+        del.disabled = true;
+        try { await api(`/files/${encodeURIComponent(f.name)}`, { method: 'DELETE' }); refresh(); } catch (err) { saved.textContent = err.message; del.disabled = false; }
+      });
+      return row;
+    });
+    list.replaceChildren(...rows);
+  }
+  const TRASH = '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>';
+
+  let timer = null;
+  async function refresh() {
+    clearTimeout(timer);
+    try {
+      const p = await api('');
+      render(p.files || []);
+      if ((p.files || []).some((f) => f.status === 'indexing' || (f.status === 'queued' && !NO_MODEL))) timer = setTimeout(refresh, 1200);
+    } catch {}
+  }
+
+  async function upload(files) {
+    if (!files.length) return;
+    const form = new FormData();
+    for (const f of files) form.append('file', f);
+    drop.classList.add('busy');
+    saved.textContent = `Uploading ${files.length} file${files.length === 1 ? '' : 's'}…`;
+    try {
+      const res = await api('/files', { method: 'POST', body: form });
+      saved.textContent = res.problems?.length ? `Skipped: ${res.problems.join('; ')}` : '';
+    } catch (err) { saved.textContent = err.message; }
+    drop.classList.remove('busy');
+    refresh();
+  }
+  $('proj-file').addEventListener('change', (e) => { upload([...e.target.files]); e.target.value = ''; });
+  drop.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); drop.classList.add('over'); } });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); upload([...e.dataTransfer.files]); });
+
+  $('proj-reindex')?.addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    try { await api('/reindex', { method: 'POST' }); location.reload(); } catch (err) { saved.textContent = err.message; e.target.disabled = false; }
+  });
+
+  $('proj-delete').addEventListener('click', async () => {
+    if (!confirm('Delete this project and its files? Its chats are kept.')) return;
+    try { await api('', { method: 'DELETE' }); location.href = '/chat'; } catch (err) { saved.textContent = err.message; }
+  });
+
+  refresh();
+})();
+</script>
+{{end}}
+
+{{define "proj-file"}}<div class="row proj-file" data-status="{{.Status}}"><div class="row-text"><span class="row-title">{{.Name}}</span><span class="row-sub">{{bytes .Size}} · {{.Status}}</span></div></div>{{end}}

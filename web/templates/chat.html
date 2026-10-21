@@ -28,11 +28,19 @@
     </button>
     {{with .Data.Chat}}<button type="button" class="btn subtle" id="delete-chat">Delete chat</button>{{end}}
 {{end}}
+{{define "sources"}}<details class="sources"><summary>{{len .}} passage{{if ne (len .) 1}}s{{end}} from the project's files</summary><ol>{{range .}}<li value="{{.N}}"><span class="src-file">{{.File}}{{with .Page}} · page {{.}}{{end}}{{with .Heading}} · {{.}}{{end}}</span><span class="src-text">{{.Text}}</span></li>{{end}}</ol></details>{{end}}
 {{define "content"}}
-<div class="chat" id="chat" data-chat-id="{{with .Data.Chat}}{{.ID}}{{end}}" data-tune="{{json .Data.Tune}}" data-presets="{{json .Presets}}" data-loaded="{{json .LoadedNames}}">
+<div class="chat" id="chat" data-chat-id="{{with .Data.Chat}}{{.ID}}{{end}}" data-project="{{with .Data.Project}}{{.ID}}{{end}}" data-tune="{{json .Data.Tune}}" data-presets="{{json .Presets}}" data-loaded="{{json .LoadedNames}}">
 
   <div class="chat-body">
     <div class="chat-main">
+      {{if .Projects}}<div class="column chat-crumb"><label class="proj-chip{{if .Data.Project}} on{{end}}" title="{{if .Data.Chat}}Move this chat to a project{{else}}Start this chat in a project{{end}}">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      <select id="chat-project" aria-label="Project">
+        <option value="">No project</option>
+        {{range .Projects}}<option value="{{.ID}}"{{if and $.Data.Project (eq .ID $.Data.Project.ID)}} selected{{end}}>{{.Name}}</option>{{end}}
+      </select>
+    </label></div>{{end}}
       <div class="messages" id="messages">
         <div class="column" id="message-list">
           {{with .Data.Chat}}{{range .Messages}}
@@ -43,6 +51,7 @@
               {{if .Thinking}}<details class="thinking"><summary>Thinking</summary><div class="thinking-text">{{.Thinking}}</div></details>{{end}}
               {{with .Spoken}}<div class="spoken">{{.}}</div>{{end}}
               <div class="md">{{.Content}}</div>
+              {{with .Sources}}{{template "sources" .}}{{end}}
               {{with .Stats}}<div class="stats" role="button" tabindex="0" title="Open Tune">{{printf "%.1f" .TokensPerSec}} tok/s · {{.OutputTokens}} tokens{{with .Context}} · {{kib .}}k context{{end}}{{if .AutoContext}} (auto){{end}}</div>
               {{if eq .DoneReason "length"}}<div class="msg-warn">Cut off: the conversation filled the context ({{.PromptTokens}} prompt + {{.OutputTokens}} reply tokens). Raise “Context length” in Tune for longer replies.</div>{{end}}{{end}}
             </div>

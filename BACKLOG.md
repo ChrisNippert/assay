@@ -117,6 +117,16 @@ All of the 2026-10-20 polish list is done (see Done).
 
 ## Done
 
+- Projects and RAG (2026-10-20): projects group chats (sidebar folders,
+  drag and drop, a picker on the chat page) and can have instructions, a
+  default model or preset, and files. Files are indexed with an embedding
+  model the user picks and downloads in Settings → Knowledge; chats in the
+  project get the closest passages in their prompt and show them under the
+  reply. Plain files, no database. Open: citations [n] aren't linked to
+  their passage yet; no per-chat attachments; files in other formats
+  (EPUB, XLSX, images via a vision model) aren't read; very large projects
+  would want an approximate index.
+
 - Draft models are labelled as drafts (2026-10-20): DSpark/DFlash/EAGLE
   files inside a repo are listed apart from the real quants (they used to
   show as the model's "Q8_0"/"BF16" with "Fits on GPU"), draft repos say

@@ -231,13 +231,13 @@ type modelPageData struct {
 	Drafts   []quantRow
 	Draft    bool
 	DraftFor string
-	Memory      hw.Memory
-	Score       float64 // of the base model, 0 if unrated
-	ScoreOf     string
-	ScorePct    int // Score as a percentage of the best known score
-	ScoreURL    string
-	Error       string
-	Partial     bool // render only the detail block, for the Discover panel
+	Memory   hw.Memory
+	Score    float64 // of the base model, 0 if unrated
+	ScoreOf  string
+	ScorePct int // Score as a percentage of the best known score
+	ScoreURL string
+	Error    string
+	Partial  bool // render only the detail block, for the Discover panel
 }
 
 var ctxChoices = []int{4096, 8192, 16384, 32768, 65536, 131072}

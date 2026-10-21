@@ -14,7 +14,8 @@ type ChatGroup struct {
 
 // ChatGroups buckets the page's chats into Today / Yesterday / Previous 7 days / Older
 // (by local calendar day), keeping order and omitting empty groups.
-func (p *page) ChatGroups() []ChatGroup { return groupChats(p.Chats, time.Now()) }
+// Chats in a project are listed under the project instead.
+func (p *page) ChatGroups() []ChatGroup { return groupChats(p.looseChats(), time.Now()) }
 
 func groupChats(list []chats.Summary, now time.Time) []ChatGroup {
 	y, m, d := now.Date()

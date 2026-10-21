@@ -281,3 +281,19 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest, fn func(ChatResponse
 	req.Stream = ptr(true)
 	return stream(ctx, c, "/api/chat", req, fn)
 }
+
+// Embed turns texts into vectors with an embedding model, in one request.
+// Inputs longer than the model's context are truncated by Ollama.
+func (c *Client) Embed(ctx context.Context, model string, input []string) ([][]float32, error) {
+	in := map[string]any{"model": model, "input": input, "truncate": true}
+	var out struct {
+		Embeddings [][]float32 `json:"embeddings"`
+	}
+	if err := c.call(ctx, http.MethodPost, "/api/embed", in, &out); err != nil {
+		return nil, err
+	}
+	if len(out.Embeddings) != len(input) {
+		return nil, fmt.Errorf("embed: got %d vectors for %d inputs", len(out.Embeddings), len(input))
+	}
+	return out.Embeddings, nil
+}

@@ -42,10 +42,23 @@ type Message struct {
 	Thinking string `json:"thinking,omitempty"`
 	// Spoken is what voice mode said aloud while the model was still
 	// thinking, before Content.
-	Spoken  string    `json:"spoken,omitempty"`
-	Model   string    `json:"model,omitempty"`
-	Stats   *Stats    `json:"stats,omitempty"`
+	Spoken string `json:"spoken,omitempty"`
+	Model  string `json:"model,omitempty"`
+	Stats  *Stats `json:"stats,omitempty"`
+	// Sources are the project-file excerpts the reply was given (RAG).
+	Sources []Source  `json:"sources,omitempty"`
 	Created time.Time `json:"created"`
+}
+
+// Source is one excerpt from a project file that went into a reply's
+// prompt, numbered as the model was asked to cite it ([1], [2], ...).
+type Source struct {
+	N       int     `json:"n"`
+	File    string  `json:"file"`
+	Page    int     `json:"page,omitempty"`
+	Heading string  `json:"heading,omitempty"`
+	Text    string  `json:"text"`
+	Score   float32 `json:"score"`
 }
 
 // Chat is a whole conversation. Options, System and Think are this chat's
@@ -55,6 +68,7 @@ type Chat struct {
 	Title    string         `json:"title"`
 	Model    string         `json:"model"`
 	Preset   string         `json:"preset,omitempty"`
+	Project  string         `json:"project,omitempty"` // project ID, "" for none
 	Options  map[string]any `json:"options,omitempty"`
 	System   string         `json:"system,omitempty"`
 	Think    *bool          `json:"think,omitempty"`
@@ -85,6 +99,7 @@ type Summary struct {
 	Title   string
 	Model   string
 	Preset  string
+	Project string
 	Updated time.Time
 }
 
@@ -173,6 +188,35 @@ func (s *Store) Rename(id, title string) error {
 	return s.write(c)
 }
 
+// SetProject moves a chat into a project ("" takes it out). Like Rename,
+// it leaves Updated alone so the chat keeps its place.
+func (s *Store) SetProject(id, project string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, err := s.Get(id)
+	if err != nil {
+		return err
+	}
+	c.Project = project
+	return s.write(c)
+}
+
+// LeaveProject takes every chat out of a project, e.g. when it's deleted.
+func (s *Store) LeaveProject(project string) error {
+	list, err := s.List()
+	if err != nil {
+		return err
+	}
+	for _, c := range list {
+		if c.Project == project {
+			if err := s.SetProject(c.ID, ""); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // write saves c atomically. The caller holds s.mu.
 func (s *Store) write(c *Chat) error {
 	p, err := s.path(c.ID)
@@ -227,7 +271,7 @@ func (s *Store) List() ([]Summary, error) {
 		if err != nil {
 			continue
 		}
-		out = append(out, Summary{ID: c.ID, Title: c.Title, Model: c.Model, Preset: c.Preset, Updated: c.Updated})
+		out = append(out, Summary{ID: c.ID, Title: c.Title, Model: c.Model, Preset: c.Preset, Project: c.Project, Updated: c.Updated})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Updated.After(out[j].Updated) })
 	return out, nil

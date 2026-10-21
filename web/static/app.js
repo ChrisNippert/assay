@@ -380,6 +380,34 @@
   const chatListEl = document.getElementById('chat-list');
   const chatFilter = document.getElementById('chat-filter');
 
+  const projectListEl = document.getElementById('project-list');
+  const looseEl = document.getElementById('loose-chats');
+
+  // Which projects are expanded, remembered across pages.
+  let openProjects = new Set();
+  try { openProjects = new Set(JSON.parse(localStorage.getItem('ollamui.openProjects') || '[]')); } catch { /* ignore */ }
+  function saveOpenProjects() {
+    try { localStorage.setItem('ollamui.openProjects', JSON.stringify([...openProjects])); } catch { /* ignore */ }
+  }
+  function setProjectOpen(proj, open, persist = true) {
+    proj.querySelector('.project-chats').hidden = !open;
+    proj.classList.toggle('open', open);
+    proj.querySelector('.project-toggle').setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (!persist) return;
+    if (open) openProjects.add(proj.dataset.project); else openProjects.delete(proj.dataset.project);
+    saveOpenProjects();
+  }
+  function updateProjectCount(proj) {
+    proj.querySelector('.project-count').textContent = proj.querySelectorAll('.project-chats .chat-row').length;
+  }
+  function initProjects() {
+    if (!projectListEl) return;
+    for (const proj of projectListEl.querySelectorAll('.project')) {
+      const active = proj.dataset.active === '1' || proj.querySelector('.chat-link.active');
+      setProjectOpen(proj, !!active || openProjects.has(proj.dataset.project), false);
+    }
+  }
+
   function applyChatFilter() {
     if (!chatListEl) return;
     const q = (chatFilter?.value || '').trim().toLowerCase();
@@ -389,20 +417,24 @@
     for (const g of chatListEl.querySelectorAll('.chat-group')) {
       g.hidden = !g.querySelector('.chat-row:not([hidden])');
     }
+    for (const proj of chatListEl.querySelectorAll('.project')) {
+      const box = proj.querySelector('.project-chats');
+      if (!q) { proj.hidden = false; box.hidden = !proj.classList.contains('open'); continue; }
+      const nameHit = proj.querySelector('.project-name').textContent.toLowerCase().includes(q);
+      const hit = !!box.querySelector('.chat-row:not([hidden])');
+      proj.hidden = !hit && !nameHit;
+      box.hidden = !hit;
+    }
   }
   chatFilter?.addEventListener('input', applyChatFilter);
 
   // Adds a newly created chat to the top of the Today group (creating it if missing).
-  function addSidebarChat(id, title) {
+  function addSidebarChat(id, title, projectId) {
     if (!chatListEl) return;
     for (const a of chatListEl.querySelectorAll('.active')) a.classList.remove('active');
-    let group = chatListEl.querySelector('.chat-group');
-    if (group?.querySelector('.chat-group-label')?.textContent !== 'Today') {
-      group = el('div', 'chat-group');
-      group.append(el('div', 'chat-group-label', 'Today'));
-      chatListEl.prepend(group);
-    }
     const row = el('div', 'chat-row');
+    row.draggable = true;
+    row.dataset.chat = id;
     const a = el('a', 'chat-link active', title.split('\n')[0].slice(0, 60));
     a.href = `/chat/${id}`;
     a.title = a.textContent;
@@ -419,8 +451,22 @@
     del.setAttribute('aria-label', 'Delete chat');
     del.innerHTML = trashIcon;
     row.append(a, ren, del);
-    group.querySelector('.chat-group-label').after(row);
-    group.hidden = false;
+    const proj = projectId && projectListEl ? [...projectListEl.querySelectorAll('.project')].find((p) => p.dataset.project === projectId) : null;
+    if (proj) {
+      proj.querySelector('.project-chats').prepend(row);
+      updateProjectCount(proj);
+      setProjectOpen(proj, true, false);
+    } else {
+      const loose = looseEl || chatListEl;
+      let group = loose.querySelector('.chat-group');
+      if (group?.querySelector('.chat-group-label')?.textContent !== 'Today') {
+        group = el('div', 'chat-group');
+        group.append(el('div', 'chat-group-label', 'Today'));
+        loose.prepend(group);
+      }
+      group.querySelector('.chat-group-label').after(row);
+      group.hidden = false;
+    }
     if (chatFilter && chatListEl.querySelectorAll('.chat-row').length > 8) chatFilter.hidden = false;
   }
 
@@ -472,6 +518,13 @@
   }
 
   chatListEl?.addEventListener('click', async (e) => {
+    const tog = e.target.closest('.project-toggle');
+    if (tog) {
+      const proj = tog.closest('.project');
+      setProjectOpen(proj, !proj.classList.contains('open'));
+      applyChatFilter();
+      return;
+    }
     const ren = e.target.closest('[data-chat-rename]');
     if (ren) {
       e.preventDefault();
@@ -499,10 +552,115 @@
     row.classList.add('removing');
     setTimeout(() => {
       const group = row.closest('.chat-group');
+      const proj = row.closest('.project');
       row.remove();
       if (group && !group.querySelector('.chat-row')) group.remove();
+      if (proj) updateProjectCount(proj);
       applyChatFilter();
     }, 200);
+  });
+
+  // ---- sidebar projects ----
+  initProjects();
+  applyChatFilter();
+
+  document.getElementById('new-project')?.addEventListener('click', () => {
+    if (!projectListEl) return;
+    const existing = projectListEl.querySelector('.project-new-row');
+    if (existing) { existing.querySelector('input').focus(); return; }
+    const wrap = el('div', 'project-new-row');
+    wrap.innerHTML = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+    const input = el('input', 'chat-rename-input');
+    input.type = 'text';
+    input.placeholder = 'Project name';
+    input.maxLength = 100;
+    input.setAttribute('aria-label', 'Project name');
+    wrap.append(input);
+    projectListEl.prepend(wrap);
+    input.focus();
+    let done = false;
+    input.addEventListener('keydown', async (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); done = true; wrap.remove(); }
+      else if (e.key === 'Enter') {
+        e.preventDefault();
+        const name = input.value.trim();
+        if (!name || done) return;
+        done = true;
+        input.disabled = true;
+        const res = await fetch('/api/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        if (res.ok) { location.href = '/projects/' + encodeURIComponent((await res.json()).id); return; }
+        alert(`Couldn't create project: ${await errorText(res)}`);
+        wrap.remove();
+      }
+    });
+    input.addEventListener('blur', () => { if (!done && !input.value.trim()) { done = true; wrap.remove(); } });
+  });
+
+  // Drag a chat onto a project to file it, or onto "Chats" / the loose list to take it out.
+  let dragRow = null;
+  function dropTargetFor(t) {
+    if (!(t instanceof Element)) return null;
+    const proj = t.closest('.project');
+    if (proj) return { el: proj.querySelector('.project-row'), project: proj.dataset.project, proj };
+    const head = t.closest('.chats-head');
+    if (head) return { el: head, project: '' };
+    const loose = t.closest('#loose-chats');
+    if (loose) return { el: loose, project: '' };
+    return null;
+  }
+  function clearDrop() {
+    for (const n of document.querySelectorAll('.drop-target')) n.classList.remove('drop-target');
+  }
+  chatListEl?.addEventListener('dragstart', (e) => {
+    const row = e.target.closest?.('.chat-row');
+    if (!row || row.classList.contains('renaming')) return;
+    dragRow = row;
+    row.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', row.dataset.chat);
+  });
+  document.getElementById('sidebar')?.addEventListener('dragover', (e) => {
+    if (!dragRow) return;
+    const t = dropTargetFor(e.target);
+    clearDrop();
+    if (!t) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    t.el.classList.add('drop-target');
+  });
+  document.getElementById('sidebar')?.addEventListener('dragleave', (e) => {
+    if (!e.relatedTarget || !document.getElementById('sidebar').contains(e.relatedTarget)) clearDrop();
+  });
+  document.addEventListener('dragend', () => { dragRow?.classList.remove('dragging'); dragRow = null; clearDrop(); });
+  document.getElementById('sidebar')?.addEventListener('drop', async (e) => {
+    if (!dragRow) return;
+    const t = dropTargetFor(e.target);
+    clearDrop();
+    if (!t) return;
+    e.preventDefault();
+    const row = dragRow;
+    dragRow = null;
+    row.classList.remove('dragging');
+    const from = row.closest('.project');
+    if ((from?.dataset.project || '') === t.project) return;
+    const res = await fetch(`/api/chats/${encodeURIComponent(row.dataset.chat)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project: t.project }),
+    });
+    if (!res.ok) { alert(`Couldn't move chat: ${await errorText(res)}`); return; }
+    if (!t.proj) { location.reload(); return; } // back to the dated list: easiest to re-render
+    const group = row.closest('.chat-group');
+    t.proj.querySelector('.project-chats').append(row);
+    if (group && !group.querySelector('.chat-row')) group.remove();
+    if (from) updateProjectCount(from);
+    updateProjectCount(t.proj);
+    setProjectOpen(t.proj, true);
+    applyChatFilter();
   });
 
   window.ollamui = { addSidebarChat, post, errorText, refreshLoaded, setLoadButton, el, fmtBytes, pollDownloads };

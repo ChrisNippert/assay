@@ -469,8 +469,44 @@
       : `Cut off: the conversation filled the context${used}. Raise “Context length” in Tune for longer replies.`;
   }
 
-  function addSidebarChat(id, title) {
-    window.ollamui?.addSidebarChat(id, title);
+  function addSidebarChat(id, title, projectId) {
+    window.ollamui?.addSidebarChat(id, title, projectId);
+  }
+
+  // ---- projects ----
+  // The chat's project: a new chat joins the one picked; an existing chat
+  // moves when the picker changes.
+  const projectSel = document.getElementById('chat-project');
+  const project = () => projectSel?.value ?? chatEl.dataset.project ?? '';
+  projectSel?.addEventListener('change', async () => {
+    projectSel.closest('.proj-chip').classList.toggle('on', !!projectSel.value);
+    if (!chatId) return; // sent with the first message
+    try {
+      const res = await fetch(`/api/chats/${encodeURIComponent(chatId)}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ project: projectSel.value }),
+      });
+      if (!res.ok) throw new Error(await errorText(res));
+      location.reload(); // the sidebar regroups
+    } catch (err) {
+      alert(`Couldn’t move the chat: ${err.message}`);
+    }
+  });
+
+  // The excerpts a reply was given, folded under it like the server renders them.
+  function sourcesBox(sources) {
+    const box = el('details', 'sources');
+    const n = sources.length;
+    box.append(el('summary', null, `${n} passage${n === 1 ? '' : 's'} from the project’s files`));
+    const ol = el('ol');
+    for (const x of sources) {
+      const li = el('li');
+      li.value = x.n;
+      const where = [x.file, x.page ? `page ${x.page}` : '', x.heading || ''].filter(Boolean).join(' · ');
+      li.append(el('span', 'src-file', where), el('span', 'src-text', x.text));
+      ol.append(li);
+    }
+    box.append(ol);
+    return box;
   }
 
   form.addEventListener('submit', (e) => {
@@ -517,7 +553,7 @@
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chatId, content: text, fromUser, voice: !!voice, ...tune.selection(), ...tune.settings() }),
+        body: JSON.stringify({ chatId, project: chatId ? undefined : project(), content: text, fromUser, voice: !!voice, ...tune.selection(), ...tune.settings() }),
         signal: controller.signal,
       });
       if (!res.ok) throw new Error(await errorText(res));
@@ -531,8 +567,11 @@
               chatEl.dataset.chatId = chatId;
               history.replaceState({ emptyChat: true }, '');
               history.pushState({ chat: true }, '', `/chat/${chatId}`);
-              addSidebarChat(chatId, text);
+              addSidebarChat(chatId, text, project());
             }
+            break;
+          case 'sources':
+            reply.insertBefore(sourcesBox(ev.sources), stats);
             break;
           case 'thinking':
             // Spoken replies keep it shut: the talker's lines say what's going on.

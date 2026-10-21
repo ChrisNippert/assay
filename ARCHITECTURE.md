@@ -234,6 +234,41 @@ transcript ─► /api/chat {voice: true} ─► main model on the GPU (thinks, 
   downloads on first use), speech-detection sensitivity, and the prose
   prompt. The bundled service lists its voices at `/v1/audio/voices`.
 
+### Projects and RAG
+
+A **project** is a folder of chats that can also carry instructions, a
+default model or preset, and files. Leave those empty and it's just a
+folder. Chats store their `project` ID; the sidebar lists projects
+(collapsible, drag chats onto them) above the dated loose chats, and the
+chat page has a project picker above the conversation (moving an existing
+chat, or choosing where a new one goes).
+
+Storage, per project (`~/.local/share/ollamui/projects/<id>/`):
+`project.json` (settings + file list with status), `files/` (the originals)
+and `index/` (`index.json` with the chunks + `vectors.f32`, normalised
+float32). No database: search is a linear cosine scan (`internal/index`),
+fine for tens of thousands of chunks. Deleting a project keeps its chats.
+
+**Indexing** (`runIndexer`, one file at a time in the background): extract
+text (`internal/rag`: text and code, HTML, PDF via `pdftotext`, DOCX, ODT;
+20 MB max), split into ~1,500-character chunks with 200 of overlap
+(headings and PDF pages tracked, code fences kept whole), embed 16 at a time
+through Ollama's `/api/embed` with "file · heading" prefixed, then store.
+Progress shows on the project page. Files wait (not fail) until an
+embedding model is chosen; restarts pick up unfinished files.
+
+**Embedding model** (Settings → Knowledge, `knowledge.json`): the user picks
+and downloads one (suggestions: qwen3-embedding:0.6b, embeddinggemma,
+nomic-embed-text, …; any Ollama embedding model works). One index holds one
+model's vectors; switching models re-indexes every project.
+
+**Retrieval** (in `prepareTurn`): for a chat in a project with indexed
+files, the latest user message (plus the previous one when it's short) is
+embedded, the top-K chunks (default 6, cosine ≥ 0.25) go into the system
+prompt after the project's instructions, numbered for citation. They're
+streamed to the page (`sources` event) and saved on the reply, shown as a
+folded "N passages from the project's files" list.
+
 ### internal/chats
 
 One JSON file per conversation. Writes go to a temp file and are renamed into
@@ -268,9 +303,11 @@ No database. Plain files under XDG directories:
   config.toml            listen address, Ollama URL, HF token        (M2)
   presets/<name>.toml    one preset per file                         (M3)
   voice.json             voice mode settings (Settings → Voice)
+  knowledge.json         RAG settings: embedding model, excerpts per answer
 ~/.local/share/ollamui/
   chats/<id>.json        one conversation per file
   scores.json            cached intelligence scores, refreshed daily
+  projects/<id>/         project.json, files/, index/ (RAG)
   bench/<digest>.json    speed tests from the Compare page
 ~/.cache/ollamui-voice/  Kokoro model files (the speech service's)
 ```

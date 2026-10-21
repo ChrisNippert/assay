@@ -12,6 +12,7 @@ import (
 	"ollamui/internal/chats"
 	"ollamui/internal/ollama"
 	"ollamui/internal/presets"
+	"ollamui/internal/projects"
 )
 
 // --- pages ---
@@ -21,6 +22,8 @@ type chatPageData struct {
 	Model  string // model selected in the picker
 	Preset string // preset selected in the picker (takes precedence over Model)
 	Tune   tuneState
+	// Project is the chat's project (or the one a new chat will join).
+	Project *projects.Project
 	// Recent are the presets to offer on an empty chat: the last used
 	// first, then the rest, three at most.
 	Recent []*presets.Preset
@@ -53,6 +56,21 @@ func (s *Server) handleChatPage(w http.ResponseWriter, r *http.Request) {
 		data.Tune = tuneState{Options: c.Options, System: c.System, Think: c.Think}
 		p.ChatID = c.ID
 		p.Title = c.Title
+	}
+	// A chat in a project, or a new one started from it, shows the project;
+	// a new one starts with the project's model or preset.
+	pid := r.URL.Query().Get("project")
+	if data.Chat != nil {
+		pid = data.Chat.Project
+	}
+	if pid != "" {
+		if pr, err := s.projects.Get(pid); err == nil {
+			data.Project = pr
+			p.ProjectID = pr.ID
+			if data.Chat == nil && r.URL.Query().Get("model") == "" {
+				data.Model, data.Preset = pr.Model, pr.Preset
+			}
+		}
 	}
 	// Pick a model for a new chat: ?model=, then whatever is loaded on the
 	// GPU (a model only on the CPU is voice mode's talker), then the first
@@ -198,15 +216,18 @@ type sendRequest struct {
 	// that talks while the chat model thinks: "" picks one, "off" none.
 	Voice  bool   `json:"voice"`
 	Talker string `json:"talker"`
+	// Project puts a new chat in a project.
+	Project string `json:"project"`
 }
 
 // event is one line of the NDJSON stream sent back to the browser.
 type event struct {
-	Type    string       `json:"type"` // chat, thinking, content, say, done, error
-	ID      string       `json:"id,omitempty"`
-	Text    string       `json:"text,omitempty"`
-	Stats   *chats.Stats `json:"stats,omitempty"`
-	Message string       `json:"message,omitempty"`
+	Type    string         `json:"type"` // chat, sources, thinking, content, say, done, error
+	ID      string         `json:"id,omitempty"`
+	Text    string         `json:"text,omitempty"`
+	Stats   *chats.Stats   `json:"stats,omitempty"`
+	Message string         `json:"message,omitempty"`
+	Sources []chats.Source `json:"sources,omitempty"`
 }
 
 func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
@@ -224,6 +245,9 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 	}
 	emit := streamEvents(w)
 	if emit(event{Type: "chat", ID: t.chat.ID}) != nil {
+		return
+	}
+	if len(t.sources) > 0 && emit(event{Type: "sources", Sources: t.sources}) != nil {
 		return
 	}
 	var content, thinking strings.Builder
@@ -270,6 +294,8 @@ type turn struct {
 	// replyModel is the model that wrote the reply, when it isn't the
 	// chat's (voice mode's talker answering small talk).
 	replyModel string
+	// sources are the project-file excerpts put in the prompt.
+	sources []chats.Source
 }
 
 // stats turns Ollama's final chunk into the stats saved with the reply.
@@ -326,6 +352,11 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 	} else {
 		c = chats.New(req.Model)
 		c.Title = titleFrom(req.Content)
+		if req.Project != "" {
+			if _, err := s.projects.Get(req.Project); err == nil {
+				c.Project = req.Project
+			}
+		}
 	}
 	if req.FromUser != nil {
 		if !c.TruncateAtUser(*req.FromUser) {
@@ -342,6 +373,22 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 		return nil, false
 	}
 
+	// A project's instructions come before the chat's own system prompt,
+	// and excerpts from its files after.
+	t := &turn{chat: c}
+	if c.Project != "" {
+		if pr, err := s.projects.Get(c.Project); err == nil {
+			if pr.Instructions != "" {
+				system = strings.TrimSpace(pr.Instructions + "\n\n" + system)
+			}
+			if pr.Ready() > 0 {
+				t.sources = s.retrieve(r.Context(), pr.ID, ragQuery(c.Messages))
+				if sp := sourcesPrompt(t.sources); sp != "" {
+					system = strings.TrimSpace(system + "\n\n" + sp)
+				}
+			}
+		}
+	}
 	if req.Voice && s.voiceSt.Get().Prose {
 		system = strings.TrimSpace(system + "\n\n" + voiceSystem)
 	}
@@ -352,7 +399,6 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 	// Without a context length from the chat or preset, Ollama would use its
 	// small default (4k on most GPUs), which thinking models fill quickly.
 	// Pick the largest that fits on the GPU instead.
-	t := &turn{chat: c}
 	// GPU layers set by hand put part of the model on the CPU on purpose:
 	// auto context (which keeps it all on the GPU) stays out of it, and the
 	// spill isn't taken as a sign the context was too big.
@@ -414,6 +460,7 @@ func (s *Server) saveReply(t *turn, content, thinking, spoken string, stats *cha
 		Spoken:   spoken,
 		Model:    model,
 		Stats:    stats,
+		Sources:  t.sources,
 		Created:  time.Now(),
 	})
 	if err := s.chats.Save(t.chat); err != nil {

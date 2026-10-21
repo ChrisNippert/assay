@@ -22,6 +22,7 @@ import (
 	"ollamui/internal/hw"
 	"ollamui/internal/ollama"
 	"ollamui/internal/presets"
+	"ollamui/internal/projects"
 	"ollamui/internal/pulls"
 	"ollamui/internal/scores"
 	"ollamui/internal/server"
@@ -91,10 +92,20 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("voice settings: %w", err)
 	}
+	projectStore, err := projects.Open(filepath.Join(*dataDir, "projects"))
+	if err != nil {
+		return fmt.Errorf("open project store: %w", err)
+	}
+	ragSettings, err := projects.OpenSettings(filepath.Join(*configDir, "knowledge.json"))
+	if err != nil {
+		return fmt.Errorf("knowledge settings: %w", err)
+	}
 	srv, err := server.New(server.Options{
 		Ollama:        client,
 		Chats:         store,
 		Presets:       presetStore,
+		Projects:      projectStore,
+		RAGSettings:   ragSettings,
 		HF:            hf.New(hf.DefaultBaseURL, os.Getenv("HF_TOKEN")),
 		Pulls:         pulls.New(client, log),
 		Scores:        scoreStore,
@@ -114,6 +125,7 @@ func run() error {
 	defer stop()
 
 	go scoreStore.Run(ctx)
+	go srv.Run(ctx) // background work: indexing project files
 	launcherDone := make(chan struct{})
 	go func() {
 		defer close(launcherDone)

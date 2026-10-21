@@ -2,8 +2,11 @@ package server
 
 import (
 	"bufio"
+	"bytes"
+	"context"
 	"encoding/json"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,6 +19,7 @@ import (
 	"ollamui/internal/hw"
 	"ollamui/internal/ollama"
 	"ollamui/internal/presets"
+	"ollamui/internal/projects"
 	"ollamui/internal/pulls"
 )
 
@@ -78,6 +82,32 @@ func (f *fakeOllama) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var req struct{ Model string }
 		json.NewDecoder(r.Body).Decode(&req)
 		f.deleted = append(f.deleted, req.Model)
+	case "/api/embed":
+		// A toy embedding: one dimension per word from a small vocabulary,
+		// so texts sharing words point the same way.
+		var req struct {
+			Model string   `json:"model"`
+			Input []string `json:"input"`
+		}
+		json.NewDecoder(r.Body).Decode(&req)
+		if req.Model != "toy-embed" {
+			w.WriteHeader(http.StatusNotFound)
+			io.WriteString(w, `{"error":"model not found"}`)
+			return
+		}
+		vocab := []string{"sourdough", "starter", "flour", "bike", "tyre", "pressure", "tax", "garden"}
+		var out struct {
+			Embeddings [][]float32 `json:"embeddings"`
+		}
+		for _, in := range req.Input {
+			v := make([]float32, len(vocab)+1)
+			v[len(vocab)] = 0.01
+			for i, word := range vocab {
+				v[i] = float32(strings.Count(strings.ToLower(in), word))
+			}
+			out.Embeddings = append(out.Embeddings, v)
+		}
+		json.NewEncoder(w).Encode(out)
 	case "/api/chat":
 		var req ollama.ChatRequest
 		json.NewDecoder(r.Body).Decode(&req)
@@ -445,5 +475,85 @@ func TestManualGPULayersSkipAutoContext(t *testing.T) {
 	rec := do(s, "GET", "/api/models/defaults?name=qwen3:8b", "")
 	if !strings.Contains(rec.Body.String(), `"layers":37`) {
 		t.Errorf("defaults should count 36 blocks + output = 37 layers: %s", rec.Body)
+	}
+}
+
+func TestProjectRAG(t *testing.T) {
+	s, fake, store := newTestServer(t)
+	s.ragSt.Set(projects.Settings{EmbedModel: "toy-embed", TopK: 2})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go s.Run(ctx)
+
+	rec := do(s, "POST", "/api/projects", `{"name":"Kitchen"}`)
+	if rec.Code != 201 {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body)
+	}
+	var pr projects.Project
+	json.Unmarshal(rec.Body.Bytes(), &pr)
+
+	// Upload two files and an unsupported one.
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	for name, text := range map[string]string{
+		"bread.md": "# Bread\n\nFeed the sourdough starter with flour and water every day. A lively starter doubles in four hours.",
+		"bike.txt": "Check the tyre pressure before every ride. Road bike tyre pressure is around 80 psi.",
+		"song.mp3": "not text",
+	} {
+		fw, _ := mw.CreateFormFile("file", name)
+		io.WriteString(fw, text)
+	}
+	mw.Close()
+	req := httptest.NewRequest("POST", "/api/projects/"+pr.ID+"/files", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Host = "localhost:8484"
+	rec = httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "song.mp3") {
+		t.Fatalf("upload: %d %s", rec.Code, rec.Body)
+	}
+
+	// Wait for indexing.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		p, _ := s.projects.Get(pr.ID)
+		if p.Ready() == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("files not indexed: %+v", p.Files)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	do(s, "PATCH", "/api/projects/"+pr.ID, `{"instructions":"You are a baking helper."}`)
+
+	fake.reply = `{"message":{"role":"assistant","content":"Feed it daily [1]."},"done":true}` + "\n"
+	rec = do(s, "POST", "/api/chat", `{"model":"qwen3:8b","project":"`+pr.ID+`","content":"How often should I feed my sourdough starter?"}`)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"type":"sources"`) {
+		t.Fatalf("chat: %d %s", rec.Code, rec.Body)
+	}
+	sys := fake.chatReqs[0].Messages[0]
+	if sys.Role != "system" || !strings.HasPrefix(sys.Content, "You are a baking helper.") || !strings.Contains(sys.Content, "[1] bread.md") || strings.Contains(sys.Content, "tyre") {
+		t.Errorf("system prompt = %q", sys.Content)
+	}
+	list, _ := store.List()
+	c, _ := store.Get(list[0].ID)
+	if c.Project != pr.ID {
+		t.Errorf("chat not in the project: %q", c.Project)
+	}
+	last := c.Messages[len(c.Messages)-1]
+	if len(last.Sources) != 1 || last.Sources[0].File != "bread.md" || last.Sources[0].Heading != "Bread" {
+		t.Errorf("saved sources = %+v", last.Sources)
+	}
+
+	// The project page renders, deleting it keeps the chat.
+	if rec := do(s, "GET", "/projects/"+pr.ID, ""); rec.Code != 200 || !strings.Contains(rec.Body.String(), "Kitchen") {
+		t.Errorf("project page: %d", rec.Code)
+	}
+	if rec := do(s, "DELETE", "/api/projects/"+pr.ID, ""); rec.Code != 204 {
+		t.Fatalf("delete: %d", rec.Code)
+	}
+	if c, _ := store.Get(c.ID); c == nil || c.Project != "" {
+		t.Errorf("chat should survive its project, out of it: %+v", c)
 	}
 }
