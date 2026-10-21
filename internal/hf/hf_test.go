@@ -249,3 +249,18 @@ func TestDraftFileIgnoresRepoName(t *testing.T) {
 		t.Error("a draft beside it was missed")
 	}
 }
+
+func TestProjectorNames(t *testing.T) {
+	files := []File{{Type: "file", Path: "Qwen3.5-9B.BF16-mmproj.gguf"}, {Type: "file", Path: "Qwen3.5-9B.Q8_0.gguf"}}
+	qs, vision := Quants("o/r", files)
+	if !vision || len(qs) != 1 || qs[0].Name != "Q8_0" {
+		t.Fatalf("quants %v vision %v", qs, vision)
+	}
+	if p := Projector(files); p != "Qwen3.5-9B.BF16-mmproj.gguf" {
+		t.Errorf("projector %q", p)
+	}
+	both := []File{{Type: "file", Path: "mmproj-BF16.gguf"}, {Type: "file", Path: "mmproj-F16.gguf"}, {Type: "file", Path: "mmproj-F32.gguf"}}
+	if p := Projector(both); p != "mmproj-F16.gguf" {
+		t.Errorf("prefers %q, want F16", p)
+	}
+}

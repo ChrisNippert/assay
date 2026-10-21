@@ -111,7 +111,7 @@ func Quants(repo string, files []File) (quants []Quant, hasVision bool) {
 		base := strings.TrimSuffix(path.Base(f.Path), path.Ext(f.Path))
 		lower := strings.ToLower(base)
 		switch {
-		case strings.HasPrefix(lower, "mmproj"):
+		case isProjector(lower):
 			hasVision = true
 			continue
 		case strings.Contains(lower, "imatrix"), strings.HasPrefix(lower, "mtp-"),
@@ -160,20 +160,26 @@ func Quants(repo string, files []File) (quants []Quant, hasVision bool) {
 	return quants, hasVision
 }
 
+// isProjector reports whether a lowercased file name is a vision
+// projector: "mmproj-F16.gguf", or "Model.BF16-mmproj.gguf" as some
+// uploaders name it.
+func isProjector(lower string) bool { return strings.Contains(lower, "mmproj") }
+
 // Projector picks the vision projector (mmproj) to go with a quant, or
 // "": F16 when there's a choice, as Ollama does, then BF16, F32, any.
 func Projector(files []File) string {
 	var all []string
 	for _, f := range files {
 		base := strings.ToLower(path.Base(f.Path))
-		if f.Type == "file" && strings.HasPrefix(base, "mmproj") && strings.HasSuffix(base, ".gguf") {
+		if f.Type == "file" && isProjector(base) && strings.HasSuffix(base, ".gguf") {
 			all = append(all, f.Path)
 		}
 	}
 	sort.Strings(all)
 	for _, want := range []string{"f16", "bf16", "f32"} {
 		for _, p := range all {
-			if strings.Contains(strings.ToLower(path.Base(p)), want+".gguf") && !(want == "f16" && strings.Contains(strings.ToLower(path.Base(p)), "bf16")) {
+			b := strings.ToLower(path.Base(p))
+			if strings.Contains(strings.ReplaceAll(b, "bf16", "_"), want) || (want == "bf16" && strings.Contains(b, "bf16")) {
 				return p
 			}
 		}
