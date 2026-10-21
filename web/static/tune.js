@@ -78,6 +78,7 @@
     // Auto context keeps the whole model on the GPU, so it's off when GPU
     // layers are set by hand (the server skips it too).
     const gpuSet = key === 'num_ctx' && (state.options.num_gpu != null || p?.options?.num_gpu != null);
+    if (key === 'num_ctx' && defaults.auto?.fit && !gpuSet) return { value: defaults.auto.ctx || null, from: 'auto' };
     if (key === 'num_ctx' && defaults.auto?.ctx && !gpuSet) return { value: defaults.auto.ctx, from: 'auto' };
     if (key === 'num_ctx' && defaults.ollamaContext) return { value: defaults.ollamaContext, from: 'Ollama' };
     return { value: null, from: null };
@@ -229,7 +230,7 @@
     if (!same) sel.replaceChildren(...opts.map(([v, t]) => new Option(t, v)));
     sel.value = own != null ? String(own) : '';
     let text = own != null ? 'Changed' : describe(inh);
-    if (own == null && inh.from === 'auto') text = 'Largest that fits on your GPU';
+    if (own == null && inh.from === 'auto') text = defaults.auto?.fit ? (inh.value ? 'Largest that fits, picked by llama.cpp' : 'llama.cpp picks the largest that fits when it loads') : 'Largest that fits on your GPU';
     else if (own == null && effective('num_gpu') != null) text = 'Not auto: GPU layers are set by hand';
     else if (own == null && inh.from === 'Ollama' && defaults.auto?.reason) text = `Not auto: ${defaults.auto.reason}`;
     if (defaults.contextLength) text += ` · max ${kib(defaults.contextLength)}`;

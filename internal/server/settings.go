@@ -53,6 +53,9 @@ func (s *Server) ollamaIsLocal() bool {
 // kvFactor scales f16 cache estimates to the server's K/V cache type, and
 // to the number of parallel requests: Ollama gives each its own cache.
 func (s *Server) kvFactor(ctx context.Context) float64 {
+	if f, ok := s.ollama.(fitter); ok {
+		return hw.KVTypeFactor(f.CacheType()) // one slot per model
+	}
 	return hw.KVTypeFactor(s.ollamaEnv(ctx).KVCacheType()) * float64(s.ollamaParallel(ctx))
 }
 

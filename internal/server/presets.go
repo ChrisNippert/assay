@@ -166,8 +166,16 @@ func (s *Server) handleModelDefaults(w http.ResponseWriter, r *http.Request) {
 		System:        show.System,
 		ContextLength: show.ContextLength(),
 		OllamaContext: ollamaDefaultContext(s.memory.VRAM, show.ContextLength()),
-		Auto:          s.pickContext(r.Context(), name, false),
+		Auto:          s.defaultsContext(r.Context(), name),
 		Thinking:      show.HasCapability("thinking"),
 		Layers:        show.Layers(),
 	})
+}
+
+// defaultsContext is the automatic context the Tune panel shows.
+func (s *Server) defaultsContext(ctx context.Context, name string) autoContext {
+	if _, ok := s.ollama.(fitter); ok {
+		return s.fittedContext(ctx, name)
+	}
+	return s.pickContext(ctx, name, false)
 }

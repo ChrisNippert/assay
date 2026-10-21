@@ -266,6 +266,9 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if resp.Done {
+			if t.auto.Fit {
+				t.fitted = s.fittedContext(r.Context(), t.req.Model).Ctx
+			}
 			stats = t.stats(resp)
 		}
 		return nil
@@ -296,6 +299,8 @@ type turn struct {
 	replyModel string
 	// sources are the project-file excerpts put in the prompt.
 	sources []chats.Source
+	// fitted is the context llama.cpp chose, once the reply is done.
+	fitted int
 }
 
 // stats turns Ollama's final chunk into the stats saved with the reply.
@@ -306,6 +311,9 @@ func (t *turn) stats(resp ollama.ChatResponse) *chats.Stats {
 		st.Context, st.AutoContext = n, t.auto.Ctx > 0
 	case int64:
 		st.Context = int(n)
+	}
+	if st.Context == 0 && t.auto.Fit {
+		st.Context, st.AutoContext = t.fitted, true
 	}
 	return st
 }

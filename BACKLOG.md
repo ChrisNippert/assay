@@ -20,6 +20,32 @@ Ollama itself runs an older bundled `llama-server`; the gain is newer
 llama.cpp. Gotcha: `llama-server` defaults to 4 parallel slots, which
 overfilled 12 GB VRAM (5.9 tok/s); always pass `-np 1`.
 
+**Progress (2026-10-21, mid stage 1, committed):** `internal/gguf` (GGUF
+header reader, tested on real files), `internal/engine` (store + Ollama
+import by hard link, one llama-server per model, chat/embed translation to
+the ollama types, keep-alive/pinning/evicting, memory read from the
+`-lv 4` log) and a `server.Backend` interface; `-engine llama.cpp` is the
+default, `-engine ollama` the fallback; `-llama-server PATH` (else
+~/.local/share/ollamui/llama.cpp/llama-server, else PATH). Verified: a chat
+through ollamui on llama.cpp streams and saves. Local Vulkan build:
+scratchpad `llama/build-vk/bin/` (not yet copied to
+~/.local/share/ollamui/llama.cpp/; the user's :8484 server still runs the
+previous binary on Ollama).
+Next, in order:
+- Context: `--fit` with no `-c` grows to the model max (262k) and writing
+  drops 3x (2B: 15 vs 46 tok/s at 8k). Now `-c 32768` by default
+  (`engine.DefaultCtx`); check what's best (8k/16k/32k) with the speed test,
+  and let Tune's context override it.
+- 2B still writes 46 tok/s vs Ollama's 76 at the same model: find out why
+  (thread count? `-ub`? the mmproj loaded? `-lv 4` cost?) before switching
+  the user over.
+- Running() reports the full name, chats use the alias, so the reply's
+  context stat is missing: remember the requested name per process.
+- Then stage 2 (HF downloads), etc. Meanwhile Discover pulls still go
+  through Ollama and get imported (engine re-imports every 10 s).
+- RAG keyword (BM25) fallback, so project files work without an embedding
+  model (user's thesis PDF is stuck "waiting").
+
 Stages (the app keeps working after each):
 1. **Engine core.** `internal/gguf` reads GGUF metadata (what Ollama's
    `/api/show` gave us: architecture, layers, context, chat template,

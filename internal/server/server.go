@@ -33,9 +33,32 @@ import (
 	"ollamui/web"
 )
 
+// Backend runs the models: the llama.cpp engine, or Ollama.
+type Backend = backend
+
+type backend interface {
+	Version(ctx context.Context) (string, error)
+	List(ctx context.Context) ([]ollama.Model, error)
+	Running(ctx context.Context) ([]ollama.RunningModel, error)
+	Show(ctx context.Context, model string) (*ollama.ShowResponse, error)
+	Load(ctx context.Context, model, keepAlive string, options map[string]any) error
+	Unload(ctx context.Context, model string) error
+	Delete(ctx context.Context, model string) error
+	Chat(ctx context.Context, req ollama.ChatRequest, fn func(ollama.ChatResponse) error) error
+	Embed(ctx context.Context, model string, input []string) ([][]float32, error)
+	Create(ctx context.Context, req ollama.CreateRequest, fn func(ollama.Status) error) error
+	URL() string
+	Host() string
+	Port() string
+}
+
+// fitter is a backend that sizes the context itself (llama.cpp's --fit):
+// ollamui's own auto context then stays out of the way.
+type fitter interface{ CacheType() string }
+
 // Options configures a Server.
 type Options struct {
-	Ollama  *ollama.Client
+	Ollama  backend
 	Chats   *chats.Store
 	Presets *presets.Store
 	HF      *hf.Client
@@ -63,7 +86,7 @@ type Options struct {
 
 // Server is the HTTP handler for the whole app.
 type Server struct {
-	ollama  *ollama.Client
+	ollama  backend
 	chats   *chats.Store
 	presets *presets.Store
 	hf      *hf.Client

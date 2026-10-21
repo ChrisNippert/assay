@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -18,6 +19,7 @@ import (
 
 	"ollamui/internal/bench"
 	"ollamui/internal/chats"
+	"ollamui/internal/engine"
 	"ollamui/internal/hf"
 	"ollamui/internal/hw"
 	"ollamui/internal/ollama"
@@ -39,7 +41,11 @@ func main() {
 
 func run() error {
 	listen := flag.String("listen", "127.0.0.1:8484", "address to serve the UI on")
-	ollamaURL := flag.String("ollama", ollama.ResolveHost(os.Getenv("OLLAMA_HOST")), "Ollama server URL")
+	ollamaURL := flag.String("ollama", ollama.ResolveHost(os.Getenv("OLLAMA_HOST")), "Ollama server URL (with -engine ollama, and for importing and pulling models meanwhile)")
+	engineName := flag.String("engine", "llama.cpp", `what runs the models: "llama.cpp" or "ollama"`)
+	llamaServer := flag.String("llama-server", os.Getenv("OLLAMUI_LLAMA_SERVER"), "llama.cpp's llama-server binary (default: ~/.local/share/ollamui/llama.cpp/llama-server, then PATH)")
+	cacheType := flag.String("cache-type", "q8_0", "K/V cache type for llama.cpp: f16, q8_0 or q4_0")
+	ollamaModels := flag.String("ollama-models", filepath.Join(os.Getenv("HOME"), ".ollama", "models"), "Ollama's models folder, imported (by hard link) into ollamui's own")
 	dataDir := flag.String("data", defaultDir("XDG_DATA_HOME", ".local/share"), "where chats are stored")
 	configDir := flag.String("config", defaultDir("XDG_CONFIG_HOME", ".config"), "where presets and settings are stored")
 	voiceURL := flag.String("voice", envOr("OLLAMUI_VOICE", "http://127.0.0.1:8485"), "speech service for voice mode (OpenAI audio API); empty turns voice off")
@@ -100,8 +106,32 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("knowledge settings: %w", err)
 	}
+	// The engine: llama.cpp runs the models ollamui keeps; Ollama's models
+	// are imported by hard link, so nothing is downloaded twice.
+	var models server.Backend = client
+	var eng *engine.Engine
+	if *engineName == "llama.cpp" {
+		store, err := engine.OpenStore(filepath.Join(*dataDir, "models"))
+		if err != nil {
+			return fmt.Errorf("model store: %w", err)
+		}
+		if n, err := store.ImportOllama(*ollamaModels); err != nil {
+			log.Warn("import Ollama models", "err", err)
+		} else if n > 0 {
+			log.Info("imported Ollama models", "count", n)
+		}
+		bin := findLlamaServer(*llamaServer, *dataDir)
+		if bin == "" {
+			log.Warn("llama-server not found: models can't run until llama.cpp is installed (see Settings)")
+		}
+		eng = engine.New(store, engine.Options{Server: bin, CacheType: *cacheType, FlashAttn: "on", Log: log})
+		eng.OllamaDir = *ollamaModels
+		models = eng
+	} else if *engineName != "ollama" {
+		return fmt.Errorf("unknown engine %q", *engineName)
+	}
 	srv, err := server.New(server.Options{
-		Ollama:        client,
+		Ollama:        models,
 		Chats:         store,
 		Presets:       presetStore,
 		Projects:      projectStore,
@@ -126,6 +156,13 @@ func run() error {
 
 	go scoreStore.Run(ctx)
 	go srv.Run(ctx) // background work: indexing project files
+	engineDone := make(chan struct{})
+	go func() {
+		defer close(engineDone)
+		if eng != nil {
+			eng.Run(ctx) // unloads idle models, and all of them on exit
+		}
+	}()
 	launcherDone := make(chan struct{})
 	go func() {
 		defer close(launcherDone)
@@ -164,6 +201,7 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	<-launcherDone
+	<-engineDone
 	if err := hs.Shutdown(shutdownCtx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		return err
 	}
@@ -212,4 +250,21 @@ func displayAddr(addr string) string {
 		host = "localhost"
 	}
 	return net.JoinHostPort(host, port)
+}
+
+// findLlamaServer looks for llama-server: the flag, ollamui's own copy,
+// then PATH.
+func findLlamaServer(flagPath, dataDir string) string {
+	for _, p := range []string{flagPath, filepath.Join(dataDir, "llama.cpp", "llama-server")} {
+		if p == "" {
+			continue
+		}
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			return p
+		}
+	}
+	if p, err := exec.LookPath("llama-server"); err == nil {
+		return p
+	}
+	return ""
 }

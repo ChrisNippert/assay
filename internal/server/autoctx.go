@@ -23,8 +23,24 @@ const (
 
 // autoContext is the context length ollamui picked for a model, and why.
 type autoContext struct {
-	Ctx    int    `json:"ctx"`    // 0 means "leave it to Ollama"
+	Ctx    int    `json:"ctx"`    // 0 means "leave it to the engine"
 	Reason string `json:"reason"` // short explanation for the UI
+	// Fit means the engine (llama.cpp) sizes the context itself; Ctx is
+	// then only what it chose for the loaded model, never sent.
+	Fit bool `json:"fit,omitempty"`
+}
+
+// fittedContext describes llama.cpp's own choice, for the UI.
+func (s *Server) fittedContext(ctx context.Context, model string) autoContext {
+	a := autoContext{Reason: "llama.cpp picks the largest that fits", Fit: true}
+	if running, err := s.ollama.Running(ctx); err == nil {
+		for _, m := range running {
+			if sameModel(m.Name, model) {
+				a.Ctx = m.ContextLength
+			}
+		}
+	}
+	return a
 }
 
 // chooseContext picks the largest step whose cache fits beside the model's
@@ -79,6 +95,9 @@ func sameModel(a, b string) bool {
 // probe is set, by loading the model briefly. Without a GPU, without layer
 // metadata or when the model sets num_ctx itself, it returns Ctx 0.
 func (s *Server) pickContext(ctx context.Context, model string, probe bool) autoContext {
+	if _, ok := s.ollama.(fitter); ok {
+		return autoContext{Reason: "llama.cpp picks the largest that fits", Fit: true}
+	}
 	if s.memory.VRAM == 0 {
 		return autoContext{Reason: "no GPU detected"}
 	}
