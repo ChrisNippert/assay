@@ -13,7 +13,7 @@ itself with llama.cpp's `llama-server` (see "Engine" below and BACKLOG.md);
   hand-writing Modelfiles.
 - **Chat** with streaming output, thinking blocks and speed stats.
 - **Compare** models by size, speed on your machine and published benchmarks.
-- **Talk**: a hands-free voice mode that keeps talking while a model thinks.
+- **Voice**: dictate a message, and have replies read aloud.
 - One static Go binary. No Docker, no database server, no Node toolchain.
 
 ## Non-goals
@@ -188,19 +188,29 @@ unit's configuration (`systemctl show`). `/settings` shows it and writes a
 scales its cache estimate by the K/V type and by `OLLAMA_NUM_PARALLEL`,
 since Ollama gives every parallel slot its own cache.
 
-### Voice mode
+### Voice
 
-The goal is a spoken conversation that never leaves you in silence, even
-while a thinking model thinks for half a minute.
+Dictation plus reading aloud. Until 2026-10-21 this was a hands-free
+conversation mode (it sent on each pause, talked over thinking with a
+filler model, and could be interrupted); it was swapped for dictation
+because it was less predictable. The server side of that mode
+(`voice: true` on `/api/chat`, the talker) still exists but no page uses it.
 
 ```
 mic ─► browser: energy VAD, 16 kHz WAV ─► /api/voice/transcribe ─► whisper
-                                           (live partials every ~0.9 s while you talk)
-transcript ─► /api/chat {voice: true} ─► main model on the GPU (thinks, then answers)
-                                    └─► talker: small model on the CPU, one short line
-                                        at a time, from the thinking so far ("say" events)
-"say" lines + answer sentences ─► /api/voice/speak ─► Kokoro ─► browser plays in order
+         each pause ends an utterance; its text is appended to the message box
+         (live partials every ~0.9 s while you talk). Send ends dictation.
+message ─► /api/chat {spoken: true if "Spoken style"} ─► model
+reply sentences (if "Read aloud", or a reply's speaker button) ─► /api/voice/speak ─► Kokoro
 ```
+
+- **Composer.** The mic button toggles dictation. Utterances are written
+  down in order, each after whatever is in the box, so typing between them
+  is kept. Pressing Send while dictating waits for the last utterance, then
+  sends. The bar under the composer (shown once voice is set up) has two
+  toggles remembered per browser: **Spoken style** (adds the one-line prose
+  prompt below) and **Read aloud** (speaks each reply as it streams). Every
+  reply also gets a "Read aloud" action.
 
 - **Speech service.** A separate local process with OpenAI's audio API
   (`/v1/audio/transcriptions`, `/v1/audio/speech`). `tools/voice/voice_server.py`
@@ -234,10 +244,8 @@ transcript ─► /api/chat {voice: true} ─► main model on the GPU (thinks, 
   an adaptive noise floor and 300 ms of pre-roll. A frame counts as voice
   when it's loud without being a click (peak/RMS under 7), and an utterance
   starts only when 11 of the last 15 frames were voice: typing is short
-  bursts with gaps, speech is sustained. Talking over the reply first only
-  ducks it to 25%; it stops once a transcript shows two or more real words
-  that aren't mostly what the assistant just said (echo). A false alarm
-  restores the volume. Replies are cut into sentences as
+  bursts with gaps, speech is sustained. While a reply is being read aloud
+  the threshold is 2.5× higher, against echo. Replies are cut into sentences as
   they stream and synthesized ahead of playback; markdown is stripped and
   code blocks are skipped. Clips are spaced 450 ms after a full stop, 200 ms
   after a comma (Kokoro trims silence off each clip). Mic access needs a secure context: localhost or
@@ -263,7 +271,7 @@ transcript ─► /api/chat {voice: true} ─► main model on the GPU (thinks, 
   small talk, which cancels the big model's request, or gives the lead-in
   ("WAIT: …"). So "hi" gets one reply in about a second, not a lead-in plus
   an answer. The reply is saved with the talker as its model.
-- **Prose for the ear.** Spoken replies get one system line asking for plain
+- **Prose for the ear.** Spoken-style replies get one system line asking for plain
   prose (no markdown, LaTeX, code, tables or lists). On Gemma 4 12B that
   took markup from 144 marks to 0 at no extra thinking time. Keep it one
   line: a longer list of style rules made Qwen3.5-9B think 95 s instead of
@@ -272,11 +280,11 @@ transcript ─► /api/chat {voice: true} ─► main model on the GPU (thinks, 
   `voice.SpeechText` spells out decimals ("1 point 6 7"), money, percents,
   multipliers, ranges and a few abbreviations before synthesis.
 - What was said aloud is saved with the reply (`spoken`) and shown above it.
-- **Settings → Voice** (`voice.json`, so every device shares them): filler
-  model (Auto / Off / any model), Kokoro voice with a preview, speed, pause
-  after a sentence, Whisper model (the service swaps models on request and
-  downloads on first use), speech-detection sensitivity, and the prose
-  prompt. The bundled service lists its voices at `/v1/audio/voices`.
+- **Settings → Voice** (`voice.json`, so every device shares them): Kokoro
+  voice with a preview, speed, pause after a sentence, Whisper model (the
+  service swaps models on request and downloads on first use) and
+  speech-detection sensitivity. The filler model and prose switch of the
+  old mode are kept in the file but no longer shown. The bundled service lists its voices at `/v1/audio/voices`.
 
 ### Projects and RAG
 
@@ -389,9 +397,9 @@ Design reference: direction **F** on the design canvas
 - **Settings**: a jump bar, then Models (llama.cpp build and backend, the
   defaults, models with their own settings and a "Use defaults" button;
   the Ollama server's variables with `-engine ollama`), Knowledge, Voice,
-  This machine. A mic button next to Send starts
-  voice mode; a status line under the composer shows listening / thinking /
-  speaking.
+  This machine. A mic button next to Send dictates
+  into the box; the bar under the composer shows listening / reading aloud
+  and holds the Spoken style and Read aloud toggles.
 - **Library**: installed models, size, quant, what's loaded and its VRAM,
   delete.
 - **Discover**: filters (total params range, dense/MoE, architecture,

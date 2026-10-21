@@ -1,12 +1,12 @@
-// Voice mode: hands-free conversation on the chat page.
+// Dictation and reading aloud on the chat page.
 //
-// The mic is read through an AudioWorklet. A small energy-based detector
-// decides when you start and stop talking; while you talk, the recording so
-// far is transcribed every so often for live text, and once you stop the
-// whole utterance is transcribed and sent as a voice turn. The reply is
-// spoken a sentence at a time as it streams in, along with any "say" lines
-// the server's talker produces while the model thinks. Talking over the
-// reply interrupts it.
+// The mic button dictates into the message box. The mic is read through an
+// AudioWorklet and a small energy-based detector cuts speech into
+// utterances at pauses: each is transcribed live while you talk and kept
+// once you pause. Nothing is sent until you press Send, which ends the
+// dictation first. Two toggles shape replies: "Spoken style" asks for plain
+// prose meant to be heard, and "Read aloud" speaks each reply a sentence at
+// a time as it streams in. Any reply can also be read from its action bar.
 (() => {
   const chat = window.ollamuiChat;
   const btn = document.getElementById('mic-btn');
@@ -14,7 +14,12 @@
   const bar = document.getElementById('voice-bar');
   const stateEl = document.getElementById('voice-state');
   const hush = document.getElementById('voice-hush');
+  const dl = document.getElementById('voice-download');
+  const notNow = document.getElementById('voice-not-now');
+  const spokenBtn = document.getElementById('voice-spoken');
+  const readBtn = document.getElementById('voice-read');
   const input = chat.input;
+  const form = input.form;
 
   const FRAME_MS = 20;
   const PREROLL = 15; // frames kept from before speech is detected (300 ms)
@@ -22,114 +27,153 @@
   const MIN_SPEECH = 12; // loud frames for an utterance to count (240 ms)
   const MAX_FRAMES = 1500; // 30 s
   const PARTIAL_MS = 900;
+  // From the Voice settings' speech detection: frames of the last WINDOW
+  // that must be voice, and a multiplier on the loudness threshold.
+  const WINDOW = 15;
+  const SENSITIVITY = { low: [13, 1.6], normal: [11, 1], high: [8, 0.7] };
+  let START_VOICED = 11;
+  let LOUDNESS = 1;
   // Silence between spoken clips (ms), by how the clip ended.
   let SENTENCE_PAUSE = 450; // from the Voice settings
   const CLAUSE_PAUSE = 200;
   const WORD_PAUSE = 120;
 
-  let status = null;
-  let active = false;
+  let status = {};
+  let active = false; // dictating
   let audio = null; // { ctx, stream, node }
   let speaker = null;
-  let state = '';
+  let listenState = ''; // listening, hearing, transcribing
 
-  // With a model, this also has the server load the talker ahead of time
-  // and start the speech service if it isn't running.
-  async function checkStatus(model) {
-    const q = model ? `?start=1&model=${encodeURIComponent(model)}` : '';
-    try { status = await (await fetch('/api/voice' + q)).json(); } catch { status = { available: false, error: 'Couldn’t reach ollamui.' }; }
-    // Stopped means "starts when you press it", which is fine.
+  // ---- the toggles, remembered in this browser ----
+  const pressed = (b) => b.getAttribute('aria-pressed') === 'true';
+  for (const [b, key] of [[spokenBtn, 'spoken'], [readBtn, 'read']]) {
+    try { b.setAttribute('aria-pressed', String(localStorage.getItem('voice.' + key) === '1')); } catch {}
+    b.addEventListener('click', () => {
+      const on = !pressed(b);
+      b.setAttribute('aria-pressed', String(on));
+      try { localStorage.setItem('voice.' + key, on ? '1' : '0'); } catch {}
+      if (b === readBtn && !on) speaker?.stop();
+    });
+  }
+
+  // ---- status and the bar under the composer ----
+  const ready = () => document.body.classList.contains('voice-ok');
+
+  async function checkStatus(start) {
+    try { status = await (await fetch('/api/voice' + (start ? '?start=1' : ''))).json(); } catch { status = { available: false, error: 'Couldn’t reach ollamui.' }; }
+    // Stopped means "starts when you use it", which is fine.
     const usable = status.available || status.stopped || status.starting;
     btn.classList.toggle('unavailable', !usable);
-    btn.title = usable ? 'Talk (voice mode)' : status.error;
-  }
-  checkStatus();
-
-  function setState(s, text) {
-    state = s;
-    bar.dataset.state = s;
-    stateEl.classList.toggle('error', s === 'error');
-    stateEl.textContent = text ?? {
-      listening: 'Listening…',
-      hearing: 'Hearing you…',
-      transcribing: 'Got it…',
-      thinking: 'Thinking…',
-      speaking: 'Speaking · talk to interrupt',
-    }[s] ?? '';
-    hush.hidden = s !== 'speaking';
-  }
-
-  // ---- turning voice mode on and off ----
-  btn.addEventListener('click', () => (active ? stop() : start()));
-  const endBtn = document.getElementById('voice-end');
-  const dl = document.getElementById('voice-download');
-  endBtn.addEventListener('click', stop);
-  hush.addEventListener('click', () => { speaker?.stop(); chat.stop(); });
-
-  async function start() {
-    bar.hidden = false;
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setState('error', 'The microphone only works over HTTPS or on localhost. From another device, open ollamui through “tailscale serve” or another HTTPS proxy.');
-      return;
-    }
-    await checkStatus(chat.model());
-    // Voice mode is optional: its speech models download only after a yes.
-    if (status.needsDownload) {
-      setState('', `Voice mode needs a one-time download (${status.downloadSize}).`);
-      stateEl.title = 'Speech recognition and a voice, kept in your cache folder. Remove them any time in Settings → Voice.';
-      endBtn.textContent = 'Not now';
-      dl.hidden = false;
-      const ok = await new Promise((resolve) => {
-        dl.onclick = () => resolve(true);
-        endBtn.onclick = () => resolve(false);
-      });
-      dl.hidden = true;
-      endBtn.onclick = null;
-      endBtn.textContent = 'End voice';
-      stateEl.title = '';
-      if (!ok) return;
-      setState('', 'Downloading…');
-      try { status = await (await fetch(`/api/voice?install=1&start=1&model=${encodeURIComponent(chat.model())}`)).json(); } catch {}
-    }
-    // The first start installs the speech packages, which takes a minute.
-    for (let i = 0; status.starting && i < 480 && !bar.hidden; i++) {
-      setState('', i < 10 ? 'Starting speech…' : 'Downloading voice mode… this takes a minute or two the first time');
-      await new Promise((r) => setTimeout(r, 500));
-      await checkStatus(chat.model());
-    }
-    if (bar.hidden) return; // ended while starting
-    if (!status.available) { setState('error', status.error || 'The speech service didn’t start.'); return; }
+    btn.title = usable ? 'Dictate' : status.error;
+    document.body.classList.toggle('voice-ok', !!usable && !status.needsDownload);
     const st = status.settings || {};
     if (st.pauseMs >= 0) SENTENCE_PAUSE = st.pauseMs;
     [START_VOICED, LOUDNESS] = SENSITIVITY[st.sensitivity] || SENSITIVITY.normal;
-    if (!chat.ready()) { setState('error', 'Choose a model first.'); return; }
+    showBar();
+  }
+  checkStatus();
+
+  // The bar holds the toggles once voice is set up, and shows what's going on.
+  function showBar() {
+    bar.hidden = !(ready() || active || bar.classList.contains('setup'));
+  }
+
+  function render(text) {
+    const s = active ? listenState : speaker?.busy() ? 'speaking' : '';
+    bar.dataset.state = s;
+    stateEl.classList.remove('error');
+    stateEl.textContent = text ?? {
+      listening: 'Listening · press the mic to stop',
+      hearing: 'Hearing you…',
+      transcribing: 'Writing it down…',
+      speaking: 'Reading aloud',
+    }[s] ?? '';
+    hush.hidden = !speaker?.busy();
+  }
+
+  function fail(msg) {
+    bar.hidden = false;
+    bar.dataset.state = 'error';
+    stateEl.classList.add('error');
+    stateEl.textContent = msg;
+  }
+
+  // ensureService starts the speech service, first asking to download it
+  // if need be. Voice is optional: its models download only after a yes.
+  async function ensureService() {
+    await checkStatus(true);
+    if (status.needsDownload) {
+      bar.classList.add('setup');
+      showBar();
+      render(`Voice needs a one-time download (${status.downloadSize}).`);
+      stateEl.title = 'Speech recognition and a voice, kept in your cache folder. Remove them any time in Settings → Voice.';
+      dl.hidden = notNow.hidden = false;
+      const ok = await new Promise((resolve) => {
+        dl.onclick = () => resolve(true);
+        notNow.onclick = () => resolve(false);
+      });
+      dl.hidden = notNow.hidden = true;
+      stateEl.title = '';
+      if (!ok) { bar.classList.remove('setup'); return false; }
+      render('Downloading…');
+      try { status = await (await fetch('/api/voice?install=1&start=1')).json(); } catch {}
+    }
+    // The first start installs the speech packages, which takes a minute.
+    for (let i = 0; status.starting && i < 480; i++) {
+      render(i < 10 ? 'Starting speech…' : 'Downloading voice… this takes a minute or two the first time');
+      await new Promise((r) => setTimeout(r, 500));
+      await checkStatus(true);
+    }
+    bar.classList.remove('setup');
+    if (!status.available) { fail(status.error || 'The speech service didn’t start.'); return false; }
+    return true;
+  }
+
+  // ---- dictation on and off ----
+  btn.addEventListener('click', () => (active ? stop() : start()));
+  hush.addEventListener('click', () => { speaker?.stop(); render(); });
+
+  async function start() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      fail('The microphone only works over HTTPS or on localhost. From another device, open ollamui through “tailscale serve” or another HTTPS proxy.');
+      return;
+    }
     active = true;
     btn.setAttribute('aria-pressed', 'true');
-    setState('', 'Starting the microphone…');
+    listenState = '';
+    showBar();
+    render('Starting…');
+    if (!(await ensureService())) {
+      active = false;
+      btn.setAttribute('aria-pressed', 'false');
+      if (bar.dataset.state !== 'error') { render(); showBar(); }
+      return;
+    }
+    if (!active) return; // pressed again while starting
     try {
       audio = await openMic();
     } catch (err) {
       stop();
-      bar.hidden = false;
-      setState('error', `Couldn’t open the microphone: ${err.message}`);
+      fail(`Couldn’t open the microphone: ${err.message}`);
       return;
     }
-    speaker = new Speaker(audio.ctx);
-    listen();
+    if (!active) { closeMic(); return; }
+    listenState = 'listening';
+    render();
   }
 
-  function stop() {
+  // stop ends dictation, keeping what was said before the press.
+  async function stop() {
     active = false;
     btn.setAttribute('aria-pressed', 'false');
-    speaker?.stop();
-    if (chat.busy()) chat.stop();
-    if (audio) {
-      audio.stream.getTracks().forEach((t) => t.stop());
-      audio.ctx.close();
-      audio = null;
-    }
+    const u = utt;
     utt = null;
-    bar.hidden = true;
+    closeMic();
+    if (u) endUtterance(u);
+    if (writing) render('Writing it down…');
+    await queue;
+    render();
+    showBar();
   }
 
   // ---- microphone ----
@@ -163,23 +207,24 @@
     return { ctx, stream, node };
   }
 
+  function closeMic() {
+    if (!audio) return;
+    audio.stream.getTracks().forEach((t) => t.stop());
+    audio.ctx.close();
+    audio = null;
+  }
+
   // ---- speech detection ----
   // Loudness alone can't tell speech from typing, so a frame only counts as
   // voice when it's loud without being a click (a click is a sharp peak in
   // an otherwise quiet frame), and an utterance only starts when most of
   // the last 300 ms was voice. Typing is short bursts with gaps; speech is
   // sustained.
-  const WINDOW = 15;
-  // From the Voice settings' speech detection: frames of the last WINDOW
-  // that must be voice, and a multiplier on the loudness threshold.
-  const SENSITIVITY = { low: [13, 1.6], normal: [11, 1], high: [8, 0.7] };
-  let START_VOICED = 11;
-  let LOUDNESS = 1;
   const MAX_CREST = 7; // peak / RMS; voiced speech is ~3–5, clicks are far higher
   let floor = 0.002; // running estimate of background noise (RMS)
   let recent = []; // voice flags for the last WINDOW frames
   let preroll = [];
-  let utt = null; // { frames, voiced, quiet, partialAt, partialBusy, interrupting }
+  let utt = null; // { frames, rate, voiced, quiet, partialAt, partialBusy, base }
 
   function onFrame(f) {
     if (!active) return;
@@ -190,8 +235,8 @@
       if (a > peak) peak = a;
     }
     const rms = Math.sqrt(sum / f.length);
-    const playing = speaker?.busy();
-    const threshold = Math.max(floor * 3, 0.006) * LOUDNESS * (playing ? 2.5 : 1);
+    // A reply being read aloud can leak into the mic, so it takes more then.
+    const threshold = Math.max(floor * 3, 0.006) * LOUDNESS * (speaker?.busy() ? 2.5 : 1);
     const loud = rms > threshold;
     const voiced = loud && peak / rms < MAX_CREST;
 
@@ -201,101 +246,79 @@
       if (preroll.length > PREROLL) preroll.shift();
       recent.push(voiced);
       if (recent.length > WINDOW) recent.shift();
-      if (voiced && recent.filter(Boolean).length >= START_VOICED && state !== 'transcribing') beginUtterance();
+      if (voiced && recent.filter(Boolean).length >= START_VOICED) beginUtterance();
       return;
     }
     utt.frames.push(f);
     if (voiced) utt.voiced++;
     utt.quiet = loud ? 0 : utt.quiet + 1;
-    if (utt.quiet >= END_SILENCE || utt.frames.length >= MAX_FRAMES) endUtterance();
-    else if (performance.now() - utt.partialAt > (utt.interrupting ? PARTIAL_MS / 2 : PARTIAL_MS) && !utt.partialBusy && utt.voiced >= MIN_SPEECH) partial();
+    if (utt.quiet >= END_SILENCE || utt.frames.length >= MAX_FRAMES) {
+      const u = utt;
+      utt = null;
+      endUtterance(u);
+    } else if (performance.now() - utt.partialAt > PARTIAL_MS && !utt.partialBusy && utt.voiced >= MIN_SPEECH) partial(utt);
   }
 
-  // Talking over the reply only turns it down at first; it stops once the
-  // transcript shows real words that aren't our own speech coming back.
   function beginUtterance() {
-    const interrupting = speaker.busy() || chat.busy();
-    if (interrupting) speaker.duck(true);
-    utt = { frames: preroll, voiced: recent.filter(Boolean).length, quiet: 0, partialAt: performance.now(), partialBusy: false, interrupting };
+    utt = { frames: preroll, rate: audio.ctx.sampleRate, voiced: recent.filter(Boolean).length, quiet: 0, partialAt: performance.now(), partialBusy: false, base: null };
     preroll = [];
     recent = [];
-    setState('hearing');
+    listenState = 'hearing';
+    render();
   }
 
-  function interrupt(u) {
-    u.interrupting = false;
-    turn++;
-    speaker.stop();
-    chat.stop();
-  }
+  // Utterances are written down in order: each one's text goes after
+  // whatever is in the box once the one before it is done.
+  let queue = Promise.resolve();
+  let writing = 0;
 
-  // Real words: at least two, and not one of whisper's stock phrases for noise.
-  function isWords(text) {
-    const words = text.match(/[\p{L}\p{N}']+/gu) || [];
-    return words.length >= 2 && !/^(thank you|thanks for watching|you|bye)[.!]?$/i.test(text.trim());
-  }
-
-  // Echo: mostly words the speaker said just now.
-  function isEcho(text) {
-    const words = (text.toLowerCase().match(/[\p{L}\p{N}']+/gu) || []);
-    const said = new Set(speaker.recent.join(' ').toLowerCase().match(/[\p{L}\p{N}']+/gu) || []);
-    return words.length > 0 && words.filter((w) => said.has(w)).length >= words.length * 0.6;
-  }
-
-  // Live text while you talk: transcribe what's been said so far.
-  async function partial() {
-    const u = utt;
+  // Live text while you talk: what's been said so far, after the box's text.
+  async function partial(u) {
+    if (writing) return; // the last utterance isn't in the box yet
     u.partialBusy = true;
     u.partialAt = performance.now();
-    const text = await transcribe(u.frames);
+    const text = await transcribe(u.frames, u.rate);
     u.partialBusy = false;
-    if (utt !== u || !text) return;
-    if (u.interrupting) {
-      if (!isWords(text) || isEcho(text)) return;
-      interrupt(u);
-    }
-    input.value = text;
-    input.dispatchEvent(new Event('input'));
+    if (utt !== u || writing || !text) return;
+    u.base ??= input.value;
+    put(u.base, text);
   }
 
-  async function endUtterance() {
-    const u = utt;
-    utt = null;
-    if (u.voiced < MIN_SPEECH) { settle(u); return; } // a cough or a click
-    setState('transcribing');
-    const text = await transcribe(u.frames);
-    if (!active) return;
-    if (!text || !isWords(text) || (u.interrupting && isEcho(text))) {
-      input.value = '';
-      settle(u);
+  function endUtterance(u) {
+    if (u.voiced < MIN_SPEECH) { // a cough or a click
+      if (u.base != null) put(u.base, '');
+      listenState = 'listening';
+      render();
       return;
     }
-    if (u.interrupting) interrupt(u);
-    input.value = '';
+    writing++;
+    if (active && !utt) { listenState = 'transcribing'; render(); }
+    queue = queue.then(async () => {
+      const text = await transcribe(u.frames, u.rate);
+      u.base ??= input.value;
+      put(u.base, isWords(text) ? text : '');
+      writing--;
+      if (active && !utt) { listenState = 'listening'; render(); }
+    });
+  }
+
+  // Real words: not one of whisper's stock phrases for noise.
+  function isWords(text) {
+    return /[\p{L}\p{N}]/u.test(text) && !/^(thank you|thanks for watching|you|bye)[.!]?$/i.test(text.trim());
+  }
+
+  function put(base, text) {
+    input.value = !text ? base : !base || /\s$/.test(base) ? base + text : base + ' ' + text;
     input.dispatchEvent(new Event('input'));
-    reply(text);
   }
 
-  // After a false alarm: back to whatever was going on.
-  function settle(u) {
-    if (u.interrupting) speaker.duck(false);
-    if (!active || utt) return;
-    setState(speaker.busy() ? 'speaking' : chat.busy() ? 'thinking' : 'listening');
-  }
-
-  function listen() {
-    if (active && !utt) setState('listening');
-  }
-
-  async function transcribe(frames) {
-    const rate = audio?.ctx.sampleRate;
-    if (!rate) return '';
+  async function transcribe(frames, rate) {
     try {
       const res = await fetch('/api/voice/transcribe', { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: wav(frames, rate) });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
       return (await res.json()).text.trim();
     } catch (err) {
-      if (active) setState('error', `Couldn’t transcribe: ${err.message}`);
+      fail(`Couldn’t transcribe: ${err.message}`);
       return '';
     }
   }
@@ -326,25 +349,50 @@
     return new Blob([buf], { type: 'audio/wav' });
   }
 
-  // ---- the reply ----
-  let turn = 0; // bumped by each reply and interruption, so stale ones bow out
+  // Sending ends the dictation, once what was said is in the box.
+  form.addEventListener('submit', async (e) => {
+    if ((!active && !writing) || chat.busy()) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    await stop();
+    form.requestSubmit();
+  }, true);
 
-  async function reply(text) {
-    const mine = ++turn;
-    setState('thinking');
-    const sentences = new Sentences((s) => speaker.say(s));
-    await chat.send(text, {
-      onEvent(ev) {
-        if (ev.type === 'say') { const s = new Sentences((t) => speaker.say(t)); s.feed(ev.text); s.flush(); }
+  // ---- reading aloud ----
+  // The speaker gets its own audio context, made while handling a click or
+  // a key so the browser lets it play.
+  function getSpeaker() {
+    speaker ??= new Speaker(new AudioContext());
+    speaker.ctx.resume();
+    return speaker;
+  }
+
+  function read(markdown) {
+    const sp = getSpeaker();
+    sp.stop();
+    const s = new Sentences((t) => sp.say(t));
+    s.feed(markdown);
+    s.flush();
+  }
+
+  // chat.js asks this as it sends a message.
+  window.ollamuiVoice = {
+    turn() {
+      const shown = !bar.hidden && ready();
+      speaker?.stop();
+      const out = { spoken: shown && pressed(spokenBtn) };
+      if (!shown || !pressed(readBtn)) return out;
+      const sp = getSpeaker();
+      const sentences = new Sentences((t) => sp.say(t));
+      out.onEvent = (ev) => {
         if (ev.type === 'content') sentences.feed(ev.text);
         if (ev.type === 'done') sentences.flush();
-      },
-    });
-    sentences.flush();
-    if (!active || mine !== turn) return;
-    await speaker.idle();
-    if (active && !utt && mine === turn) listen();
-  }
+      };
+      out.end = () => sentences.flush();
+      return out;
+    },
+    read,
+  };
 
   // Sentences cuts streamed markdown into speakable sentences. Code blocks
   // are left for the screen.
@@ -389,16 +437,10 @@
   // so the next one is ready when the current one ends.
   class Speaker {
     constructor(ctx) {
-      this.ctx = ctx; this.queue = []; this.source = null; this.gen = 0; this.running = false; this.waiters = [];
-      this.recent = []; // the last few lines, to recognize our own voice in the mic
+      this.ctx = ctx; this.queue = []; this.source = null; this.gen = 0; this.running = false;
       this.resumeAt = 0; // when the pause after the last clip ends
-      this.gain = ctx.createGain();
-      this.gain.connect(ctx.destination);
     }
-    duck(on) { this.gain.gain.setTargetAtTime(on ? 0.25 : 1, this.ctx.currentTime, 0.05); }
     say(text) {
-      this.recent.push(text);
-      if (this.recent.length > 4) this.recent.shift();
       const gen = this.gen;
       const buf = fetch('/api/voice/speak', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) })
         .then((r) => (r.ok ? r.arrayBuffer() : null))
@@ -412,7 +454,7 @@
     }
     async pump(gen) {
       this.running = true;
-      if (state !== 'hearing') setState('speaking');
+      render();
       while (this.queue.length && gen === this.gen) {
         const { buf: next, pause } = this.queue.shift();
         const buf = await next;
@@ -421,11 +463,10 @@
         const wait = this.resumeAt - performance.now();
         if (wait > 0) await new Promise((r) => setTimeout(r, wait));
         if (gen !== this.gen) continue;
-        if (state !== 'hearing') setState('speaking');
         await new Promise((done) => {
           const src = this.ctx.createBufferSource();
           src.buffer = buf;
-          src.connect(this.gain);
+          src.connect(this.ctx.destination);
           src.onended = done;
           this.source = src;
           src.start();
@@ -435,21 +476,18 @@
       }
       if (gen !== this.gen) return;
       this.running = false;
-      if (state === 'speaking') setState(chat.busy() ? 'thinking' : 'listening');
-      this.waiters.splice(0).forEach((w) => w());
+      render();
     }
     busy() { return this.running; }
-    idle() { return this.running ? new Promise((r) => this.waiters.push(r)) : Promise.resolve(); }
     stop() {
-      this.duck(false);
       this.gen++;
       this.queue = [];
       try { this.source?.stop(); } catch {}
       this.source = null;
       this.running = false;
-      this.waiters.splice(0).forEach((w) => w());
+      render();
     }
   }
 
-  addEventListener('pagehide', stop);
+  addEventListener('pagehide', () => { active = false; utt = null; closeMic(); speaker?.stop(); });
 })();

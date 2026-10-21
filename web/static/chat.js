@@ -206,6 +206,7 @@
     edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/>',
     redo: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
     check: '<path d="M5 12l5 5 9-10"/>',
+    speak: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>',
   };
   function actionBtn(action, label) {
     const b = el('button', 'msg-action');
@@ -226,7 +227,7 @@
   function addActions(msg) {
     const bar = el('div', 'msg-actions');
     if (msg.classList.contains('user')) bar.append(actionBtn('copy', 'Copy'), actionBtn('edit', 'Edit and resend'));
-    else bar.append(actionBtn('copy', 'Copy'), actionBtn('redo', 'Regenerate'));
+    else bar.append(actionBtn('copy', 'Copy'), actionBtn('speak', 'Read aloud'), actionBtn('redo', 'Regenerate'));
     const stats = msg.querySelector(':scope > .stats');
     if (stats) {
       // Stats and actions share one quiet line under a reply.
@@ -307,6 +308,7 @@
       } catch { btn.title = 'Couldn’t copy'; }
       return;
     }
+    if (action === 'speak') { window.ollamuiVoice?.read(msg.querySelector('.md')?.dataset.src ?? ''); return; }
     if (controller || !chatId) return; // busy streaming, or nothing saved yet
     if (action === 'edit') startEdit(msg);
     if (action === 'redo') regenerate(msg);
@@ -564,9 +566,10 @@
   });
 
   // send streams a reply to text. fromUser (edit/regenerate) replaces that
-  // user message, counted from 0, and everything after it. voice (from
-  // voice.js) asks for a spoken reply and gets every stream event.
-  async function send(text, fromUser, voice) {
+  // user message, counted from 0, and everything after it. voice.js may ask
+  // for a reply in spoken style and read it aloud as it streams.
+  async function send(text, fromUser) {
+    const voice = window.ollamuiVoice?.turn() ?? {};
     document.getElementById('empty')?.remove();
     const userMsg = el('div', 'msg user');
     userMsg.append(el('div', 'bubble', text));
@@ -598,13 +601,13 @@
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chatId, project: chatId ? undefined : project(), content: text, fromUser, voice: !!voice, ...tune.selection(), ...tune.settings() }),
+        body: JSON.stringify({ chatId, project: chatId ? undefined : project(), content: text, fromUser, spoken: !!voice.spoken, ...tune.selection(), ...tune.settings() }),
         signal: controller.signal,
       });
       if (!res.ok) throw new Error(await errorText(res));
       await readNDJSON(res.body, (ev) => {
         const stick = nearBottom();
-        voice?.onEvent(ev);
+        voice.onEvent?.(ev);
         switch (ev.type) {
           case 'chat':
             if (!chatId) {
@@ -619,8 +622,7 @@
             reply.insertBefore(sourcesBox(ev.sources), stats);
             break;
           case 'thinking':
-            // Spoken replies keep it shut: the talker's lines say what's going on.
-            if (!thinking) { thinkBox.hidden = false; thinkBox.open = !voice; stats.textContent = ''; }
+            if (!thinking) { thinkBox.hidden = false; thinkBox.open = true; stats.textContent = ''; }
             thinking += ev.text;
             thinkText.textContent = thinking;
             break;
@@ -657,16 +659,15 @@
       if (thinking) thinkBox.querySelector('summary').textContent = 'Thinking';
       controller = null;
       sendBtn.textContent = 'Send';
+      voice.end?.();
       addActions(reply);
-      if (!voice) input.focus(); // on a phone that would pop up the keyboard
+      input.focus();
       refreshLoaded(); // chatting loads the model, so the memory list may have changed
     }
   }
 
-  // voice.js drives the chat through this.
+  // voice.js works with the chat through this.
   window.ollamuiChat = {
-    send: (text, voice) => send(text, undefined, voice),
-    stop: () => controller?.abort(),
     busy: () => !!controller,
     ready: () => !!select.value,
     model: () => baseOf(selectedOption()),

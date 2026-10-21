@@ -216,6 +216,9 @@ type sendRequest struct {
 	// that talks while the chat model thinks: "" picks one, "off" none.
 	Voice  bool   `json:"voice"`
 	Talker string `json:"talker"`
+	// Spoken asks for a reply written to be read aloud (plain prose), as
+	// dictation's "Spoken style" toggle does.
+	Spoken bool `json:"spoken"`
 	// Project puts a new chat in a project.
 	Project string `json:"project"`
 }
@@ -399,7 +402,7 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 			}
 		}
 	}
-	if req.Voice && s.voiceSt.Get().Prose {
+	if req.Spoken || req.Voice && s.voiceSt.Get().Prose {
 		system = strings.TrimSpace(system + "\n\n" + voiceSystem)
 	}
 	msgs := toOllama(c.Messages)

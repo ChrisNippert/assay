@@ -80,7 +80,13 @@ nothing because no embedding model had been picked).
 
 ### 0. Voice mode follow-ups (S–M)
 
-Voice mode shipped 2026-10-20 (see Done). Open:
+Voice mode shipped 2026-10-20 (see Done) and became dictation + read aloud
+on 2026-10-21. Open:
+
+- **Dead talker code.** `voiceTurn`, the talker and its warm-up
+  (`/api/voice?model=`) are unused since the switch to dictation. Delete
+  them, or bring live mode back as an option if it's missed. The talker and
+  overthinking items below only matter for live mode. (S)
 
 - **Phone over HTTPS.** The mic needs a secure context. Document or automate
   `tailscale serve --bg 8484` (and `-allow-host <machine>.<tailnet>.ts.net`). (S)

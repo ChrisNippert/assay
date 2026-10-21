@@ -109,15 +109,6 @@
   {{else}}<p class="small settings-warn">{{.Status.Error}}</p>{{end}}
   <div class="boxed-list" id="voice-list" data-settings="{{json .Settings}}">
     <div class="row">
-      <div class="row-text"><span class="row-title">Filler model</span><span class="row-sub">Talks while the chat model thinks, and answers small talk by itself. Runs on the CPU, so a small model works best.</span></div>
-      <div class="row-ctrl"><select id="v-talker" aria-label="Filler model">
-        <option value="">Auto ({{or .AutoTalker "none installed"}})</option>
-        <option value="off">Off</option>
-        <optgroup label="Small: runs well on the CPU">{{range .Talkers}}{{if .Small}}<option value="{{.Name}}">{{.Name}} · {{bytes .Size}}</option>{{end}}{{end}}</optgroup>
-        <optgroup label="Larger: slow on the CPU">{{range .Talkers}}{{if not .Small}}<option value="{{.Name}}">{{.Name}} · {{bytes .Size}}</option>{{end}}{{end}}</optgroup>
-      </select></div>
-    </div>
-    <div class="row">
       <div class="row-text"><span class="row-title">Voice</span><span class="row-sub">Kokoro voices, all English.</span></div>
       <div class="row-ctrl">
         <button type="button" class="btn subtle" id="v-preview">Preview</button>
@@ -137,22 +128,18 @@
       <div class="row-ctrl"><select id="v-stt" aria-label="Speech recognition model"><option value="">Default</option>{{range .STTModels}}<option value="{{.Name}}">{{.Name}} · {{.Note}}</option>{{end}}</select></div>
     </div>
     <div class="row">
-      <div class="row-text"><span class="row-title">Speech detection</span><span class="row-sub">How readily it decides you're talking, and talking over a reply interrupts it.</span></div>
+      <div class="row-text"><span class="row-title">Speech detection</span><span class="row-sub">How readily dictation decides you're talking.</span></div>
       <div class="row-ctrl"><select id="v-sens" aria-label="Speech detection">
         <option value="low">Low: ignores more noise</option>
         <option value="normal">Normal</option>
         <option value="high">High: catches quiet speech</option>
       </select></div>
     </div>
-    <label class="row switch-row">
-      <span class="row-text"><span class="row-title">Plain-prose replies</span><span class="row-sub">Asks spoken replies for plain sentences: no markdown, LaTeX, code or lists.</span></span>
-      <input type="checkbox" class="switch" id="v-prose">
-    </label>
   </div>
   {{if .Downloaded}}
   <div class="boxed-list">
     <div class="row">
-      <div class="row-text"><span class="row-title">Voice mode downloads</span><span class="row-sub">Speech models and packages, {{bytes .Downloaded}}. Removing them frees the space; pressing the mic again downloads them again.</span></div>
+      <div class="row-text"><span class="row-title">Voice downloads</span><span class="row-sub">Speech models and packages, {{bytes .Downloaded}}. Removing them frees the space; pressing the mic again downloads them again.</span></div>
       <div class="row-ctrl"><button type="button" class="btn danger" id="v-remove">Remove</button></div>
     </div>
   </div>
@@ -190,21 +177,20 @@
     // A saved value that isn't offered any more (a deleted model) still shows.
     if (el.value !== String(v) && v !== '' && el.tagName === 'SELECT') { el.add(new Option(String(v), String(v))); el.value = String(v); }
   };
-  set(f('v-talker'), saved.talker);
   set(f('v-voice'), saved.voice);
   set(f('v-speed'), saved.speed || 1);
   set(f('v-pause'), saved.pauseMs);
   set(f('v-stt'), saved.sttModel);
   set(f('v-sens'), saved.sensitivity);
-  f('v-prose').checked = saved.prose;
+  // Live voice mode's filler model and prose switch are gone; their saved
+  // values are kept as they were.
   const current = () => ({
-    talker: f('v-talker').value,
+    ...saved,
     voice: f('v-voice').value,
     speed: +f('v-speed').value,
     pauseMs: +f('v-pause').value,
     sttModel: f('v-stt').value,
     sensitivity: f('v-sens').value,
-    prose: f('v-prose').checked,
   });
   list.addEventListener('change', async () => {
     status.textContent = 'Saving…';

@@ -154,6 +154,12 @@ select, textarea, input { font: inherit; color: var(--text); }
 .composer .mic-btn.unavailable { opacity: .55; }
 .voice-bar { flex: none; display: flex; align-items: center; gap: var(--s3); margin-top: calc(-1 * var(--s3)); padding-bottom: var(--s4); color: var(--text-2); }
 .voice-bar[hidden] { display: none; }
+.voice-bar { flex-wrap: wrap; row-gap: var(--s2); }
+.voice-toggles { display: flex; gap: 6px; }
+.voice-toggles .chip { padding: 4px 12px; font-size: var(--fs-sm); }
+.voice-bar.setup .voice-toggles { display: none; }
+.voice-bar:is([data-state=""], :not([data-state])) .voice-dot { display: none; }
+body:not(.voice-ok) .msg-action[data-action="speak"] { display: none; }
 .voice-state { font-size: var(--fs-sm); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .voice-state.error { color: var(--bad); white-space: normal; }
 .voice-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
@@ -249,7 +255,7 @@ table.models { width: 100%; border-collapse: collapse; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { font: inherit; font-size: var(--fs-xs); background: none; color: var(--text-2); border: 1px solid var(--border-strong); border-radius: 999px; padding: 2px 10px; cursor: pointer; }
 .chip:hover { background: var(--soft); }
-.chip.on { background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent-line); }
+.chip.on, .chip[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent-line); }
 .segmented { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--border-strong); border-radius: 5px; overflow: hidden; }
 .segmented button { font: inherit; font-size: var(--fs-sm); background: none; color: var(--text-2); border: none; padding: 5px; cursor: pointer; }
 .segmented button + button { border-left: 1px solid var(--border-strong); }
