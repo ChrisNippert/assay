@@ -397,7 +397,8 @@ Design reference: direction **F** on the design canvas
 - **Settings**: a jump bar, then Models (llama.cpp build and backend, the
   defaults, models with their own settings and a "Use defaults" button;
   the Ollama server's variables with `-engine ollama`), Knowledge, Voice,
-  This machine. A mic button next to Send dictates
+  This machine. Below 1180px wide Tune floats over the chat instead of
+  docking beside it. A mic button next to Send dictates
   into the box; the bar under the composer shows listening / reading aloud
   and holds the Spoken style and Read aloud toggles.
 - **Library**: installed models, size, quant, what's loaded and its VRAM,

@@ -467,9 +467,16 @@
     if (e.key === 'Escape' && panel.classList.contains('open')) { setOpen(false); openBtn.focus(); }
     if (e.key === '.' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); setOpen(!panel.classList.contains('open')); }
   });
-  // On a phone the panel covers the chat, so it only opens when asked.
-  const narrow = matchMedia('(max-width: 760px)').matches;
-  try { if ((localStorage.getItem('tuneOpen') && !narrow) || location.hash === '#tune') setOpen(true); } catch {}
+  // Below 1180px the panel floats over the chat (see app.css), so it only
+  // opens when asked, and a click outside it closes it.
+  const floating = matchMedia('(max-width: 1180px)');
+  try { if ((localStorage.getItem('tuneOpen') && !floating.matches) || location.hash === '#tune') setOpen(true); } catch {}
+  document.addEventListener('click', (e) => {
+    if (!floating.matches || !panel.classList.contains('open') || !e.isTrusted) return;
+    const path = e.composedPath(); // still holds targets a handler re-rendered away
+    if (path.includes(panel) || path.includes(openBtn) || e.target.closest?.('.stats')) return;
+    setOpen(false);
+  });
 
   // ---- inputs ----
   systemEl.addEventListener('input', () => { state.system = systemEl.value; render(); });

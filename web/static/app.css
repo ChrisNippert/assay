@@ -145,17 +145,17 @@ select, textarea, input { font: inherit; color: var(--text); }
 .msg-warn { color: var(--warn); background: var(--warn-soft); font-size: var(--fs-sm); padding: 6px 10px; border-radius: 5px; }
 .composer { flex: none; display: flex; gap: var(--s2); align-items: flex-end; padding-top: 0; padding-bottom: var(--s5); }
 .composer textarea {
-  flex: 1; resize: none; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 6px;
+  flex: 1; min-width: 0; resize: none; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 6px;
   background: var(--surface); height: 44px; min-height: 44px; max-height: 40vh; line-height: 1.4; display: block;
 }
-.composer .btn { height: 44px; min-height: 44px; padding: 0 var(--s5); justify-content: center; align-self: flex-end; border-radius: 6px; }
+.composer .btn { flex: none; height: 44px; min-height: 44px; padding: 0 var(--s5); justify-content: center; align-self: flex-end; border-radius: 6px; }
 .composer .mic-btn { height: 44px; width: 44px; justify-content: center; align-items: center; flex: none; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); }
 .composer .mic-btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
 .composer .mic-btn.unavailable { opacity: .55; }
 .voice-bar { flex: none; display: flex; align-items: center; gap: var(--s3); margin-top: calc(-1 * var(--s3)); padding-bottom: var(--s4); color: var(--text-2); }
 .voice-bar[hidden] { display: none; }
 .voice-bar { flex-wrap: wrap; row-gap: var(--s2); }
-.voice-toggles { display: flex; gap: 6px; }
+.voice-toggles { display: flex; align-items: center; gap: 6px; }
 .voice-toggles .chip { padding: 4px 12px; font-size: var(--fs-sm); }
 .voice-bar.setup .voice-toggles { display: none; }
 .voice-bar:is([data-state=""], :not([data-state])) .voice-dot { display: none; }
@@ -412,7 +412,7 @@ table.models { width: 100%; border-collapse: collapse; }
 .mem-detail { color: var(--muted); white-space: nowrap; }
 .mem-eject { border-radius: 50%; }
 .mem-eject:hover { background: var(--surface); }
-.mem-empty { color: var(--muted); font-size: var(--fs-sm); }
+.mem-empty { color: var(--muted); font-size: var(--fs-sm); white-space: nowrap; }
 
 /* ---- GNOME-style controls (libadwaita look) ---- */
 .btn { border-radius: 8px; }
@@ -505,6 +505,12 @@ input.switch:checked::after { transform: translateX(20px); }
 .tune-section-sub:empty, .tune-saved:empty { display: none; }
 .tune-saved { margin: 0; padding: 0 var(--s1); }
 .tune-error:empty { display: none; }
+/* Docked, Tune would squeeze the chat on a half-screen window, so below
+   that it floats over the chat instead. */
+@media (max-width: 1180px) {
+  .tune { position: fixed; inset: 0 0 0 auto; z-index: 10; }
+  .tune.open { width: min(380px, 100vw); box-shadow: -8px 0 24px rgba(0, 0, 0, .25); }
+}
 
 /* ---- small screens ---- */
 @media (max-width: 760px) {
@@ -709,7 +715,7 @@ a.tag-link:hover { border-color: var(--accent-line); color: var(--accent-text); 
 /* ---- empty chat ---- */
 .welcome { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 12vh 0 var(--s5); }
 .welcome-title { margin: 0 0 var(--s2); font-size: 22px; font-weight: 600; }
-.welcome-hint { margin: 0 0 var(--s5); color: var(--muted); }
+.welcome-hint { margin: 0 0 var(--s5); color: var(--muted); max-width: 100%; overflow-wrap: anywhere; }
 .welcome-presets { display: flex; flex-direction: column; align-items: center; gap: var(--s2); width: 100%; max-width: 560px; margin-bottom: var(--s3); }
 .preset-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s2); }
 .preset-start { font: inherit; font-size: var(--fs-sm); color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
