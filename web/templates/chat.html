@@ -113,13 +113,21 @@
         </button>
       </div>
       <div class="tune-body">
-        <div class="boxed-list" id="tune-main"></div>
-        <div class="boxed-list" id="tune-sampling-box"></div>
-        <div class="boxed-list" id="tune-advanced-box"></div>
-        <div class="pref-group">
-          <label class="pref-title" for="tune-system">System prompt</label>
-          <textarea id="tune-system" class="boxed-text" rows="4"></textarea>
-        </div>
+        <section class="tune-section">
+          <div class="tune-section-head"><h2 class="tune-section-title">This chat</h2><span class="tune-section-sub">How the model answers here.</span></div>
+          <div class="boxed-list" id="tune-chat"></div>
+          <div class="pref-group">
+            <label class="pref-title" for="tune-system">System prompt</label>
+            <textarea id="tune-system" class="boxed-text" rows="3"></textarea>
+          </div>
+          <div class="boxed-list" id="tune-sampling-box"></div>
+        </section>
+        <section class="tune-section">
+          <div class="tune-section-head"><h2 class="tune-section-title" id="tune-model-title">Model</h2><span class="tune-section-sub" id="tune-model-sub"></span></div>
+          <div class="boxed-list" id="tune-model"></div>
+          <div class="boxed-list" id="tune-memory-box"></div>
+          <p class="small muted tune-saved" id="tune-model-status" role="status"></p>
+        </section>
       </div>
       <div class="tune-foot">
         <div class="tune-actions">

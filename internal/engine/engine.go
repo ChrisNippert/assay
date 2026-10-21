@@ -7,6 +7,7 @@ package engine
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -91,11 +92,16 @@ func (e *Engine) Store() *Store { return e.store }
 // DefaultCtx is the context a model loads with when nothing sets one.
 const DefaultCtx = 32768
 
+// CacheTypes are the K/V cache types a model can load with.
+var CacheTypes = map[string]bool{"f16": true, "q8_0": true, "q4_0": true}
+
 // loadOpts are the request options that need a (re)start to change.
 type loadOpts struct {
-	Ctx       int // 0: let llama.cpp fit the largest that fits
-	GPULayers int // -1: let llama.cpp decide
-	Threads   int // 0: default
+	Ctx       int    // 0: let llama.cpp fit the largest that fits
+	GPULayers int    // -1: let llama.cpp decide
+	Threads   int    // 0: default
+	CacheType string // "": the engine's default
+	FlashAttn string // "": the engine's default
 	Embedding bool
 }
 
@@ -109,6 +115,12 @@ func loadOptsFrom(o map[string]any) loadOpts {
 	}
 	if v, ok := num(o["num_thread"]); ok && v > 0 {
 		lo.Threads = int(v)
+	}
+	if v, _ := o["cache_type"].(string); CacheTypes[v] {
+		lo.CacheType = v
+	}
+	if v, _ := o["flash_attn"].(string); v == "on" || v == "off" || v == "auto" {
+		lo.FlashAttn = v
 	}
 	return lo
 }
@@ -198,21 +210,27 @@ func (e *Engine) args(m *Model, o loadOpts, port int) []string {
 		if m.Projector != "" {
 			a = append(a, "--mmproj", e.store.Blob(m.Projector))
 		}
-		a = append(a, "-fa", e.opt.FlashAttn)
-		if e.opt.CacheType != "f16" {
-			a = append(a, "-ctk", e.opt.CacheType, "-ctv", e.opt.CacheType)
+		fa, ct := cmp.Or(o.FlashAttn, e.opt.FlashAttn), cmp.Or(o.CacheType, e.opt.CacheType)
+		if ct != "f16" && fa == "off" {
+			fa = "on" // a quantized cache needs flash attention
+		}
+		a = append(a, "-fa", fa)
+		if ct != "f16" {
+			a = append(a, "-ctk", ct, "-ctv", ct)
 		}
 	}
 	return a
 }
 
-// ensure returns a running server for model with options o, starting or
-// restarting one when needed. It reports whether it loaded the model.
-func (e *Engine) ensure(ctx context.Context, name string, o loadOpts) (*proc, bool, error) {
+// ensure returns a running server for model with the request's options
+// (over the model's own), starting or restarting one when needed. It
+// reports whether it loaded the model.
+func (e *Engine) ensure(ctx context.Context, name string, options map[string]any) (*proc, bool, error) {
 	m, err := e.store.Get(name)
 	if err != nil {
 		return nil, false, err
 	}
+	o := loadOptsFrom(m.options(options))
 	if f, err := e.gguf(m); err == nil && f.IsEmbedding() {
 		o.Embedding = true
 	}
@@ -667,9 +685,12 @@ func (e *Engine) Load(ctx context.Context, model, keepAlive string, options map[
 	if ka == 0 && keepAlive != "" {
 		return e.Unload(ctx, model)
 	}
-	p, _, err := e.ensure(ctx, model, loadOptsFrom(options))
+	p, _, err := e.ensure(ctx, model, options)
 	if err != nil {
 		return err
+	}
+	if keepAlive == "" {
+		ka = modelKeepAlive(p.model, options)
 	}
 	p.touch(ka, e.opt.KeepAlive)
 	return nil
@@ -697,6 +718,16 @@ func parseKeepAlive(v any) (time.Duration, error) {
 		return d, nil
 	}
 	return 0, fmt.Errorf("bad keep_alive %v", v)
+}
+
+// modelKeepAlive is the keep_alive a model's settings (or the request's
+// options) ask for when the request itself sets none; 0 if neither does.
+func modelKeepAlive(m *Model, options map[string]any) time.Duration {
+	ka, err := parseKeepAlive(m.options(options)["keep_alive"])
+	if err != nil {
+		return 0
+	}
+	return ka
 }
 
 func keepAliveSeconds(n float64) time.Duration {
@@ -774,6 +805,62 @@ func (e *Engine) Port() string { return "" }
 func (e *Engine) Create(ctx context.Context, req ollama.CreateRequest, fn func(ollama.Status) error) error {
 	return nil
 }
+
+// Settings returns a model's own settings.
+func (e *Engine) Settings(name string) (map[string]any, error) {
+	m, err := e.store.Get(name)
+	if err != nil {
+		return nil, err
+	}
+	return m.Settings, nil
+}
+
+// SetSettings replaces a model's own settings; they apply from the next
+// request (a change to how it loads restarts it then).
+func (e *Engine) SetSettings(name string, s map[string]any) error {
+	m, err := e.store.Get(name)
+	if err != nil {
+		return err
+	}
+	cp := *m
+	cp.Settings = s
+	if len(s) == 0 {
+		cp.Settings = nil
+	}
+	return e.store.Put(&cp)
+}
+
+// Backend names the GPU library the llama-server build uses, from the
+// libraries beside it ("" if it can't tell).
+func (e *Engine) Backend() string {
+	dir := filepath.Dir(e.opt.Server)
+	for _, b := range []struct{ lib, name string }{
+		{"libggml-hip.so", "ROCm"}, {"libggml-cuda.so", "CUDA"}, {"libggml-vulkan.so", "Vulkan"}, {"libggml-metal.so", "Metal"},
+	} {
+		if _, err := os.Stat(filepath.Join(dir, b.lib)); err == nil {
+			return b.name
+		}
+	}
+	return ""
+}
+
+// SavedSettings lists the models that have settings of their own, by
+// full name.
+func (e *Engine) SavedSettings() map[string]map[string]any {
+	out := map[string]map[string]any{}
+	for _, m := range e.store.List() {
+		if len(m.Settings) > 0 {
+			out[m.Name] = m.Settings
+		}
+	}
+	return out
+}
+
+// KeepAlive is how long an idle model stays loaded when it doesn't say.
+func (e *Engine) KeepAlive() time.Duration { return e.opt.KeepAlive }
+
+// FlashAttn is what flash attention is set to when a model doesn't say.
+func (e *Engine) FlashAttn() string { return e.opt.FlashAttn }
 
 // CacheType is the K/V cache type models load with.
 func (e *Engine) CacheType() string { return e.opt.CacheType }

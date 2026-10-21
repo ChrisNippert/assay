@@ -1,6 +1,106 @@
-{{define "appbar"}}<h1 class="appbar-title">Settings</h1>{{with .Data.Version}}<span class="muted small">Ollama {{.}}</span>{{end}}{{end}}
+{{define "ollama-env"}}
+  <p class="muted small">Models run with Ollama{{with .Data.Version}} {{.}}{{end}}.</p>
+  {{if not .Data.Local}}<p class="muted small">Ollama runs on another machine ({{.OllamaURL}}), so its settings can't be read from here.</p>
+  {{else if not .Data.Source}}<p class="muted small">Couldn't find the running Ollama or an <span class="mono">ollama</span> systemd service, so these show Ollama's defaults.</p>
+  {{else}}<p class="muted small">Read from {{.Data.Source}}. These are server-wide; changing one means restarting Ollama. Auto context already counts the K/V cache type (now <strong>{{.Data.KVType}}</strong>).</p>{{end}}
+
+  <div class="boxed-list" id="env-list">
+    {{range .Data.Settings}}
+    <div class="row" data-key="{{.Key}}" data-current="{{.Value}}">
+      <div class="row-text"><span class="row-title">{{.Title}}</span><span class="row-sub">{{.Help}}</span></div>
+      <div class="row-ctrl">
+        {{if .Choices}}{{$v := .Value}}{{$labels := .Labels}}
+        <select aria-label="{{.Title}}">
+          <option value=""{{if eq $v ""}} selected{{end}}>Default ({{.Default}})</option>
+          {{range .Choices}}<option value="{{.}}"{{if eq . $v}} selected{{end}}>{{with index $labels .}}{{.}}{{else}}{{.}}{{end}}</option>{{end}}
+          {{if $v}}{{if not (hasChoice .Choices $v)}}<option value="{{$v}}" selected>{{$v}}</option>{{end}}{{end}}
+        </select>
+        {{else}}<input type="text" value="{{.Value}}" placeholder="{{.Default}}" aria-label="{{.Title}}" size="16">{{end}}
+      </div>
+    </div>
+    {{end}}
+  </div>
+
+  <div id="env-apply" hidden>
+    <h3 class="group-title settings-sub">Apply the changes</h3>
+    <p class="muted small">ollamui doesn't run sudo itself. Paste this into a terminal; it writes a drop-in file next to your existing ones and restarts Ollama, which unloads every model.</p>
+    <div class="code"><pre class="mono" id="env-snippet"></pre><button type="button" class="btn" id="env-copy">Copy</button></div>
+  </div>
+
+{{end}}
+{{define "appbar"}}<h1 class="appbar-title">Settings</h1>{{end}}
 {{define "content"}}
 <div class="column settings">
+  <nav class="settings-nav" aria-label="Settings sections">
+    <a href="#models">Models</a>
+    {{if .Data.Knowledge}}<a href="#knowledge">Knowledge</a>{{end}}
+    {{if .Data.Voice}}<a href="#voice">Voice</a>{{end}}
+    <a href="#machine">This machine</a>
+  </nav>
+
+  <h2 class="group-title" id="models">Models</h2>
+  {{with .Data.Engine}}
+  <p class="muted small">Models run with llama.cpp, one at a time on the GPU. Context length, GPU layers, how long a model stays loaded and its memory options are set per model: open <strong>Tune</strong> in a chat with it.</p>
+  <div class="boxed-list">
+    <div class="row">
+      <div class="row-text"><span class="row-title">llama.cpp{{with .Backend}} · {{.}}{{end}}</span><span class="row-sub">{{if .Version}}Build {{.Version}} · {{end}}{{.Server}}</span></div>
+    </div>
+    <div class="row">
+      <div class="row-text"><span class="row-title">Defaults</span><span class="row-sub">A model without its own settings uses a {{if eq .CacheType "q8_0"}}half-size (q8_0){{else if eq .CacheType "q4_0"}}quarter-size (q4_0){{else}}full-size (f16){{end}} context cache, flash attention {{.FlashAttn}}, and stays loaded {{.KeepAlive}} after the last message.</span></div>
+    </div>
+  </div>
+  <h3 class="group-title settings-sub">Models with their own settings</h3>
+  <div class="boxed-list" id="saved-list">
+    {{range .Saved}}
+    <div class="row" data-name="{{.Name}}">
+      <div class="row-text"><a class="row-title" href="/chat?model={{.Name}}#tune">{{.Name}}</a><span class="row-sub">{{.Summary}}</span></div>
+      <div class="row-ctrl"><button type="button" class="btn subtle saved-clear">Use defaults</button></div>
+    </div>
+    {{else}}
+    <div class="row"><div class="row-text"><span class="row-sub">None yet. Changes to a model in Tune show up here.</span></div></div>
+    {{end}}
+  </div>
+  {{else}}
+  {{template "ollama-env" $}}
+  {{end}}
+  {{with .Data.Knowledge}}
+  <h2 class="group-title" id="knowledge">Knowledge</h2>
+  <p class="muted small">Projects can use their files when you chat (RAG). Files are indexed with an embedding model.{{if not .Current}} No model is chosen yet, so nothing is indexed until you pick one.{{end}} Changes save right away.</p>
+  <div class="boxed-list" id="kn-list" data-current="{{.Current}}" data-has-files="{{.HasFiles}}">
+    <div class="row">
+      <div class="row-text"><span class="row-title">Embedding model</span><span class="row-sub">{{if .Models}}Used to index project files and to find the right excerpts for a question.{{else}}None installed yet. Download one below.{{end}}</span></div>
+      <div class="row-ctrl"><select id="kn-model" aria-label="Embedding model">
+        <option value="">None</option>
+        {{range .Models}}<option value="{{.Name}}"{{if .Selected}} selected{{end}}>{{.Name}} · {{bytes .Size}}</option>{{end}}
+      </select></div>
+    </div>
+    <div class="row">
+      <div class="row-text"><span class="row-title">Excerpts per answer</span><span class="row-sub">How many pieces of your files go into each prompt. More gives more to work with but uses more context.</span></div>
+      <div class="row-ctrl"><select id="kn-topk" aria-label="Excerpts per answer">{{$k := .TopK}}{{range .TopKs}}<option value="{{.}}"{{if eq . $k}} selected{{end}}>{{.}}</option>{{end}}</select></div>
+    </div>
+  </div>
+  <p class="small muted" id="kn-note" role="status">{{if .Notice}}<span{{if .NoticeBad}} class="settings-warn"{{end}}>{{.Notice}}</span>{{end}}</p>
+
+  <h3 class="group-title kn-sub">Get an embedding model</h3>
+  <div class="boxed-list" id="kn-get">
+    {{range .Suggestions}}
+    <div class="row" data-model="{{.Name}}" data-hf="{{.Pull}}" data-installed="{{.Installed}}">
+      <div class="row-text"><span class="row-title">{{.Name}}</span><span class="row-sub">{{.Size}} · {{.Desc}}</span></div>
+      <div class="row-ctrl"><span class="kn-state muted small"></span><button type="button" class="btn kn-btn"></button></div>
+    </div>
+    {{end}}
+    <div class="row" id="kn-custom" data-model="">
+      <div class="row-text"><span class="row-title">Another model</span><span class="row-sub">A Hugging Face GGUF (hf.co/owner/repo:Q8_0), or a name from the Ollama library.</span></div>
+      <div class="row-ctrl"><span class="kn-state muted small"></span><input type="text" id="kn-name" placeholder="hf.co/owner/repo:Q8_0" aria-label="Embedding model name" size="18" autocomplete="off"><button type="button" class="btn" id="kn-dl">Download</button></div>
+    </div>
+  </div>
+  <style>
+    #knowledge + p + .boxed-list + p + .kn-sub { margin-top: 1.25rem; }
+    #kn-get .row-ctrl { gap: .6rem; }
+    #kn-get .kn-state:empty { display: none; }
+  </style>
+  {{end}}
+
   {{with .Data.Voice}}
   <h2 class="group-title" id="voice">Voice</h2>
   {{if .Status.Available}}<p class="muted small">Used by the mic button in chat. The speech service is running{{if .Status.Managed}}; ollamui stops it after 10 minutes without voice use{{end}}. Changes save right away.</p>
@@ -60,79 +160,24 @@
   <p class="small muted" id="voice-saved" role="status"></p>
   {{end}}
 
-  {{with .Data.Knowledge}}
-  <h2 class="group-title" id="knowledge">Knowledge</h2>
-  <p class="muted small">Projects can use their files when you chat (RAG). Files are indexed with an embedding model from Ollama.{{if not .Current}} No model is chosen yet, so nothing is indexed until you pick one.{{end}} Changes save right away.</p>
-  <div class="boxed-list" id="kn-list" data-current="{{.Current}}" data-has-files="{{.HasFiles}}">
-    <div class="row">
-      <div class="row-text"><span class="row-title">Embedding model</span><span class="row-sub">{{if .Models}}Used to index project files and to find the right excerpts for a question.{{else}}None installed yet. Download one below.{{end}}</span></div>
-      <div class="row-ctrl"><select id="kn-model" aria-label="Embedding model">
-        <option value="">None</option>
-        {{range .Models}}<option value="{{.Name}}"{{if .Selected}} selected{{end}}>{{.Name}} · {{bytes .Size}}</option>{{end}}
-      </select></div>
-    </div>
-    <div class="row">
-      <div class="row-text"><span class="row-title">Excerpts per answer</span><span class="row-sub">How many pieces of your files go into each prompt. More gives more to work with but uses more context.</span></div>
-      <div class="row-ctrl"><select id="kn-topk" aria-label="Excerpts per answer">{{$k := .TopK}}{{range .TopKs}}<option value="{{.}}"{{if eq . $k}} selected{{end}}>{{.}}</option>{{end}}</select></div>
-    </div>
-  </div>
-  <p class="small muted" id="kn-note" role="status">{{if .Notice}}<span{{if .NoticeBad}} class="settings-warn"{{end}}>{{.Notice}}</span>{{end}}</p>
-
-  <h3 class="group-title kn-sub">Get an embedding model</h3>
-  <div class="boxed-list" id="kn-get">
-    {{range .Suggestions}}
-    <div class="row" data-model="{{.Name}}" data-hf="{{.Pull}}" data-installed="{{.Installed}}">
-      <div class="row-text"><span class="row-title">{{.Name}}</span><span class="row-sub">{{.Size}} · {{.Desc}}</span></div>
-      <div class="row-ctrl"><span class="kn-state muted small"></span><button type="button" class="btn kn-btn"></button></div>
-    </div>
-    {{end}}
-    <div class="row" id="kn-custom" data-model="">
-      <div class="row-text"><span class="row-title">Another model</span><span class="row-sub">A Hugging Face GGUF (hf.co/owner/repo:Q8_0), or a name from the Ollama library.</span></div>
-      <div class="row-ctrl"><span class="kn-state muted small"></span><input type="text" id="kn-name" placeholder="hf.co/owner/repo:Q8_0" aria-label="Embedding model name" size="18" autocomplete="off"><button type="button" class="btn" id="kn-dl">Download</button></div>
-    </div>
-  </div>
-  <style>
-    #knowledge + p + .boxed-list + p + .kn-sub { margin-top: 1.25rem; }
-    #kn-get .row-ctrl { gap: .6rem; }
-    #kn-get .kn-state:empty { display: none; }
-  </style>
-  {{end}}
-
-  <h2 class="group-title">Ollama server</h2>
-  {{if not .Data.Local}}<p class="muted small">Ollama runs on another machine ({{.OllamaURL}}), so its settings can't be read from here.</p>
-  {{else if not .Data.Source}}<p class="muted small">Couldn't find the running Ollama or an <span class="mono">ollama</span> systemd service, so these show Ollama's defaults.</p>
-  {{else}}<p class="muted small">Read from {{.Data.Source}}. These are server-wide; changing one means restarting Ollama. Auto context already counts the K/V cache type (now <strong>{{.Data.KVType}}</strong>).</p>{{end}}
-
-  <div class="boxed-list" id="env-list">
-    {{range .Data.Settings}}
-    <div class="row" data-key="{{.Key}}" data-current="{{.Value}}">
-      <div class="row-text"><span class="row-title">{{.Title}}</span><span class="row-sub">{{.Help}}</span></div>
-      <div class="row-ctrl">
-        {{if .Choices}}{{$v := .Value}}{{$labels := .Labels}}
-        <select aria-label="{{.Title}}">
-          <option value=""{{if eq $v ""}} selected{{end}}>Default ({{.Default}})</option>
-          {{range .Choices}}<option value="{{.}}"{{if eq . $v}} selected{{end}}>{{with index $labels .}}{{.}}{{else}}{{.}}{{end}}</option>{{end}}
-          {{if $v}}{{if not (hasChoice .Choices $v)}}<option value="{{$v}}" selected>{{$v}}</option>{{end}}{{end}}
-        </select>
-        {{else}}<input type="text" value="{{.Value}}" placeholder="{{.Default}}" aria-label="{{.Title}}" size="16">{{end}}
-      </div>
-    </div>
-    {{end}}
-  </div>
-
-  <div id="env-apply" hidden>
-    <h2 class="group-title">Apply the changes</h2>
-    <p class="muted small">ollamui doesn't run sudo itself. Paste this into a terminal; it writes a drop-in file next to your existing ones and restarts Ollama, which unloads every model.</p>
-    <div class="code"><pre class="mono" id="env-snippet"></pre><button type="button" class="btn" id="env-copy">Copy</button></div>
-  </div>
-
-  <h2 class="group-title">This machine</h2>
+  <h2 class="group-title" id="machine">This machine</h2>
   <div class="boxed-list">
     <div class="row"><div class="row-text"><span class="row-title">GPU</span><span class="row-sub">{{if .Data.Memory.GPU}}{{.Data.Memory.GPU}}{{else}}None detected{{end}}</span></div><div class="row-ctrl">{{bytes .Data.Memory.VRAM}} VRAM</div></div>
     <div class="row"><div class="row-text"><span class="row-title">System memory</span></div><div class="row-ctrl">{{bytes .Data.Memory.RAM}}</div></div>
   </div>
 </div>
 <script>
+(() => {
+  // ---- models with their own settings ----
+  document.getElementById('saved-list')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.saved-clear');
+    if (!btn) return;
+    const row = btn.closest('.row');
+    btn.disabled = true;
+    const res = await fetch('/api/models/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: row.dataset.name, options: {} }) });
+    if (res.ok) row.remove(); else { btn.disabled = false; btn.textContent = 'Couldn’t clear'; }
+  });
+})();
 (() => {
   // ---- voice ----
   const list = document.getElementById('voice-list');
@@ -283,8 +328,9 @@
   }).catch(() => {});
 })();
 (() => {
-  const rows = [...document.querySelectorAll('#env-list .row')];
   const box = document.getElementById('env-apply');
+  if (!box) return; // llama.cpp: no Ollama settings
+  const rows = [...document.querySelectorAll('#env-list .row')];
   const pre = document.getElementById('env-snippet');
   function update() {
     const changed = rows.map(r => {

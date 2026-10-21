@@ -301,6 +301,8 @@ type turn struct {
 	sources []chats.Source
 	// fitted is the context llama.cpp chose, once the reply is done.
 	fitted int
+	// ctxSaved: the model's own settings set its context, so it isn't auto.
+	ctxSaved bool
 }
 
 // stats turns Ollama's final chunk into the stats saved with the reply.
@@ -313,7 +315,7 @@ func (t *turn) stats(resp ollama.ChatResponse) *chats.Stats {
 		st.Context = int(n)
 	}
 	if st.Context == 0 && t.auto.Fit {
-		st.Context, st.AutoContext = t.fitted, true
+		st.Context, st.AutoContext = t.fitted, !t.ctxSaved
 	}
 	return st
 }
@@ -420,6 +422,10 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 		if t.auto = s.pickContext(r.Context(), c.Model, true); t.auto.Ctx > 0 {
 			options = presets.Merge(options, map[string]any{"num_ctx": t.auto.Ctx})
 		}
+	}
+	if ms, ok := s.ollama.(modelSettings); ok {
+		saved, _ := ms.Settings(c.Model)
+		_, t.ctxSaved = saved["num_ctx"]
 	}
 	t.req = ollama.ChatRequest{Model: c.Model, Messages: msgs, Options: options}
 	if think != nil {

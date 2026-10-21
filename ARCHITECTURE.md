@@ -87,6 +87,15 @@ code doesn't care which engine runs (`server.Backend`).
   equal on 9–12B. So ROCm here; Vulkan is the portable default for others.
   Other apps holding VRAM can make the first reply after a load very slow
   (6 vs 37 tok/s) while the driver evicts; it's not the engine.
+- **Settings per model**: a manifest's `settings` (context, GPU layers,
+  `cache_type`, `flash_attn`, `keep_alive`, any sampling option) are the
+  user's own, saved from Tune via `PUT /api/models/settings`. Each request
+  layers model params (the repo's recommendations) < settings < the
+  request's options, for both the sampling fields and how it loads; a
+  change to how it loads restarts it on the next request. A quantized cache
+  forces flash attention on. The `-cache-type` flag (q8_0) and flash
+  attention on are the defaults for models without their own. Re-pulling
+  keeps a model's settings and aliases.
 
 ### internal/ollama
 
@@ -364,7 +373,19 @@ Design reference: direction **F** on the design canvas
   downloads, page actions.
 - **Chat**: centered column. The Tune panel is closed by default and slides
   in from the right. A button in the top bar summarizes the current settings
-  and how many differ from the preset. A mic button next to Send starts
+  and how many differ from the preset. Tune has two parts: "This chat"
+  (thinking, temperature, reply length, system prompt, and an Advanced
+  expander with the rest of sampling, closed by default) and the model's
+  part (context, GPU layers, keep loaded, and a Memory expander with cache
+  type and flash attention), saved for the model as soon as they change.
+  Code blocks are highlighted with vendored highlight.js (only fences that
+  name a language; no auto-detect, since it re-runs on every streamed
+  chunk), with Copy and Download (file name from a first-line comment like
+  `// main.go`, else `snippet.<ext>`).
+- **Settings**: a jump bar, then Models (llama.cpp build and backend, the
+  defaults, models with their own settings and a "Use defaults" button;
+  the Ollama server's variables with `-engine ollama`), Knowledge, Voice,
+  This machine. A mic button next to Send starts
   voice mode; a status line under the composer shows listening / thinking /
   speaking.
 - **Library**: installed models, size, quant, what's loaded and its VRAM,

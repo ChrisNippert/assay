@@ -161,7 +161,11 @@ func New(opts Options) (*Server, error) {
 	mux := http.NewServeMux()
 	mux.Handle("GET /static/", http.FileServerFS(web.FS))
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/chat", http.StatusFound)
+		u := "/chat"
+		if r.URL.RawQuery != "" {
+			u += "?" + r.URL.RawQuery
+		}
+		http.Redirect(w, r, u, http.StatusFound)
 	})
 	mux.HandleFunc("GET /chat", s.handleChatPage)
 	mux.HandleFunc("GET /chat/{id}", s.handleChatPage)
@@ -186,6 +190,7 @@ func New(opts Options) (*Server, error) {
 
 	mux.HandleFunc("GET /api/loaded", s.handleLoaded)
 	mux.HandleFunc("GET /api/models/defaults", s.handleModelDefaults)
+	mux.HandleFunc("PUT /api/models/settings", s.handleModelSettings)
 	mux.HandleFunc("POST /api/models/load", s.handleLoad)
 	mux.HandleFunc("POST /api/models/eject", s.handleEject)
 	mux.HandleFunc("POST /api/models/delete", s.handleDeleteModel)

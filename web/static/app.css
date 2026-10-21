@@ -491,6 +491,13 @@ input.switch:checked::after { transform: translateX(20px); }
 .tune-foot { border-top: 1px solid var(--border); padding: var(--s3) var(--s4); display: flex; flex-direction: column; gap: var(--s3); }
 .tune-actions { display: flex; flex-wrap: wrap; gap: var(--s2); }
 .tune-error { margin: 0; color: var(--bad); }
+.tune-section { display: flex; flex-direction: column; gap: var(--s3); }
+.tune-section + .tune-section { padding-top: var(--s2); }
+.tune-section-head { display: flex; flex-direction: column; gap: 2px; padding: 0 var(--s1); }
+.tune-section-title { margin: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.tune-section-sub { color: var(--muted); font-size: var(--fs-sm); }
+.tune-section-sub:empty, .tune-saved:empty { display: none; }
+.tune-saved { margin: 0; padding: 0 var(--s1); }
 .tune-error:empty { display: none; }
 
 /* ---- small screens ---- */
@@ -703,6 +710,13 @@ a.tag-link:hover { border-color: var(--accent-line); color: var(--accent-text); 
 .settings { display: flex; flex-direction: column; gap: var(--s3); }
 .settings .group-title { font-size: var(--fs-sm); font-weight: 600; margin: var(--s4) 0 0; }
 .settings > p { margin: 0; }
+.settings-nav { display: flex; flex-wrap: wrap; gap: var(--s2); position: sticky; top: 0; z-index: 1; padding: var(--s2) 0; background: var(--bg); }
+.settings-nav a { padding: 6px 14px; border-radius: 999px; background: var(--soft); color: var(--text); text-decoration: none; font-size: var(--fs-sm); }
+.settings-nav a:hover { background: var(--accent-soft); color: var(--accent-text); }
+.settings .settings-sub { margin-top: var(--s2); color: var(--muted); font-weight: 500; }
+.settings h2.group-title { scroll-margin-top: 56px; font-size: 15px; }
+#saved-list a.row-title { color: inherit; text-decoration: none; }
+#saved-list a.row-title:hover { text-decoration: underline; }
 .settings .row-ctrl select, .settings .row-ctrl input { font: inherit; padding: 4px 8px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg); color: var(--text); max-width: 200px; }
 .settings .code { display: flex; gap: var(--s2); align-items: flex-start; }
 .settings .code pre { flex: 1; margin: 0; padding: 12px 14px; background: var(--code-bg); color: var(--code-text); border-radius: 8px; overflow-x: auto; font-size: var(--fs-sm); }

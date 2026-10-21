@@ -146,6 +146,7 @@ func Quants(repo string, files []File) (quants []Quant, hasVision bool) {
 		q.Split = q.Split || split || len(q.Files) > 1
 	}
 	for _, q := range byName {
+		sort.Strings(q.Files) // "-00001-of-" first, as llama.cpp needs
 		quants = append(quants, *q)
 	}
 	sort.Slice(quants, func(i, j int) bool {

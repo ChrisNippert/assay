@@ -3,7 +3,10 @@ package engine
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"ollamui/internal/ollama"
 )
 
 // fakeOllama lays out an Ollama models folder the way 0.40 does: v1
@@ -96,5 +99,46 @@ func TestGfxOverride(t *testing.T) {
 		if got := gfxOverride(v); got != want {
 			t.Errorf("gfxOverride(%s) = %q, want %q", v, got, want)
 		}
+	}
+}
+
+func TestModelSettingsLayering(t *testing.T) {
+	st, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := New(st, Options{CacheType: "q8_0", FlashAttn: "on"})
+	m := &Model{Name: "x:1", Files: []string{"a.gguf"},
+		Params:   map[string]any{"temperature": 0.6, "top_k": 20},
+		Settings: map[string]any{"temperature": 0.9, "cache_type": "f16", "flash_attn": "off", "num_ctx": 8192.0, "keep_alive": "-1"}}
+	if err := st.Put(m); err != nil {
+		t.Fatal(err)
+	}
+	m, _ = st.Get("x:1")
+	o := loadOptsFrom(m.options(map[string]any{"num_ctx": 4096}))
+	if o.Ctx != 4096 || o.CacheType != "f16" || o.FlashAttn != "off" {
+		t.Errorf("load opts = %+v", o)
+	}
+	a := strings.Join(e.args(m, o, 1), " ")
+	if !strings.Contains(a, "-c 4096") || !strings.Contains(a, "-fa off") || strings.Contains(a, "-ctk") {
+		t.Errorf("args = %s", a)
+	}
+	// A quantized cache turns flash attention back on.
+	a = strings.Join(e.args(m, loadOpts{GPULayers: -1, CacheType: "q4_0", FlashAttn: "off"}, 1), " ")
+	if !strings.Contains(a, "-fa on") || !strings.Contains(a, "-ctk q4_0") {
+		t.Errorf("args = %s", a)
+	}
+	b := chatBody(m, ollama.ChatRequest{Options: map[string]any{"top_k": 5}})
+	if b["temperature"] != 0.9 || b["top_k"] != 5 {
+		t.Errorf("body = %v", b)
+	}
+	if ka := modelKeepAlive(m, nil); ka >= 0 {
+		t.Errorf("keep alive = %v, want pinned", ka)
+	}
+	if err := e.SetSettings("x:1", nil); err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := e.Settings("x:1"); s != nil {
+		t.Errorf("settings left: %v", s)
 	}
 }

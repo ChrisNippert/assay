@@ -121,6 +121,56 @@ type modelDefaults struct {
 	Auto          autoContext    `json:"auto"`                    // what ollamui picks if num_ctx isn't set
 	Thinking      bool           `json:"thinking"`
 	Layers        int            `json:"layers,omitempty"` // what num_gpu counts; 0 if unknown
+	// Saved are the user's own settings for the model, and Engine what
+	// applies when neither they nor a chat set one; both only with an
+	// engine that keeps settings per model.
+	Saved  map[string]any  `json:"saved,omitempty"`
+	Engine *engineDefaults `json:"engine,omitempty"`
+}
+
+type engineDefaults struct {
+	CacheType string `json:"cache_type"`
+	FlashAttn string `json:"flash_attn"`
+	KeepAlive string `json:"keep_alive"`
+}
+
+// modelSettings is a backend that keeps settings per model (the engine).
+type modelSettings interface {
+	Settings(name string) (map[string]any, error)
+	SetSettings(name string, s map[string]any) error
+	CacheType() string
+	FlashAttn() string
+	KeepAlive() time.Duration
+}
+
+// handleModelSettings saves a model's own settings: PUT {name, options}.
+func (s *Server) handleModelSettings(w http.ResponseWriter, r *http.Request) {
+	ms, ok := s.ollama.(modelSettings)
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "settings per model need the llama.cpp engine")
+		return
+	}
+	var req struct {
+		Name    string         `json:"name"`
+		Options map[string]any `json:"options"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	opts, err := presets.CleanOptions(req.Options)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := ms.SetSettings(req.Name, opts); err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"saved": opts})
 }
 
 // ollamaDefaultContext is the context length Ollama picks when a request
@@ -161,7 +211,7 @@ func (s *Server) handleModelDefaults(w http.ResponseWriter, r *http.Request) {
 			opts[k] = v
 		}
 	}
-	writeJSON(w, http.StatusOK, modelDefaults{
+	d := modelDefaults{
 		Options:       opts,
 		System:        show.System,
 		ContextLength: show.ContextLength(),
@@ -169,7 +219,12 @@ func (s *Server) handleModelDefaults(w http.ResponseWriter, r *http.Request) {
 		Auto:          s.defaultsContext(r.Context(), name),
 		Thinking:      show.HasCapability("thinking"),
 		Layers:        show.Layers(),
-	})
+	}
+	if ms, ok := s.ollama.(modelSettings); ok {
+		d.Saved, _ = ms.Settings(name)
+		d.Engine = &engineDefaults{CacheType: ms.CacheType(), FlashAttn: ms.FlashAttn(), KeepAlive: ms.KeepAlive().String()}
+	}
+	writeJSON(w, http.StatusOK, d)
 }
 
 // defaultsContext is the automatic context the Tune panel shows.

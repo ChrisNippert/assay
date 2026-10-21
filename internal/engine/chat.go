@@ -51,14 +51,13 @@ func chatBody(m *Model, req ollama.ChatRequest) map[string]any {
 		msgs = append(msgs, chatMessage{Role: x.Role, Content: parts})
 	}
 	body := map[string]any{"messages": msgs, "stream": true, "timings_per_token": false}
-	for _, opts := range []map[string]any{m.Params, req.Options} {
-		for k, v := range opts {
-			if f, ok := sampling[k]; ok {
-				body[f] = v
-			}
+	opts := m.options(req.Options)
+	for k, v := range opts {
+		if f, ok := sampling[k]; ok {
+			body[f] = v
 		}
 	}
-	if n, ok := num(req.Options["num_predict"]); ok && n > 0 {
+	if n, ok := num(opts["num_predict"]); ok && n > 0 {
 		body["max_tokens"] = int(n)
 	}
 	switch t := req.Think.(type) {
@@ -97,7 +96,7 @@ type chunk struct {
 // for each piece and once more with Done set and the timings filled in.
 func (e *Engine) Chat(ctx context.Context, req ollama.ChatRequest, fn func(ollama.ChatResponse) error) error {
 	start := time.Now()
-	p, loaded, err := e.ensure(ctx, req.Model, loadOptsFrom(req.Options))
+	p, loaded, err := e.ensure(ctx, req.Model, req.Options)
 	if err != nil {
 		return err
 	}
@@ -106,6 +105,9 @@ func (e *Engine) Chat(ctx context.Context, req ollama.ChatRequest, fn func(ollam
 		loadDur = time.Since(start)
 	}
 	ka, _ := parseKeepAlive(req.KeepAlive)
+	if req.KeepAlive == nil || req.KeepAlive == "" {
+		ka = modelKeepAlive(p.model, req.Options)
+	}
 	p.touch(ka, e.opt.KeepAlive)
 	p.mu.Lock()
 	p.busy++
@@ -182,7 +184,7 @@ func (e *Engine) Chat(ctx context.Context, req ollama.ChatRequest, fn func(ollam
 
 // Embed turns texts into vectors with an embedding model.
 func (e *Engine) Embed(ctx context.Context, model string, input []string) ([][]float32, error) {
-	p, _, err := e.ensure(ctx, model, loadOpts{GPULayers: -1})
+	p, _, err := e.ensure(ctx, model, nil)
 	if err != nil {
 		return nil, err
 	}

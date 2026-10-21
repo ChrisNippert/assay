@@ -31,9 +31,12 @@ equal on bigger models), installed at ~/.local/share/ollamui/llama.cpp/
 HSA_OVERRIDE_GFX_VERSION). Vulkan stays the default for the one-click
 install (stage 5) since it needs no ROCm.
 Next, in order:
-- Tune's context should override DefaultCtx (check it does); maybe 16k
-  default for small-VRAM cards. f16 cache without flash attention wrote 10%
-  faster on Gemma 4 (40 vs 36): consider per-model cache type.
+- ✅ Settings per model (2026-10-21): context, GPU layers, keep loaded,
+  cache type and flash attention are saved on the model from Tune (and
+  override DefaultCtx; checked: `-c 4096 -ngl 0 -fa off`). Settings →
+  Models lists them. Maybe a 16k default for small-VRAM cards. f16 cache
+  without flash attention wrote 10% faster on Gemma 4 (40 vs 36): now
+  settable per model.
 - Stage 2 done (2026-10-21): `engine.Pull` downloads `hf.co/` names from
   Hugging Face itself (resume from `.partial`, sha256 check, split files
   kept by name in a folder, F16 mmproj, Unsloth `params`), `Copy` adds the
@@ -61,8 +64,10 @@ Stages (the app keeps working after each):
 3. **API for editors:** ollamui serves `/v1/chat/completions`, `/v1/models`,
    `/v1/embeddings` (OpenAI-compatible, loads models on demand); presets
    show up as models there (replacing "publish to Ollama").
-4. **Settings and tuning:** an engine section (llama.cpp version, cache
-   type, flash attention, threads) replaces the Ollama server page; auto
+4. **Settings and tuning:** ✅ an engine section (llama.cpp version,
+   backend, defaults, models with their own settings) replaces the Ollama
+   server page, and cache type / flash attention / keep loaded are per
+   model in Tune. Left: threads; auto
    context uses real memory numbers from `llama-server` (and/or `--fit`);
    Compare's speed test, the voice talker (`-ngl 0 -t 4`) and RAG
    embeddings move over. Speculative decoding with draft models.

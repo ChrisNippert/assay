@@ -38,8 +38,22 @@ type Model struct {
 	Quant string `json:"quant,omitempty"`
 	// Params are default sampling settings (temperature, top_k, stop...).
 	Params map[string]any `json:"params,omitempty"`
+	// Settings are the user's own for this model (context, cache type,
+	// sampling...), applied over Params and under each request's options.
+	Settings map[string]any `json:"settings,omitempty"`
 	// Source is "ollama" (imported) or "hf" (downloaded here).
 	Source string `json:"source"`
+}
+
+// options layers the model's Params, its Settings and a request's options.
+func (m *Model) options(req map[string]any) map[string]any {
+	out := map[string]any{}
+	for _, o := range []map[string]any{m.Params, m.Settings, req} {
+		for k, v := range o {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 // Names lists the full name and the aliases.

@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -150,6 +151,16 @@ func (s *Store) Delete(name string) error {
 var (
 	intOptions   = map[string]bool{"top_k": true, "num_ctx": true, "num_predict": true, "seed": true, "repeat_last_n": true, "num_gpu": true}
 	floatOptions = map[string]bool{"temperature": true, "top_p": true, "min_p": true, "repeat_penalty": true, "presence_penalty": true, "frequency_penalty": true}
+	// stringOptions are how llama.cpp loads a model; keep_alive is "-1"
+	// (until unloaded) or a duration.
+	stringOptions = map[string]func(string) bool{
+		"cache_type": func(v string) bool { return v == "f16" || v == "q8_0" || v == "q4_0" },
+		"flash_attn": func(v string) bool { return v == "on" || v == "off" || v == "auto" },
+		"keep_alive": func(v string) bool {
+			d, err := time.ParseDuration(v)
+			return v == "-1" || (err == nil && d > 0)
+		},
+	}
 )
 
 // CleanOptions validates model options and normalizes their types (ints as
@@ -174,6 +185,12 @@ func CleanOptions(in map[string]any) (map[string]any, error) {
 				return nil, fmt.Errorf("option %s must be a number", k)
 			}
 			out[k] = n
+		case stringOptions[k] != nil:
+			str, ok := v.(string)
+			if !ok || !stringOptions[k](str) {
+				return nil, fmt.Errorf("option %s can't be %v", k, v)
+			}
+			out[k] = str
 		case k == "stop":
 			list, ok := toStrings(v)
 			if !ok {

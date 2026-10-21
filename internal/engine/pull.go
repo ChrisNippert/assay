@@ -131,7 +131,7 @@ func (e *Engine) Pull(ctx context.Context, name string, fn func(ollama.PullProgr
 		m.Params = p
 	}
 	if old, err := e.store.Get(m.Name); err == nil {
-		m.Aliases = old.Aliases
+		m.Aliases, m.Settings = old.Aliases, old.Settings
 	}
 	fn(ollama.PullProgress{Status: "writing manifest"})
 	if err := e.store.Put(m); err != nil {
