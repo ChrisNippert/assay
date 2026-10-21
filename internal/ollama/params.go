@@ -48,6 +48,16 @@ func (s *ShowResponse) ContextLength() int {
 	return 0
 }
 
+// Layers is how many layers Ollama can offload to the GPU: the model's
+// blocks plus the output layer, which is what num_gpu counts. 0 if unknown.
+func (s *ShowResponse) Layers() int {
+	arch, _ := s.ModelInfo["general.architecture"].(string)
+	if n, ok := s.ModelInfo[arch+".block_count"].(float64); ok && arch != "" {
+		return int(n) + 1
+	}
+	return 0
+}
+
 // HasCapability reports whether /api/show lists a capability such as
 // "thinking", "vision" or "tools".
 func (s *ShowResponse) HasCapability(c string) bool {

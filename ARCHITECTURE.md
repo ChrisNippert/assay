@@ -318,6 +318,17 @@ step below (`ctxCap`); `loadAuto` (Load button, speed test) retries at once,
 chats pick the smaller context next message. A saved speed test that stayed
 fully on the GPU seeds the cap after a restart.
 
+**GPU layers by hand.** Tune's GPU layers sets `num_gpu` (Ollama counts the
+model's blocks plus the output layer; `/api/models/defaults` reports it as
+`layers`). A request with `num_gpu` gets no auto context (auto assumes the
+whole model on the GPU), and `manualGPU` marks the model so its deliberate
+spill isn't recorded by `noteOverflow`; `loadAuto` and chats without it
+clear the mark.
+
+**Installed-model fit** (Library, model switcher): `hw.Estimate` at 8k
+context from the file size and parameter count, overridden by a speed test
+when there is one (100% on the GPU → fits; less → spills).
+
 ## Milestones
 
 1. **M1: usable day one.** Ollama client, Library (list, delete), load and

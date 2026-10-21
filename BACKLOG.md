@@ -67,14 +67,7 @@ model pages).
 Requested 2026-10-20. Each one depends on what Ollama exposes, so check the
 installed version (0.40.x) before building UI for it.
 
-- **GPU max utilization / overflow.** Cap how much of a model goes on the
-  GPU so the rest spills to CPU/RAM instead of failing or evicting.
-  Ollama's per-request `num_gpu` option (layers offloaded) does this today
-  and can live in presets like any other option. Show it as "GPU layers"
-  with an "auto" default, ideally with the layer count from `/api/show` so
-  it can be a slider ("28 of 36 layers on GPU"). Possibly also a
-  percentage-of-VRAM view that converts to layers. `OLLAMA_GPU_OVERHEAD`
-  (server env) is the global alternative; mention it, don't manage it.
+- **GPU layers:** done (Tune → GPU layers, see Done).
 - **Server settings page.** Show Ollama's server-wide settings (read from
   `systemctl show ollama -p Environment`, no root needed): KV cache type,
   flash attention, default context, network binding. Offer a ready-to-run
@@ -86,19 +79,17 @@ installed version (0.40.x) before building UI for it.
   Research whether 0.40 allows it per request or per model. If not, show the
   current server setting read-only with instructions, and factor it into
   the memory/fit estimates (q8_0 halves KV size, so bigger contexts fit).
-- **Speculative decoding (draft model).** Research whether Ollama 0.40
-  supports a draft model and how it's configured (Modelfile? request
-  option?). If supported: pick a draft model from installed ones of the
-  same family, draft token count. If not, record that and drop it or
-  revisit later.
+- **Speculative decoding: not on this setup (checked 2026-10-20).** Ollama
+  0.40.6 accepts `draft` on `/api/create` and returns success, but for GGUF
+  models it stores no draft layer and nothing changes (Qwen3.5-9B Q4 with a
+  2B draft: 35.2 tok/s both ways). `ollama create --draft-quantize` is
+  safetensors-only, which suggests the MLX runner. `draft_num_predict` is a
+  documented option (default 4, 0 = off). Revisit on a newer Ollama; if it
+  lands, check `/api/show` lists the draft before showing any UI.
 
 ### 3. Design ideas (remaining)
 
-Most of the 2026-10-20 list is done (see Done). Still open:
-
-1. **Polish on what shipped:** renaming chats from the sidebar; a GPU-fit
-   bar on Library rows; "fits on GPU" hints and a ★ for presets in the model
-   switcher; showing recent presets on the empty chat screen.
+All of the 2026-10-20 polish list is done (see Done).
 
 ## Later
 
@@ -125,6 +116,21 @@ Most of the 2026-10-20 list is done (see Done). Still open:
 - **Chat search** across saved chats. (M)
 
 ## Done
+
+- Polish and runtime settings (2026-10-20):
+  - Rename chats from the sidebar (pencil on hover; `PATCH /api/chats/{id}`).
+  - Library rows show how each model fits (measured if a speed test ran,
+    else estimated at 8k context) with a bar, its measured speed, a Speed
+    sort and a Compare button (`/compare?add=` adds to the last comparison,
+    which the browser remembers; the sidebar's Compare reopens it).
+  - The model switcher shows each model's fit or measured speed, and stars
+    presets (a preset shows its base model's numbers).
+  - The empty chat offers up to three presets, most recently used first.
+  - Tune → GPU layers (`num_gpu`, 0 to the model's layer count). Setting it
+    turns auto context off for that chat and stops the spill from being
+    learned as "context too big".
+  - Discover and model-page fit estimates count the server's K/V cache type
+    and `OLLAMA_NUM_PARALLEL`.
 
 - Compare page (2026-10-20): up to 4 installed models side by side (specs,
   quant quality, context that fits on the GPU, intelligence score) with a

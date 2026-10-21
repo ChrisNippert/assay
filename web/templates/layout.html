@@ -24,7 +24,7 @@
   <input type="search" class="chat-filter" id="chat-filter" placeholder="Search chats" aria-label="Search chats"{{if le (len .Chats) 8}} hidden{{end}}>
   <div class="chat-list" id="chat-list">
     {{range .ChatGroups}}<div class="chat-group"><div class="chat-group-label">{{.Label}}</div>
-      {{range .Chats}}<div class="chat-row"><a href="/chat/{{.ID}}" class="chat-link{{if eq .ID $.ChatID}} active{{end}}" title="{{.Title}}">{{.Title}}</a><button type="button" class="icon-btn chat-del" data-chat-del="{{.ID}}" aria-label="Delete chat" title="Delete chat">{{template "icon-trash"}}</button></div>{{end}}
+      {{range .Chats}}<div class="chat-row"><a href="/chat/{{.ID}}" class="chat-link{{if eq .ID $.ChatID}} active{{end}}" title="{{.Title}}">{{.Title}}</a><button type="button" class="icon-btn chat-rename" data-chat-rename="{{.ID}}" aria-label="Rename chat" title="Rename chat">{{template "icon-pencil"}}</button><button type="button" class="icon-btn chat-del" data-chat-del="{{.ID}}" aria-label="Delete chat" title="Delete chat">{{template "icon-trash"}}</button></div>{{end}}
     </div>{{end}}
   </div>
 
@@ -77,4 +77,5 @@
 {{define "icon-moon"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>{{end}}
 {{define "icon-download"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v11M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>{{end}}
 {{define "icon-plus"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>{{end}}
+{{define "icon-pencil"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg>{{end}}
 {{define "icon-trash"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>{{end}}

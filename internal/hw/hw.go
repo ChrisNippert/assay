@@ -157,12 +157,20 @@ type Fit struct {
 // layout, so the KV part is a rule of thumb scaled by parameter count
 // (MoE and hybrid models usually need less).
 func Estimate(fileSize, params int64, ctx int, moe bool) int64 {
+	return EstimateKV(fileSize, params, ctx, moe, 1)
+}
+
+// EstimateKV is Estimate with the cache part scaled by kvFactor, the size
+// of the server's K/V cache relative to f16 (see KVTypeFactor), times the
+// number of parallel requests. The weights and buffers don't scale.
+func EstimateKV(fileSize, params int64, ctx int, moe bool, kvFactor float64) int64 {
 	perToken := params / 1e9 * 18_000
 	perToken = min(max(perToken, 20_000), 260_000)
 	if moe {
 		perToken /= 2
 	}
-	return fileSize + int64(ctx)*perToken + 600_000_000
+	cache := int64(float64(int64(ctx)*perToken) * kvFactor)
+	return fileSize + cache + 600_000_000
 }
 
 // Classify compares an estimate with the machine's memory.

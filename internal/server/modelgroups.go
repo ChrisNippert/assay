@@ -2,8 +2,11 @@ package server
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 
+	"ollamui/internal/bench"
+	"ollamui/internal/hw"
 	"ollamui/internal/ollama"
 )
 
@@ -17,6 +20,17 @@ type modelGroup struct {
 	HFRepo string
 	// LoadedName is the name Ollama reports as in memory, or "".
 	LoadedName string
+	// Fit is how it fits in memory; Bench its last speed test, if any.
+	Fit   hw.Fit
+	Bench *bench.Result
+}
+
+// Speed is the measured writing speed for the UI, or "".
+func (g modelGroup) Speed() string {
+	if g.Bench == nil || g.Bench.GenTPS == 0 {
+		return ""
+	}
+	return strconv.FormatFloat(g.Bench.GenTPS, 'f', 0, 64) + " tok/s"
 }
 
 // Others lists the names besides the primary one.
@@ -94,18 +108,66 @@ func groupModels(models []ollama.Model) []modelGroup {
 	return groups
 }
 
-// ModelGroups groups the installed models by digest, with load state.
+// ModelGroups groups the installed models by digest, with load state,
+// how well each fits and its measured speed.
 func (p *page) ModelGroups() []modelGroup {
+	if p.groups != nil {
+		return p.groups
+	}
 	groups := groupModels(p.Models)
 	for i := range groups {
-		for _, n := range groups[i].Names {
+		g := &groups[i]
+		for _, n := range g.Names {
 			if p.IsLoaded(n) {
-				groups[i].LoadedName = n
+				g.LoadedName = n
 				break
 			}
 		}
+		if p.bench != nil {
+			if r, ok := p.bench.Get(g.Primary.Digest); ok {
+				g.Bench = &r
+			}
+		}
+		g.Fit = fitOf(g.Primary, g.Bench, p.memory)
 	}
+	p.groups = groups
 	return groups
+}
+
+// fitCtx is the context the installed-model fit is judged at: enough for a
+// normal chat. Auto context then grows it as far as memory allows.
+const fitCtx = 8192
+
+// fitOf says how an installed model fits in memory: measured, if a speed
+// test ran, otherwise estimated from its size.
+func fitOf(m ollama.Model, b *bench.Result, mem hw.Memory) hw.Fit {
+	f := hw.Classify(hw.Estimate(m.Size, parseParams(m.Details.ParameterSize), fitCtx, false), mem)
+	if b != nil && mem.VRAM > 0 {
+		if b.GPUPct >= 100 && f.Level != hw.FitGPU && f.Level != hw.FitTight {
+			f.Level, f.Label = hw.FitGPU, "Fits on GPU"
+		} else if b.GPUPct < 100 {
+			f.Level, f.Label, f.Percent = hw.FitPartial, "Spills to RAM", 100
+		}
+	}
+	return f
+}
+
+// parseParams reads Ollama's parameter size, e.g. "8.95B" or "671M".
+func parseParams(s string) int64 {
+	mult := 1.0
+	switch {
+	case strings.HasSuffix(s, "B"):
+		mult = 1e9
+	case strings.HasSuffix(s, "M"):
+		mult = 1e6
+	case strings.HasSuffix(s, "K"):
+		mult = 1e3
+	}
+	v, err := strconv.ParseFloat(strings.TrimRight(s, "BMK"), 64)
+	if err != nil {
+		return 0
+	}
+	return int64(v * mult)
 }
 
 // Has reports whether name is one of the group's names.

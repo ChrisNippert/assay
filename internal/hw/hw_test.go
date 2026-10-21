@@ -55,3 +55,27 @@ func TestEstimateGrowsWithContext(t *testing.T) {
 		t.Fatalf("small=%d big=%d moe=%d", small, big, moe)
 	}
 }
+
+func TestEstimateKVScalesOnlyCache(t *testing.T) {
+	const w = 5e9
+	f16 := Estimate(w, 8e9, 32768, false)
+	q8 := EstimateKV(w, 8e9, 32768, false, KVTypeFactor("q8_0"))
+	if EstimateKV(w, 8e9, 32768, false, 1) != f16 {
+		t.Fatal("factor 1 differs from Estimate")
+	}
+	cache16, cache8 := f16-w-600_000_000, q8-w-600_000_000
+	if r := float64(cache8) / float64(cache16); r < 0.52 || r > 0.54 {
+		t.Fatalf("cache ratio = %.3f, want ~0.53", r)
+	}
+	if par := EstimateKV(w, 8e9, 32768, false, 2); par <= f16 {
+		t.Fatalf("parallel 2 should grow the estimate: %d vs %d", par, f16)
+	}
+	// A machine where f16 is only Tight but q8_0 fits comfortably.
+	m := Memory{VRAM: f16 + 1, RAM: 32e9}
+	if got := Classify(f16, m).Level; got != FitTight {
+		t.Fatalf("f16 level = %v, want tight", got)
+	}
+	if got := Classify(q8, m).Level; got != FitGPU {
+		t.Fatalf("q8_0 level = %v, want gpu", got)
+	}
+}

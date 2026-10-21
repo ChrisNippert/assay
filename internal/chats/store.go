@@ -84,6 +84,7 @@ type Summary struct {
 	ID      string
 	Title   string
 	Model   string
+	Preset  string
 	Updated time.Time
 }
 
@@ -150,17 +151,38 @@ func (s *Store) Get(id string) (*Chat, error) {
 // Save writes a chat. It writes a temp file and renames it into place, so a
 // crash never leaves a half-written chat.
 func (s *Store) Save(c *Chat) error {
-	p, err := s.path(c.ID)
-	if err != nil {
+	if _, err := s.path(c.ID); err != nil {
 		return fmt.Errorf("invalid chat id %q", c.ID)
 	}
 	c.Updated = time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.write(c)
+}
+
+// Rename sets a chat's title. Unlike Save it leaves Updated alone, so a
+// rename doesn't move the chat to the top of the sidebar.
+func (s *Store) Rename(id, title string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, err := s.Get(id)
+	if err != nil {
+		return err
+	}
+	c.Title = title
+	return s.write(c)
+}
+
+// write saves c atomically. The caller holds s.mu.
+func (s *Store) write(c *Chat) error {
+	p, err := s.path(c.ID)
+	if err != nil {
+		return err
+	}
 	b, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	f, err := os.CreateTemp(s.dir, ".tmp-*")
 	if err != nil {
 		return err
@@ -205,7 +227,7 @@ func (s *Store) List() ([]Summary, error) {
 		if err != nil {
 			continue
 		}
-		out = append(out, Summary{ID: c.ID, Title: c.Title, Model: c.Model, Updated: c.Updated})
+		out = append(out, Summary{ID: c.ID, Title: c.Title, Model: c.Model, Preset: c.Preset, Updated: c.Updated})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Updated.After(out[j].Updated) })
 	return out, nil

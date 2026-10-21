@@ -79,8 +79,22 @@
 (() => {
   const picked = {{$d.Picked}} || [];
   const go = (list) => { location.href = '/compare' + (list.length ? '?' + list.map((m) => 'm=' + encodeURIComponent(m)).join('&') : ''); };
+  // "Compare" buttons elsewhere link to ?add=name: add it to the last
+  // comparison, which this browser remembers.
+  const KEY = 'ollamui.compare';
+  let last = [];
+  try { last = JSON.parse(localStorage.getItem(KEY)) || []; } catch {}
+  const add = new URLSearchParams(location.search).get('add');
+  if (add) { go([...last.filter((m) => m !== add), add].slice(-4)); return; }
+  // Opening Compare from the sidebar brings back the last comparison.
+  if (!location.search && last.length) { go(last); return; }
+  try { localStorage.setItem(KEY, JSON.stringify(picked)); } catch {}
   document.getElementById('cmp-add')?.addEventListener('change', (e) => { if (e.target.value) go([...picked, e.target.value]); });
-  for (const b of document.querySelectorAll('[data-remove]')) b.addEventListener('click', () => go(picked.filter((m) => m !== b.dataset.remove)));
+  for (const b of document.querySelectorAll('[data-remove]')) b.addEventListener('click', () => {
+    const list = picked.filter((m) => m !== b.dataset.remove);
+    if (!list.length) try { localStorage.removeItem(KEY); } catch {}
+    go(list);
+  });
   const status = document.getElementById('cmp-status');
   for (const b of document.querySelectorAll('[data-bench]')) b.addEventListener('click', async () => {
     const all = document.querySelectorAll('[data-bench]');

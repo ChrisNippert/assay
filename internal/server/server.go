@@ -73,6 +73,8 @@ type Server struct {
 	// ctxCap is model name → largest context worth trying, learned when a
 	// bigger one spilled onto the CPU.
 	ctxCap sync.Map
+	// manualGPU is model name → true while chats set its GPU layers by hand.
+	manualGPU sync.Map
 	// thinkers remembers, per model, whether it thought when left to decide.
 	thinkers sync.Map
 	// otherVRAM is the last measured VRAM used outside Ollama (desktop etc.).
@@ -134,6 +136,7 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("POST /api/models/delete", s.handleDeleteModel)
 	mux.HandleFunc("POST /api/chat", s.handleChatSend)
 	mux.HandleFunc("DELETE /api/chats/{id}", s.handleDeleteChat)
+	mux.HandleFunc("PATCH /api/chats/{id}", s.handleRenameChat)
 	mux.HandleFunc("GET /api/voice", s.handleVoiceStatus)
 	mux.HandleFunc("POST /api/voice/transcribe", s.handleTranscribe)
 	mux.HandleFunc("POST /api/voice/speak", s.handleSpeak)
@@ -190,6 +193,11 @@ type page struct {
 	OllamaURL string
 	OllamaErr string
 	Data      any
+
+	// For ModelGroups' fit and speed.
+	memory hw.Memory
+	bench  *bench.Store
+	groups []modelGroup
 }
 
 // LoadedNames lists the models currently in memory.
@@ -212,7 +220,7 @@ func (p *page) IsLoaded(name string) bool {
 }
 
 func (s *Server) basePage(ctx context.Context, active, title string) *page {
-	p := &page{Active: active, Title: title, OllamaURL: s.ollama.URL()}
+	p := &page{Active: active, Title: title, OllamaURL: s.ollama.URL(), memory: s.memory, bench: s.bench}
 	if list, err := s.chats.List(); err == nil {
 		p.Chats = list
 	} else {

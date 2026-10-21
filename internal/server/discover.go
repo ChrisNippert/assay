@@ -70,6 +70,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	installed := s.installedRepos(r.Context())
+	kvf := s.kvFactor(r.Context())
 	out := make([]searchResult, 0, len(repos))
 	for _, repo := range repos {
 		if !repo.IsChatModel() {
@@ -88,7 +89,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		res.Score, res.ScoreOf = s.scoreFor(repo.Tags)
 		if params > 0 {
 			res.Q4Size = params * 48 / 80 // ~4.8 bits per weight, typical of Q4_K_M
-			res.Fit = hw.Classify(hw.Estimate(res.Q4Size, params, discoverCtx, moe), s.memory)
+			res.Fit = hw.Classify(hw.EstimateKV(res.Q4Size, params, discoverCtx, moe, kvf), s.memory)
 		}
 		out = append(out, res)
 	}
@@ -213,6 +214,7 @@ type modelPageData struct {
 	Recommended []setting
 	Ctx         int
 	CtxOptions  []int
+	KVType      string // server K/V cache type; the estimates assume it
 	Memory      hw.Memory
 	Score       float64 // of the base model, 0 if unrated
 	ScoreOf     string
@@ -286,6 +288,8 @@ func (s *Server) handleModelPage(w http.ResponseWriter, r *http.Request) {
 	for _, m := range p.Models {
 		installed[strings.ToLower(m.Name)] = true
 	}
+	kvf := s.kvFactor(r.Context())
+	data.KVType = s.ollamaEnv(r.Context()).KVCacheType()
 	quants, vision := hf.Quants(files)
 	data.Vision = vision || repo.Vision()
 	for _, q := range quants {
@@ -294,7 +298,7 @@ func (s *Server) handleModelPage(w http.ResponseWriter, r *http.Request) {
 			Quant:     q,
 			Tag:       tag,
 			Alias:     hf.ShortName(repo.ID, q.Name),
-			Fit:       hw.Classify(hw.Estimate(q.Size, repo.Params(), data.Ctx, data.MoE), s.memory),
+			Fit:       hw.Classify(hw.EstimateKV(q.Size, repo.Params(), data.Ctx, data.MoE, kvf), s.memory),
 			Installed: installed[strings.ToLower(tag)],
 		})
 	}

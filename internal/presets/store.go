@@ -148,7 +148,7 @@ func (s *Store) Delete(name string) error {
 
 // Option kinds Ollama accepts that the UI exposes.
 var (
-	intOptions   = map[string]bool{"top_k": true, "num_ctx": true, "num_predict": true, "seed": true, "repeat_last_n": true}
+	intOptions   = map[string]bool{"top_k": true, "num_ctx": true, "num_predict": true, "seed": true, "repeat_last_n": true, "num_gpu": true}
 	floatOptions = map[string]bool{"temperature": true, "top_p": true, "min_p": true, "repeat_penalty": true, "presence_penalty": true, "frequency_penalty": true}
 )
 

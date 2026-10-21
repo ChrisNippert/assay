@@ -27,6 +27,7 @@ type fakeOllama struct {
 	createReqs []ollama.CreateRequest
 	deleted    []string
 	reply      string // NDJSON body for /api/chat
+	modelInfo  string // /api/show's model_info, if set
 }
 
 func (f *fakeOllama) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -63,7 +64,11 @@ func (f *fakeOllama) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			io.WriteString(w, `{"error":"model not found"}`)
 			return
 		}
-		io.WriteString(w, `{"parameters":"temperature 0.6\ntop_k 20\nstop \"<|im_end|>\"","model_info":{"qwen3.context_length":40960},"capabilities":["completion","thinking"]}`)
+		info := f.modelInfo
+		if info == "" {
+			info = `{"qwen3.context_length":40960}`
+		}
+		io.WriteString(w, `{"parameters":"temperature 0.6\ntop_k 20\nstop \"<|im_end|>\"","model_info":`+info+`,"capabilities":["completion","thinking"]}`)
 	case "/api/create":
 		var req ollama.CreateRequest
 		json.NewDecoder(r.Body).Decode(&req)
@@ -416,5 +421,29 @@ func TestModelDefaults(t *testing.T) {
 	json.Unmarshal(rec.Body.Bytes(), &d)
 	if d.Options["temperature"] != 0.6 || d.ContextLength != 40960 || !d.Thinking {
 		t.Errorf("defaults = %+v", d)
+	}
+}
+
+func TestManualGPULayersSkipAutoContext(t *testing.T) {
+	s, fake, _ := newTestServer(t)
+	s.vramUsed = func() int64 { return 0 }
+	fake.modelInfo = `{"general.architecture":"qwen3","qwen3.context_length":40960,"qwen3.block_count":36,"qwen3.attention.head_count_kv":8,"qwen3.attention.key_length":128,"qwen3.attention.value_length":128}`
+	fake.reply = `{"message":{"role":"assistant","content":"ok"},"done":true}` + "\n"
+
+	if rec := do(s, "POST", "/api/chat", `{"model":"qwen3:8b","content":"hi"}`); rec.Code != 200 {
+		t.Fatalf("chat: %d %s", rec.Code, rec.Body)
+	}
+	if fake.chatReqs[0].Options["num_ctx"] == nil {
+		t.Fatalf("expected an auto context, got options %v", fake.chatReqs[0].Options)
+	}
+	if rec := do(s, "POST", "/api/chat", `{"model":"qwen3:8b","content":"hi","options":{"num_gpu":10}}`); rec.Code != 200 {
+		t.Fatalf("chat: %d %s", rec.Code, rec.Body)
+	}
+	if o := fake.chatReqs[1].Options; o["num_ctx"] != nil || o["num_gpu"] != float64(10) {
+		t.Errorf("with GPU layers set, options = %v; want num_gpu 10 and no auto num_ctx", o)
+	}
+	rec := do(s, "GET", "/api/models/defaults?name=qwen3:8b", "")
+	if !strings.Contains(rec.Body.String(), `"layers":37`) {
+		t.Errorf("defaults should count 36 blocks + output = 37 layers: %s", rec.Body)
 	}
 }

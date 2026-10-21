@@ -288,6 +288,9 @@
   }
 
   const isLoaded = (opt) => (opt?.dataset.names || baseOf(opt)).split(' ').some((n) => loadedNames.has(n));
+  // The model option a name (any of its aliases) belongs to.
+  const modelOption = (name) => [...select.querySelectorAll('option[data-names]')]
+    .find((o) => o.dataset.names.split(' ').includes(name));
   const metaOf = (opt) => opt?.value.startsWith('preset:')
     ? 'preset on ' + baseOf(opt)
     : opt?.dataset.meta?.replace(/^ · | · $/g, '') || '';
@@ -333,9 +336,20 @@
         const dot = el('span', 'switcher-dot' + (isLoaded(o) ? ' on' : ''));
         dot.title = isLoaded(o) ? 'Loaded' : '';
         const text = el('span', 'row-text');
-        text.append(el('span', 'row-title', o.textContent), el('span', 'row-sub', metaOf(o)));
+        const title = el('span', 'row-title', o.textContent);
+        if (o.value.startsWith('preset:')) title.prepend(el('span', 'switcher-star', '★ '));
+        text.append(title, el('span', 'row-sub', metaOf(o)));
         row.append(dot, text);
-        if (o.dataset.size) row.append(el('span', 'switcher-size', o.dataset.size));
+        // How it fits and how fast it ran; a preset shows its base model's.
+        const m = o.value.startsWith('preset:') ? modelOption(baseOf(o)) : o;
+        const side = el('span', 'switcher-side');
+        if (m?.dataset.fitLabel) {
+          const fit = el('span', `switcher-fit fit-${m.dataset.fit}`, m.dataset.speed || m.dataset.fitLabel);
+          fit.title = m.dataset.fitLabel + (m.dataset.speed ? ', measured' : ', estimated');
+          side.append(fit);
+        }
+        if (o.dataset.size) side.append(el('span', 'switcher-size', o.dataset.size));
+        if (side.children.length) row.append(side);
         if (o.selected) row.insertAdjacentHTML('beforeend', `<svg class="switcher-check" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">${ICONS.check}</svg>`);
         options.append(row);
       }
@@ -389,6 +403,14 @@
 
   // ---- empty chat suggestions ----
   document.getElementById('empty')?.addEventListener('click', (e) => {
+    const p = e.target.closest('.preset-start');
+    if (p) {
+      select.value = 'preset:' + p.dataset.preset;
+      select.dispatchEvent(new Event('change'));
+      for (const b of document.querySelectorAll('.preset-start')) b.classList.toggle('on', b === p);
+      input.focus();
+      return;
+    }
     const s = e.target.closest('.suggestion');
     if (!s) return;
     input.value = s.dataset.prompt.replace(/\\n/g, '\n');

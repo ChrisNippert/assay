@@ -376,6 +376,7 @@
 
   // ---- sidebar chats ----
   const trashIcon = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>';
+  const pencilIcon = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg>';
   const chatListEl = document.getElementById('chat-list');
   const chatFilter = document.getElementById('chat-filter');
 
@@ -405,19 +406,79 @@
     const a = el('a', 'chat-link active', title.split('\n')[0].slice(0, 60));
     a.href = `/chat/${id}`;
     a.title = a.textContent;
+    const ren = el('button', 'icon-btn chat-rename');
+    ren.type = 'button';
+    ren.dataset.chatRename = id;
+    ren.title = 'Rename chat';
+    ren.setAttribute('aria-label', 'Rename chat');
+    ren.innerHTML = pencilIcon;
     const del = el('button', 'icon-btn chat-del');
     del.type = 'button';
     del.dataset.chatDel = id;
     del.title = 'Delete chat';
     del.setAttribute('aria-label', 'Delete chat');
     del.innerHTML = trashIcon;
-    row.append(a, del);
+    row.append(a, ren, del);
     group.querySelector('.chat-group-label').after(row);
     group.hidden = false;
     if (chatFilter && chatListEl.querySelectorAll('.chat-row').length > 8) chatFilter.hidden = false;
   }
 
+  // Swaps a row's link for a text input; Enter or blur saves, Escape cancels.
+  function startRename(row) {
+    if (row.classList.contains('renaming')) return;
+    const a = row.querySelector('.chat-link');
+    const id = row.querySelector('[data-chat-rename]').dataset.chatRename;
+    const input = el('input', 'chat-rename-input');
+    input.type = 'text';
+    input.value = a.textContent;
+    input.maxLength = 200;
+    input.setAttribute('aria-label', 'Chat title');
+    row.classList.add('renaming');
+    a.hidden = true;
+    a.after(input);
+    input.focus();
+    input.select();
+    let done = false;
+    const finish = async (save) => {
+      if (done) return;
+      done = true;
+      const title = input.value.trim();
+      if (save && title && title !== a.textContent) {
+        const res = await fetch(`/api/chats/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title }),
+        });
+        if (res.ok) {
+          const saved = (await res.json()).title;
+          a.textContent = saved;
+          a.title = saved;
+          if (a.classList.contains('active')) document.title = `${saved} · ollamui`;
+          applyChatFilter();
+        } else {
+          alert(`Couldn't rename chat: ${await errorText(res)}`);
+        }
+      }
+      input.remove();
+      a.hidden = false;
+      row.classList.remove('renaming');
+    };
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    });
+    input.addEventListener('blur', () => finish(true));
+  }
+
   chatListEl?.addEventListener('click', async (e) => {
+    const ren = e.target.closest('[data-chat-rename]');
+    if (ren) {
+      e.preventDefault();
+      e.stopPropagation();
+      startRename(ren.closest('.chat-row'));
+      return;
+    }
     const btn = e.target.closest('[data-chat-del]');
     if (!btn) return;
     e.preventDefault();

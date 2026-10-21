@@ -63,3 +63,11 @@ func TestShortNameAndDiskUsed(t *testing.T) {
 		t.Fatalf("disk used %d", got)
 	}
 }
+
+func TestParseParams(t *testing.T) {
+	for in, want := range map[string]int64{"8.95B": 8_950_000_000, "671M": 671_000_000, "": 0, "huge": 0} {
+		if got := parseParams(in); got != want {
+			t.Errorf("parseParams(%q) = %d, want %d", in, got, want)
+		}
+	}
+}

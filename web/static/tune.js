@@ -35,6 +35,8 @@
   const MAIN = [
     { key: 'num_ctx', label: 'Context length', kind: 'combo', int: true,
       help: 'Prompt, thinking and reply all share it' },
+    { key: 'num_gpu', label: 'GPU layers', kind: 'scale', min: 0, max: 99, step: 1, int: true, placeholder: 'All',
+      help: 'Fewer leaves VRAM for other things but runs slower' },
     { key: 'think', label: 'Thinking', kind: 'think' },
     { key: 'num_predict', label: 'Max reply length', kind: 'spin', min: -1, max: 262144, step: 256, int: true,
       help: 'Tokens' },
@@ -73,7 +75,10 @@
     if (p?.options && key in p.options) return { value: p.options[key], from: 'preset' };
     if (key in defaults.options) return { value: defaults.options[key], from: 'model' };
     if (key in OLLAMA_DEFAULTS) return { value: OLLAMA_DEFAULTS[key], from: 'Ollama' };
-    if (key === 'num_ctx' && defaults.auto?.ctx) return { value: defaults.auto.ctx, from: 'auto' };
+    // Auto context keeps the whole model on the GPU, so it's off when GPU
+    // layers are set by hand (the server skips it too).
+    const gpuSet = key === 'num_ctx' && (state.options.num_gpu != null || p?.options?.num_gpu != null);
+    if (key === 'num_ctx' && defaults.auto?.ctx && !gpuSet) return { value: defaults.auto.ctx, from: 'auto' };
     if (key === 'num_ctx' && defaults.ollamaContext) return { value: defaults.ollamaContext, from: 'Ollama' };
     return { value: null, from: null };
   }
@@ -225,6 +230,7 @@
     sel.value = own != null ? String(own) : '';
     let text = own != null ? 'Changed' : describe(inh);
     if (own == null && inh.from === 'auto') text = 'Largest that fits on your GPU';
+    else if (own == null && effective('num_gpu') != null) text = 'Not auto: GPU layers are set by hand';
     else if (own == null && inh.from === 'Ollama' && defaults.auto?.reason) text = `Not auto: ${defaults.auto.reason}`;
     if (defaults.contextLength) text += ` · max ${kib(defaults.contextLength)}`;
     r.sub.textContent = text;
@@ -251,6 +257,7 @@
     const unlimited = def.key === 'num_predict' && val === -1;
     if (document.activeElement !== num) num.value = unlimited ? '' : val ?? '';
     if (def.key === 'num_predict') num.placeholder = 'No limit';
+    if (def.key === 'num_gpu') return renderLayers(r, own, inh);
     if (range) {
       range.value = val ?? def.min;
       const pct = ((clamp(def, +range.value) - def.min) / (def.max - def.min)) * 100;
@@ -260,6 +267,22 @@
     sub.textContent = def.help ? `${source} · ${def.help}` : source;
     if (unlimited) sub.textContent = `${source} · Tokens`;
     return has;
+  }
+
+  // GPU layers: unset means Ollama puts as many as fit, shown as all of them.
+  function renderLayers(r, own, inh) {
+    const { num, range, sub } = r;
+    const max = defaults.layers || 99;
+    const val = own ?? inh.value;
+    num.max = range.max = max;
+    if (document.activeElement !== num) num.value = val ?? '';
+    range.value = val ?? max;
+    range.style.setProperty('--pct', (Math.min(+range.value, max) / max) * 100 + '%');
+    const of = defaults.layers ? ` of ${max}` : '';
+    if (val == null) sub.textContent = `Auto: all that fit${defaults.layers ? ` (${max} layers)` : ''}`;
+    else if (val >= max) sub.textContent = `${own != null ? 'Changed' : describe(inh)}: all ${max} on the GPU`;
+    else sub.textContent = `${own != null ? 'Changed' : describe(inh)}: ${val}${of} on the GPU, the rest on the CPU (slower) · auto context off`;
+    return own !== undefined;
   }
 
   const effective = (key) => state.options[key] ?? inherited(key).value;

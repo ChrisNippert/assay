@@ -78,3 +78,22 @@ func TestListSkipsCorruptFiles(t *testing.T) {
 		t.Fatalf("list = %+v", list)
 	}
 }
+
+func TestRename(t *testing.T) {
+	s, _ := Open(t.TempDir())
+	c := New("m")
+	c.Title = "old"
+	c.Messages = []Message{{Role: "user", Content: "hi"}}
+	s.Save(c)
+	saved, _ := s.Get(c.ID)
+	if err := s.Rename(c.ID, "new"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Get(c.ID)
+	if got.Title != "new" || len(got.Messages) != 1 || !got.Updated.Equal(saved.Updated) {
+		t.Fatalf("got %+v", got)
+	}
+	if err := s.Rename("20260101-deadbeef", "x"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing chat: %v", err)
+	}
+}

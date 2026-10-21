@@ -554,6 +554,9 @@ a.tag-link:hover { border-color: var(--accent-line); color: var(--accent-text); 
 .lib-title .status-btn { align-self: center; }
 .lib-title .status:empty { display: none; }
 .lib-row .actions .btn { white-space: nowrap; }
+.lib-fit { flex: none; width: 150px; display: grid; grid-template-columns: 1fr auto; gap: 2px var(--s2); align-items: center; font-size: var(--fs-xs); }
+.lib-fit .fit-label { width: auto; }
+.lib-fit .bar { grid-column: 1 / -1; order: 3; }
 .lib-del:hover { color: var(--bad); background: var(--bad-soft); }
 .lib-empty { display: flex; flex-direction: column; align-items: center; gap: var(--s3); padding: 64px 0; text-align: center; }
 .lib-empty h2 { margin: 0; font-size: var(--fs); font-weight: 600; }
@@ -578,7 +581,14 @@ a.tag-link:hover { border-color: var(--accent-line); color: var(--accent-text); 
 .chat-del { position: absolute; right: 2px; padding: 4px; opacity: 0; }
 .chat-row:hover .chat-del, .chat-row:focus-within .chat-del { opacity: 1; }
 .chat-del:hover { color: var(--bad); }
-@media (hover: none) { .chat-del { opacity: 1; } }
+.chat-rename { position: absolute; right: 26px; padding: 4px; opacity: 0; }
+.chat-row:hover .chat-rename, .chat-row:focus-within .chat-rename { opacity: 1; }
+.chat-row:hover .chat-link, .chat-row:focus-within .chat-link { padding-right: 54px; }
+.chat-rename:hover { color: var(--text); }
+@media (hover: none) { .chat-del, .chat-rename { opacity: 1; } .chat-row .chat-link { padding-right: 54px; } }
+.chat-row.renaming .chat-rename, .chat-row.renaming .chat-del { display: none; }
+.chat-rename-input:focus { outline: none; border-color: var(--accent); }
+.chat-rename-input { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); border-radius: 6px; padding: 4px 8px; }
 
 /* ---- model switcher ---- */
 .switcher { position: relative; min-width: min(220px, 30vw); flex: 0 1 auto; }
@@ -609,7 +619,10 @@ a.tag-link:hover { border-color: var(--accent-line); color: var(--accent-text); 
 .switcher-row .row-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .switcher-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--border-strong); }
 .switcher-dot.on { background: var(--good); }
+.switcher-side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
 .switcher-size { flex: none; font-size: var(--fs-xs); color: var(--muted); }
+.switcher-fit { font-size: var(--fs-xs); white-space: nowrap; }
+.switcher-star { color: var(--warn); }
 .switcher-check { flex: none; color: var(--accent); }
 .switcher-none { padding: var(--s3); color: var(--muted); font-size: var(--fs-sm); }
 .switcher-foot { display: flex; justify-content: space-between; padding: var(--s2) var(--s3); border-top: 1px solid var(--border); font-size: var(--fs-sm); }
@@ -639,6 +652,11 @@ a.tag-link:hover { border-color: var(--accent-line); color: var(--accent-text); 
 .welcome { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 12vh 0 var(--s5); }
 .welcome-title { margin: 0 0 var(--s2); font-size: 22px; font-weight: 600; }
 .welcome-hint { margin: 0 0 var(--s5); color: var(--muted); }
+.welcome-presets { display: flex; flex-direction: column; align-items: center; gap: var(--s2); width: 100%; max-width: 560px; margin-bottom: var(--s3); }
+.preset-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s2); }
+.preset-start { font: inherit; font-size: var(--fs-sm); color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+.preset-start:hover { background: var(--soft); }
+.preset-start.on { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-text); }
 .suggestions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); width: 100%; max-width: 560px; }
 .suggestion {
   display: flex; flex-direction: column; gap: 2px; padding: var(--s3) var(--s4); text-align: left; font: inherit; color: var(--text);

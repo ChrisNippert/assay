@@ -44,7 +44,7 @@
       </div>
       <p class="muted small">
         {{with $.Data.Memory}}{{if .VRAM}}{{.GPU}}: {{bytes .VRAM}} VRAM · {{bytes .RAM}} RAM.{{else}}No GPU detected · {{bytes .RAM}} RAM.{{end}}{{end}}
-        Estimates are rough: weights + context cache + overhead.
+        Estimates are rough: weights + context cache + overhead{{if and $.Data.KVType (ne $.Data.KVType "f16")}}, with the {{$.Data.KVType}} cache{{end}}.
       </p>
       {{if not $.Data.Quants}}<p class="muted">No GGUF quants found in this repo.</p>{{end}}
       <div class="quant-list">

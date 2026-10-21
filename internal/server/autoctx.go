@@ -108,7 +108,8 @@ func (s *Server) pickContext(ctx context.Context, model string, probe bool) auto
 		return nil
 	}
 	self := find(running)
-	if self != nil && self.SizeVRAM < self.Size && self.ContextLength > 0 && aloneOnGPU(running, self) {
+	_, manual := s.manualGPU.Load(strings.ToLower(model))
+	if self != nil && self.SizeVRAM < self.Size && self.ContextLength > 0 && aloneOnGPU(running, self) && !manual {
 		s.noteOverflow(model, self.ContextLength)
 	}
 	if self == nil {
@@ -233,6 +234,7 @@ func aloneOnGPU(running []ollama.RunningModel, self *ollama.RunningModel) bool {
 // loadAuto loads model at the context ollamui picks. If it spills onto the
 // CPU anyway, it tries the next smaller context, a couple of times at most.
 func (s *Server) loadAuto(ctx context.Context, model, keepAlive string) (autoContext, error) {
+	s.manualGPU.Delete(strings.ToLower(model)) // loaded without a GPU layer limit
 	var auto autoContext
 	for range 3 {
 		auto = s.pickContext(ctx, model, true)

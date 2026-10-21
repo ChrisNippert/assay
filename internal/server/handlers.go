@@ -21,6 +21,9 @@ type chatPageData struct {
 	Model  string // model selected in the picker
 	Preset string // preset selected in the picker (takes precedence over Model)
 	Tune   tuneState
+	// Recent are the presets to offer on an empty chat: the last used
+	// first, then the rest, three at most.
+	Recent []*presets.Preset
 }
 
 // tuneState is this chat's own tweaks, handed to the Tune panel.
@@ -65,8 +68,34 @@ func (s *Server) handleChatPage(w http.ResponseWriter, r *http.Request) {
 	if data.Model == "" && len(p.Models) > 0 {
 		data.Model = p.Models[0].Name
 	}
+	if data.Chat == nil {
+		data.Recent = recentPresets(p.Chats, p.Presets, 3)
+	}
 	p.Data = data
 	s.render(w, "chat", p)
+}
+
+// recentPresets orders presets by when a chat last used them (chats come
+// newest first), then the unused ones by name, and keeps n.
+func recentPresets(list []chats.Summary, all []*presets.Preset, n int) []*presets.Preset {
+	var out []*presets.Preset
+	seen := map[string]bool{}
+	byName := map[string]*presets.Preset{}
+	for _, p := range all {
+		byName[p.Name] = p
+	}
+	for _, c := range list {
+		if p := byName[c.Preset]; p != nil && !seen[p.Name] {
+			seen[p.Name] = true
+			out = append(out, p)
+		}
+	}
+	for _, p := range all {
+		if !seen[p.Name] {
+			out = append(out, p)
+		}
+	}
+	return out[:min(n, len(out))]
 }
 
 func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
@@ -324,7 +353,16 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 	// small default (4k on most GPUs), which thinking models fill quickly.
 	// Pick the largest that fits on the GPU instead.
 	t := &turn{chat: c}
-	if _, set := options["num_ctx"]; !set {
+	// GPU layers set by hand put part of the model on the CPU on purpose:
+	// auto context (which keeps it all on the GPU) stays out of it, and the
+	// spill isn't taken as a sign the context was too big.
+	_, manualGPU := options["num_gpu"]
+	if manualGPU {
+		s.manualGPU.Store(strings.ToLower(c.Model), true)
+	} else {
+		s.manualGPU.Delete(strings.ToLower(c.Model))
+	}
+	if _, set := options["num_ctx"]; !set && !manualGPU {
 		if t.auto = s.pickContext(r.Context(), c.Model, true); t.auto.Ctx > 0 {
 			options = presets.Merge(options, map[string]any{"num_ctx": t.auto.Ctx})
 		}
