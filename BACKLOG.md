@@ -5,6 +5,48 @@ big it is (S = an hour or two, M = a session, L = several sessions).
 
 ## Next up
 
+### Engine: llama.cpp replaces Ollama (L, several sessions)
+
+Decided 2026-10-20: full replacement, Vulkan build. Measured here with
+the same GGUF files and settings (all layers on GPU, flash attention,
+q8_0 cache, 1k prompt, 256 tokens out):
+
+| Model | Ollama 0.40.6 | llama.cpp Vulkan | llama.cpp ROCm |
+|---|---|---|---|
+| Qwen3.5-9B Q4 prompt / write | 504 / 38.7 | 881 / 52.2 | 904 / 50.3 |
+| Gemma 4 12B prompt / write | 675 / 32.4 | 750 / 35.8 | 809 / 37.6 |
+
+Ollama itself runs an older bundled `llama-server`; the gain is newer
+llama.cpp. Gotcha: `llama-server` defaults to 4 parallel slots, which
+overfilled 12 GB VRAM (5.9 tok/s); always pass `-np 1`.
+
+Stages (the app keeps working after each):
+1. **Engine core.** `internal/gguf` reads GGUF metadata (what Ollama's
+   `/api/show` gave us: architecture, layers, context, chat template,
+   parameter count, quant type). `internal/engine` keeps a model store
+   (`~/.local/share/ollamui/models/`), imports Ollama's models by hard
+   link (no re-download), runs one `llama-server` per loaded model (port,
+   context, GPU layers, cache type, `--jinja`, `-np 1`, idle unload,
+   pinning, evicting to make room), and speaks OpenAI chat/embeddings to
+   it. The server talks to an engine interface instead of the Ollama
+   client.
+2. **Downloads** straight from Hugging Face (resume, split files, mmproj),
+   replacing `ollama pull`; delete.
+3. **API for editors:** ollamui serves `/v1/chat/completions`, `/v1/models`,
+   `/v1/embeddings` (OpenAI-compatible, loads models on demand); presets
+   show up as models there (replacing "publish to Ollama").
+4. **Settings and tuning:** an engine section (llama.cpp version, cache
+   type, flash attention, threads) replaces the Ollama server page; auto
+   context uses real memory numbers from `llama-server` (and/or `--fit`);
+   Compare's speed test, the voice talker (`-ngl 0 -t 4`) and RAG
+   embeddings move over. Speculative decoding with draft models.
+5. **Install and clean up:** a one-click llama.cpp (Vulkan) install from
+   its GitHub releases, removal of the Ollama client, docs.
+
+Also pending: keyword search (BM25) for RAG so project files work without
+an embedding model (a user asked a project chat about a PDF and got
+nothing because no embedding model had been picked).
+
 ### 0. Voice mode follow-ups (S–M)
 
 Voice mode shipped 2026-10-20 (see Done). Open:
