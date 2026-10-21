@@ -69,10 +69,37 @@
     return html;
   }
 
+  // Extensions for Download, by fence label (lowercased).
+  const EXT = { python: 'py', py: 'py', javascript: 'js', js: 'js', typescript: 'ts', ts: 'ts', go: 'go', rust: 'rs', rs: 'rs', c: 'c', cpp: 'cpp', 'c++': 'cpp', java: 'java', kotlin: 'kt', ruby: 'rb', rb: 'rb', php: 'php', bash: 'sh', sh: 'sh', shell: 'sh', zsh: 'sh', json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'toml', html: 'html', css: 'css', sql: 'sql', markdown: 'md', md: 'md', xml: 'xml', lua: 'lua', swift: 'swift', csharp: 'cs', cs: 'cs', latex: 'tex', tex: 'tex' };
+  const WHOLE_NAME = { dockerfile: 'Dockerfile', makefile: 'Makefile' };
+
+  // A file named in a comment on the first line (// main.go), else snippet.<ext>.
+  function fileNameFor(code, lang) {
+    const first = code.split('\n', 1)[0];
+    const m = first.match(/^\s*(?:\/\/|#|--|\/\*|<!--)\s*([\w./-]+\.\w+)\s*(?:\*\/|-->)?\s*$/);
+    if (m) return m[1].split('/').pop();
+    const l = lang.toLowerCase();
+    return WHOLE_NAME[l] || `snippet.${EXT[l] || 'txt'}`;
+  }
+
   function codeBlock(code, lang) {
     return `<div class="code"><div class="code-head"><span>${esc(lang)}</span>` +
-      '<button type="button" class="copy-btn" title="Copy code">Copy</button></div>' +
-      `<pre><code>${esc(code)}</code></pre></div>`;
+      '<span class="code-actions"><button type="button" class="copy-btn" title="Copy code">Copy</button>' +
+      '<button type="button" class="copy-btn dl-btn" title="Save as a file">Download</button></span></div>' +
+      `<pre>${codeInner(code, lang)}</pre></div>`;
+  }
+
+  // Highlights only when the fence names a language hljs knows; no
+  // auto-detect (slow, and wrong on short or half-streamed snippets).
+  function codeInner(code, lang) {
+    const l = (lang || '').trim().toLowerCase().split(/\s+/)[0];
+    if (window.hljs && l && /^[\w+#.-]+$/.test(l) && hljs.getLanguage(l)) {
+      try {
+        const v = hljs.highlight(code, { language: l, ignoreIllegals: true }).value;
+        return `<code class="hljs language-${l}">${v}</code>`;
+      } catch { /* fall through to plain */ }
+    }
+    return `<code>${esc(code)}</code>`;
   }
 
   // Math: $$…$$ and \[…\] as blocks, $…$ and \(…\) inline. Inline code
@@ -144,7 +171,7 @@
   }
 
   list.addEventListener('click', async (e) => {
-    const btn = e.target.closest('.copy-btn');
+    const btn = e.target.closest('.copy-btn:not(.dl-btn)');
     if (!btn) return;
     try {
       await copyText(btn.closest('.code').querySelector('code').textContent);
@@ -153,6 +180,24 @@
       btn.textContent = 'Couldn’t copy';
     }
     setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+  });
+
+  // Download saves the block as a file through a temporary link.
+  list.addEventListener('click', (e) => {
+    const btn = e.target.closest('.dl-btn');
+    if (!btn) return;
+    const code = btn.closest('.code');
+    const text = code.querySelector('code').textContent;
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+    const a = el('a');
+    a.href = url;
+    a.download = fileNameFor(text, code.querySelector('.code-head > span').textContent);
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    btn.textContent = 'Saved';
+    setTimeout(() => { btn.textContent = 'Download'; }, 1500);
   });
 
   // ---- message actions: copy, edit, regenerate ----

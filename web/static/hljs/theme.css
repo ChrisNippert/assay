@@ -1,0 +1,25 @@
+/* Syntax colours for highlight.js. Code blocks use --code-bg (dark in both
+   light and dark themes), so one dark-tuned GNOME palette serves both. */
+:root {
+  --hl-keyword: #dc8add;
+  --hl-string: #8ff0a4;
+  --hl-number: #ffbe6f;
+  --hl-title: #99c1f1;
+  --hl-type: #f9f06b;
+  --hl-attr: #78aeed;
+  --hl-meta: #f66151;
+  --hl-comment: #8a9199;
+  --hl-punct: #c0c5cc;
+}
+.hljs { color: var(--code-text); background: transparent; }
+.hljs-keyword, .hljs-selector-tag, .hljs-doctag, .hljs-template-tag, .hljs-template-variable { color: var(--hl-keyword); }
+.hljs-string, .hljs-regexp, .hljs-addition, .hljs-symbol, .hljs-bullet { color: var(--hl-string); }
+.hljs-number, .hljs-literal, .hljs-variable.constant_, .hljs-link { color: var(--hl-number); }
+.hljs-title, .hljs-title.function_, .hljs-section, .hljs-selector-id, .hljs-selector-class { color: var(--hl-title); }
+.hljs-title.class_, .hljs-type, .hljs-built_in, .hljs-class .hljs-title { color: var(--hl-type); }
+.hljs-attr, .hljs-attribute, .hljs-name, .hljs-property, .hljs-variable, .hljs-params { color: var(--hl-attr); }
+.hljs-meta, .hljs-deletion, .hljs-subst { color: var(--hl-meta); }
+.hljs-params, .hljs-subst, .hljs-punctuation, .hljs-operator { color: var(--hl-punct); }
+.hljs-comment, .hljs-quote { color: var(--hl-comment); font-style: italic; }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 700; }
