@@ -382,6 +382,10 @@ Design reference: direction **F** on the design canvas
   name a language; no auto-detect, since it re-runs on every streamed
   chunk), with Copy and Download (file name from a first-line comment like
   `// main.go`, else `snippet.<ext>`).
+- **Install on a phone**: a web manifest, icons and a service worker that
+  caches nothing (it's there so browsers offer "Install"; pages and
+  streamed replies always come from the server). A full install needs
+  HTTPS or localhost; over plain HTTP it's an "Add to Home screen" shortcut.
 - **Settings**: a jump bar, then Models (llama.cpp build and backend, the
   defaults, models with their own settings and a "Use defaults" button;
   the Ollama server's variables with `-engine ollama`), Knowledge, Voice,

@@ -160,6 +160,10 @@ func New(opts Options) (*Server, error) {
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /static/", http.FileServerFS(web.FS))
+	// The service worker must sit at the root to control "/". Serve it, and the
+	// manifest, with explicit types so they never depend on the OS mime database.
+	mux.Handle("GET /sw.js", staticFile("static/sw.js", "application/javascript", "no-cache"))
+	mux.Handle("GET /static/manifest.webmanifest", staticFile("static/manifest.webmanifest", "application/manifest+json", ""))
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		u := "/chat"
 		if r.URL.RawQuery != "" {
@@ -218,6 +222,23 @@ func New(opts Options) (*Server, error) {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.handler.ServeHTTP(w, r) }
+
+// staticFile serves one embedded file with a fixed Content-Type and, when
+// cacheControl is non-empty, that Cache-Control header.
+func staticFile(name, contentType, cacheControl string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		b, err := web.FS.ReadFile(name)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", contentType)
+		if cacheControl != "" {
+			w.Header().Set("Cache-Control", cacheControl)
+		}
+		w.Write(b)
+	}
+}
 
 // hostGuard only answers requests addressed to localhost, an IP literal or
 // an explicitly allowed name. That stops DNS-rebinding attacks, where a
