@@ -90,3 +90,11 @@ func TestOllamaName(t *testing.T) {
 		}
 	}
 }
+
+func TestGfxOverride(t *testing.T) {
+	for v, want := range map[string]string{"100301": "10.3.0", "100300": "", "110002": "11.0.0", "110000": "", "110001": "", "90012": "", "0": ""} {
+		if got := gfxOverride(v); got != want {
+			t.Errorf("gfxOverride(%s) = %q, want %q", v, got, want)
+		}
+	}
+}

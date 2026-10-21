@@ -114,6 +114,7 @@ func loadOptsFrom(o map[string]any) loadOpts {
 // proc is one running llama-server.
 type proc struct {
 	model *Model
+	asked string // the name it was loaded by, which Running reports
 	opts  loadOpts
 	cmd   *exec.Cmd
 	base  string // http://127.0.0.1:port
@@ -220,6 +221,9 @@ func (e *Engine) ensure(ctx context.Context, name string, o loadOpts) (*proc, bo
 	p := e.procs[m.Name]
 	e.mu.Unlock()
 	if p != nil && p.running() && p.opts == o {
+		p.mu.Lock()
+		p.asked = name
+		p.mu.Unlock()
 		return p, false, nil
 	}
 	if p != nil {
@@ -229,6 +233,9 @@ func (e *Engine) ensure(ctx context.Context, name string, o loadOpts) (*proc, bo
 		e.makeRoom(m.Name)
 	}
 	p, err = e.start(ctx, m, o)
+	if err == nil {
+		p.asked = name
+	}
 	return p, err == nil, err
 }
 
@@ -271,6 +278,9 @@ func (e *Engine) start(ctx context.Context, m *Model, o loadOpts) (*proc, error)
 	cmd := exec.Command(e.opt.Server, e.args(m, o, port)...)
 	// Its shared libraries sit beside it, wherever that is.
 	cmd.Env = append(os.Environ(), "LD_LIBRARY_PATH="+strings.TrimSuffix(filepath.Dir(e.opt.Server)+":"+os.Getenv("LD_LIBRARY_PATH"), ":"))
+	if v := hsaOverride(e.opt.Server); v != "" {
+		cmd.Env = append(cmd.Env, "HSA_OVERRIDE_GFX_VERSION="+v)
+	}
 	setProcAttrs(cmd)
 	out, err := cmd.StderrPipe()
 	if err != nil {
@@ -324,6 +334,53 @@ func (e *Engine) start(ctx context.Context, m *Model, o loadOpts) (*proc, error)
 	e.opt.Log.Info("model loaded", "model", m.Name, "ctx", p.ctx, "gpu_layers", fmt.Sprintf("%d/%d", p.layers, p.total), "vram_mib", p.vram>>20, "ram_mib", p.ram>>20)
 	p.mu.Unlock()
 	return p, nil
+}
+
+// hsaOverride is the HSA_OVERRIDE_GFX_VERSION a ROCm build of llama-server
+// needs on this GPU, or "". ROCm ships kernels for one chip per family
+// (gfx1030, gfx1100), and its siblings (an RX 6700 XT is gfx1031) run
+// them fine once told to; Ollama does the same. Only applies when the
+// server is a ROCm build and the user hasn't set it.
+func hsaOverride(server string) string {
+	if os.Getenv("HSA_OVERRIDE_GFX_VERSION") != "" {
+		return ""
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(server), "libggml-hip.so")); err != nil {
+		return ""
+	}
+	nodes, _ := filepath.Glob("/sys/class/kfd/kfd/topology/nodes/*/properties")
+	for _, n := range nodes {
+		b, err := os.ReadFile(n)
+		if err != nil {
+			continue
+		}
+		for _, l := range strings.Split(string(b), "\n") {
+			v, ok := strings.CutPrefix(l, "gfx_target_version ")
+			if !ok {
+				continue
+			}
+			if o := gfxOverride(v); o != "" {
+				return o
+			}
+		}
+	}
+	return ""
+}
+
+// gfxOverride maps a KFD gfx_target_version (100301 is gfx1031) to the
+// override for its family, or "" when it needs none.
+func gfxOverride(v string) string {
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n == 0 {
+		return ""
+	}
+	switch major, minor, step := n/10000, n/100%100, n%100; {
+	case major == 10 && minor == 3 && step != 0:
+		return "10.3.0"
+	case major == 11 && minor == 0 && step != 0 && step != 1:
+		return "11.0.0"
+	}
+	return ""
 }
 
 // readLog keeps the last lines for error messages and picks out how the
@@ -532,7 +589,11 @@ func (e *Engine) Running(ctx context.Context) ([]ollama.RunningModel, error) {
 		if p.pinned {
 			exp = time.Now().Add(100 * 365 * 24 * time.Hour) // "forever", as Ollama reported it
 		}
-		r := ollama.RunningModel{Name: p.model.Name, Model: p.model.Name, Size: p.vram + p.ram, SizeVRAM: p.vram, Digest: p.model.Digest, ExpiresAt: exp, ContextLength: p.ctx}
+		name := p.asked
+		if name == "" {
+			name = p.model.Name
+		}
+		r := ollama.RunningModel{Name: name, Model: name, Size: p.vram + p.ram, SizeVRAM: p.vram, Digest: p.model.Digest, ExpiresAt: exp, ContextLength: p.ctx}
 		p.mu.Unlock()
 		r.Details = e.details(p.model)
 		out = append(out, r)

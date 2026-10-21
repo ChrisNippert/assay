@@ -20,29 +20,24 @@ Ollama itself runs an older bundled `llama-server`; the gain is newer
 llama.cpp. Gotcha: `llama-server` defaults to 4 parallel slots, which
 overfilled 12 GB VRAM (5.9 tok/s); always pass `-np 1`.
 
-**Progress (2026-10-21, mid stage 1, committed):** `internal/gguf` (GGUF
-header reader, tested on real files), `internal/engine` (store + Ollama
-import by hard link, one llama-server per model, chat/embed translation to
-the ollama types, keep-alive/pinning/evicting, memory read from the
-`-lv 4` log) and a `server.Backend` interface; `-engine llama.cpp` is the
-default, `-engine ollama` the fallback; `-llama-server PATH` (else
-~/.local/share/ollamui/llama.cpp/llama-server, else PATH). Verified: a chat
-through ollamui on llama.cpp streams and saves. Local Vulkan build:
-scratchpad `llama/build-vk/bin/` (not yet copied to
-~/.local/share/ollamui/llama.cpp/; the user's :8484 server still runs the
-previous binary on Ollama).
+**Progress (2026-10-21, stage 1 done):** `internal/gguf`, `internal/engine`
+(store, Ollama import by hard link, one llama-server per model, chat/embed
+translation, keep-alive/pinning/evicting, placement read from the log) and
+`server.Backend`; `-engine llama.cpp` is the default, `-engine ollama` the
+fallback. Default `-c 32768`. Running() reports the name a model was loaded
+by. The user's GPU runs the **ROCm** build (2B: 81 vs 49 tok/s on Vulkan;
+equal on bigger models), installed at ~/.local/share/ollamui/llama.cpp/
+(built from commit 339f324 for gfx1030; the engine sets
+HSA_OVERRIDE_GFX_VERSION). Vulkan stays the default for the one-click
+install (stage 5) since it needs no ROCm.
 Next, in order:
-- Context: `--fit` with no `-c` grows to the model max (262k) and writing
-  drops 3x (2B: 15 vs 46 tok/s at 8k). Now `-c 32768` by default
-  (`engine.DefaultCtx`); check what's best (8k/16k/32k) with the speed test,
-  and let Tune's context override it.
-- 2B still writes 46 tok/s vs Ollama's 76 at the same model: find out why
-  (thread count? `-ub`? the mmproj loaded? `-lv 4` cost?) before switching
-  the user over.
-- Running() reports the full name, chats use the alias, so the reply's
-  context stat is missing: remember the requested name per process.
-- Then stage 2 (HF downloads), etc. Meanwhile Discover pulls still go
-  through Ollama and get imported (engine re-imports every 10 s).
+- Tune's context should override DefaultCtx (check it does); maybe 16k
+  default for small-VRAM cards. f16 cache without flash attention wrote 10%
+  faster on Gemma 4 (40 vs 36): consider per-model cache type.
+- Stage 2 (HF downloads). Meanwhile Discover pulls still go through Ollama
+  and get imported (engine re-imports every 10 s).
+- Presets aren't published as models on llama.cpp (Create is a no-op) until
+  stage 3's `/v1` API; Zed still sees the old ones in Ollama.
 - RAG keyword (BM25) fallback, so project files work without an embedding
   model (user's thesis PDF is stuck "waiting").
 

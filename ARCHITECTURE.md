@@ -1,8 +1,9 @@
 # ollamui architecture
 
-A lightweight web UI on top of Ollama for finding, downloading, tuning and
-chatting with local models. Ollama stays the only model runtime, so anything
-else pointed at it (Zed, scripts, other clients) sees the same models.
+A lightweight web UI for finding, downloading, tuning and chatting with
+local models. It started on top of Ollama and is moving to running models
+itself with llama.cpp's `llama-server` (see "Engine" below and BACKLOG.md);
+`-engine ollama` keeps the old path while that lands.
 
 ## Goals
 
@@ -18,7 +19,8 @@ else pointed at it (Zed, scripts, other clients) sees the same models.
 ## Non-goals
 
 - Training or fine-tuning (Unsloth's other half).
-- Running models with any engine other than Ollama.
+- Writing an inference engine. llama.cpp does that; ollamui starts,
+  sizes and stops its servers.
 - Multi-user accounts. It's a single-user tool, optionally reachable from
   your other devices.
 
@@ -47,6 +49,8 @@ nothing in Ollama until you choose "Save to preset".
 browser ──HTTP──► ollamui (Go) ──HTTP──► Ollama :11434 ◄── Zed, etc.
                      │        └──HTTP──► speech service :8485 (optional, voice mode)
                      │
+                     ├── internal/engine   llama-server per model, model store, Ollama import
+                     ├── internal/gguf     GGUF header reader (arch, context, size, template)
                      ├── internal/ollama   typed API client, NDJSON streaming, server env
                      ├── internal/hf       HF search, file tree, quant parsing, fit estimate   (M2)
                      ├── internal/presets  TOML presets + sync to ollamui/*                   (M3)
@@ -58,6 +62,31 @@ browser ──HTTP──► ollamui (Go) ──HTTP──► Ollama :11434 ◄�
                      └── web/              templates, CSS, small vanilla JS (embedded)
 tools/voice/voice_server.py   the speech service: faster-whisper + Kokoro (embedded, run with uv on demand)
 ```
+
+### Engine (internal/engine)
+
+ollamui runs one `llama-server` per loaded model, the way Ollama does
+internally, and answers in the `internal/ollama` types so the rest of the
+code doesn't care which engine runs (`server.Backend`).
+
+- **Store**: `<data>/models/` holds `blobs/` (GGUF files) and one JSON
+  manifest per model (name, aliases, files, projector, default params).
+  Ollama's models are imported by hard link (symlink across disks), so
+  nothing is copied and Ollama keeps working; re-imported every 10 s while
+  pulls still go through Ollama.
+- **Processes**: started on demand with `-np 1` (more slots overfill VRAM),
+  `-c 32768` unless a context is asked for (letting `--fit` pick grew it to
+  262k and writing dropped 3×), `--fit` lowers it if memory is short. Other
+  GPU models are stopped first unless pinned. Placement (layers on GPU,
+  VRAM/RAM, context) is read from the `-lv 4` log.
+- **Which build**: `-llama-server`, else `<data>/llama.cpp/llama-server`,
+  else PATH. A ROCm build gets `HSA_OVERRIDE_GFX_VERSION` set for chips
+  that borrow their family's kernels (gfx1031 → 10.3.0).
+- **Vulkan vs ROCm** on the RX 6700 XT: ROCm writes much faster on small
+  models (Qwen3.5-2B 81 vs 49 tok/s; Vulkan has per-token overhead), about
+  equal on 9–12B. So ROCm here; Vulkan is the portable default for others.
+  Other apps holding VRAM can make the first reply after a load very slow
+  (6 vs 37 tok/s) while the driver evicts; it's not the engine.
 
 ### internal/ollama
 
