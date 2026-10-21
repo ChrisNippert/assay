@@ -26,6 +26,7 @@ type Client struct {
 	base  string
 	token string
 	http  *http.Client
+	dl    *http.Client // no overall timeout: downloads take as long as they take
 }
 
 // New returns a client. token is optional; it's needed for gated or private repos.
@@ -34,6 +35,7 @@ func New(baseURL, token string) *Client {
 		base:  strings.TrimRight(baseURL, "/"),
 		token: token,
 		http:  &http.Client{Timeout: 20 * time.Second},
+		dl:    &http.Client{Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, ResponseHeaderTimeout: 30 * time.Second}},
 	}
 }
 
@@ -255,6 +257,18 @@ type File struct {
 	Type string `json:"type"` // "file" or "directory"
 	Path string `json:"path"`
 	Size int64  `json:"size"`
+	// LFS is set for large files; its Oid is the file's sha256.
+	LFS *struct {
+		Oid string `json:"oid"`
+	} `json:"lfs,omitempty"`
+}
+
+// SHA256 is the file's hash when Hugging Face knows it, else "".
+func (f File) SHA256() string {
+	if f.LFS == nil {
+		return ""
+	}
+	return f.LFS.Oid
 }
 
 // Files lists every file in a repo's main branch.
@@ -282,6 +296,59 @@ func (c *Client) RecommendedParams(ctx context.Context, repo string) (map[string
 	}
 	return out, err
 }
+
+// Download opens a file of a repo's main branch from byte offset on. It
+// returns the body and the file's full size.
+func (c *Client) Download(ctx context.Context, repo, file string, offset int64) (io.ReadCloser, int64, error) {
+	if !ValidRepo(repo) || strings.Contains(file, "..") {
+		return nil, 0, ErrNotFound
+	}
+	u := c.base + "/" + repo + "/resolve/main/" + (&url.URL{Path: file}).EscapedPath()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	if c.token != "" {
+		// Go drops it when the hub redirects to its CDN, which wants none.
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	if offset > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
+	}
+	resp, err := c.dl.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, 0, ctx.Err()
+		}
+		return nil, 0, errors.New("couldn't reach Hugging Face. Check your connection and try again")
+	}
+	switch {
+	case resp.StatusCode == http.StatusOK && offset > 0:
+		resp.Body.Close()
+		return nil, 0, errNoRange
+	case resp.StatusCode == http.StatusOK:
+		return resp.Body, resp.ContentLength, nil
+	case resp.StatusCode == http.StatusPartialContent:
+		return resp.Body, offset + resp.ContentLength, nil
+	}
+	resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusNotFound:
+		return nil, 0, ErrNotFound
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return nil, 0, fmt.Errorf("hugging face: access denied (gated or private repo; set HF_TOKEN)")
+	case http.StatusRequestedRangeNotSatisfiable:
+		return nil, 0, errNoRange
+	}
+	return nil, 0, fmt.Errorf("hugging face: %s", resp.Status)
+}
+
+// errNoRange means the server won't resume; IsNoRange tells callers to
+// start over.
+var errNoRange = errors.New("hugging face: can't resume this download")
+
+// IsNoRange reports whether Download refused to resume from the offset.
+func IsNoRange(err error) bool { return errors.Is(err, errNoRange) }
 
 func (c *Client) getJSON(ctx context.Context, path string, out any) error {
 	_, err := c.getJSONURL(ctx, c.base+path, out)

@@ -108,7 +108,9 @@ func run() error {
 	}
 	// The engine: llama.cpp runs the models ollamui keeps; Ollama's models
 	// are imported by hard link, so nothing is downloaded twice.
+	hfClient := hf.New(hf.DefaultBaseURL, os.Getenv("HF_TOKEN"))
 	var models server.Backend = client
+	var puller pulls.Puller = client
 	var eng *engine.Engine
 	if *engineName == "llama.cpp" {
 		store, err := engine.OpenStore(filepath.Join(*dataDir, "models"))
@@ -126,7 +128,9 @@ func run() error {
 		}
 		eng = engine.New(store, engine.Options{Server: bin, CacheType: *cacheType, FlashAttn: "on", Log: log})
 		eng.OllamaDir = *ollamaModels
+		eng.HF = hfClient
 		models = eng
+		puller = enginePuller{eng, client}
 	} else if *engineName != "ollama" {
 		return fmt.Errorf("unknown engine %q", *engineName)
 	}
@@ -136,8 +140,8 @@ func run() error {
 		Presets:       presetStore,
 		Projects:      projectStore,
 		RAGSettings:   ragSettings,
-		HF:            hf.New(hf.DefaultBaseURL, os.Getenv("HF_TOKEN")),
-		Pulls:         pulls.New(client, log),
+		HF:            hfClient,
+		Pulls:         pulls.New(puller, log),
 		Scores:        scoreStore,
 		Bench:         bench.Open(filepath.Join(*dataDir, "bench")),
 		Voice:         speech,
@@ -267,4 +271,34 @@ func findLlamaServer(flagPath, dataDir string) string {
 		return p
 	}
 	return ""
+}
+
+// enginePuller downloads Hugging Face models with the engine itself and
+// anything else (Ollama library names, e.g. the embedding models) through
+// Ollama, then imports it.
+type enginePuller struct {
+	eng    *engine.Engine
+	ollama *ollama.Client
+}
+
+func (p enginePuller) Pull(ctx context.Context, model string, fn func(ollama.PullProgress) error) error {
+	if _, _, ok := engine.ParseHFName(model); ok {
+		return p.eng.Pull(ctx, model, fn)
+	}
+	if err := p.ollama.Pull(ctx, model, fn); err != nil {
+		return err
+	}
+	p.eng.Import()
+	return nil
+}
+
+func (p enginePuller) Copy(ctx context.Context, src, dst string) error {
+	if p.eng.Has(src) {
+		return p.eng.Copy(ctx, src, dst)
+	}
+	if err := p.ollama.Copy(ctx, src, dst); err != nil {
+		return err
+	}
+	p.eng.Import()
+	return nil
 }

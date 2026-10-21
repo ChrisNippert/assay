@@ -160,6 +160,30 @@ func Quants(repo string, files []File) (quants []Quant, hasVision bool) {
 	return quants, hasVision
 }
 
+// Projector picks the vision projector (mmproj) to go with a quant, or
+// "": F16 when there's a choice, as Ollama does, then BF16, F32, any.
+func Projector(files []File) string {
+	var all []string
+	for _, f := range files {
+		base := strings.ToLower(path.Base(f.Path))
+		if f.Type == "file" && strings.HasPrefix(base, "mmproj") && strings.HasSuffix(base, ".gguf") {
+			all = append(all, f.Path)
+		}
+	}
+	sort.Strings(all)
+	for _, want := range []string{"f16", "bf16", "f32"} {
+		for _, p := range all {
+			if strings.Contains(strings.ToLower(path.Base(p)), want+".gguf") && !(want == "f16" && strings.Contains(strings.ToLower(path.Base(p)), "bf16")) {
+				return p
+			}
+		}
+	}
+	if len(all) > 0 {
+		return all[0]
+	}
+	return ""
+}
+
 // OllamaName is the name `ollama pull` uses to fetch a quant from this repo.
 func OllamaName(repo, quant string) string { return "hf.co/" + repo + ":" + quant }
 

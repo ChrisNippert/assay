@@ -49,6 +49,8 @@ type Engine struct {
 	// imported now and then (models pulled through Ollama show up here).
 	OllamaDir  string
 	lastImport time.Time
+	// HF downloads models (Pull); nil turns downloads off.
+	HF HF
 
 	store *Store
 	opt   Options
@@ -719,11 +721,14 @@ func (e *Engine) Unload(ctx context.Context, model string) error {
 	return nil
 }
 
-// Delete unloads a model and removes it (or just the alias named).
+// Delete unloads a model and removes it (or just the alias named). A
+// name that doesn't exist is fine.
 func (e *Engine) Delete(ctx context.Context, model string) error {
 	m, err := e.store.Get(model)
 	if err != nil {
-		return &ollama.APIError{StatusCode: http.StatusNotFound, Message: err.Error()}
+		// Already gone: deleting a model's full name takes its aliases with
+		// it, and the library deletes every name of a model in turn.
+		return nil
 	}
 	if normName(model) == normName(m.Name) {
 		e.Unload(ctx, model)

@@ -177,6 +177,10 @@ func (s *Store) Delete(name string) error {
 	for _, f := range append(m.Files, m.Projector) {
 		if f != "" && !used[f] {
 			os.Remove(s.Blob(f))
+			os.Remove(s.Blob(f) + ".partial")
+			if dir := filepath.Dir(f); dir != "." {
+				os.Remove(s.Blob(dir)) // a split model's folder, once empty
+			}
 		}
 	}
 	return nil

@@ -34,8 +34,13 @@ Next, in order:
 - Tune's context should override DefaultCtx (check it does); maybe 16k
   default for small-VRAM cards. f16 cache without flash attention wrote 10%
   faster on Gemma 4 (40 vs 36): consider per-model cache type.
-- Stage 2 (HF downloads). Meanwhile Discover pulls still go through Ollama
-  and get imported (engine re-imports every 10 s).
+- Stage 2 done (2026-10-21): `engine.Pull` downloads `hf.co/` names from
+  Hugging Face itself (resume from `.partial`, sha256 check, split files
+  kept by name in a folder, F16 mmproj, Unsloth `params`), `Copy` adds the
+  short name. Knowledge's embedding suggestions are HF repos now. Only
+  non-HF names (Ollama library) still pull through Ollama, then import.
+  Left: a free-disk-space check before starting; draft GGUF downloads
+  (their tags have a space, which the pull API refuses) wait for stage 4.
 - Presets aren't published as models on llama.cpp (Create is a no-op) until
   stage 3's `/v1` API; Zed still sees the old ones in Ollama.
 - RAG keyword (BM25) fallback, so project files work without an embedding
@@ -51,7 +56,7 @@ Stages (the app keeps working after each):
    pinning, evicting to make room), and speaks OpenAI chat/embeddings to
    it. The server talks to an engine interface instead of the Ollama
    client.
-2. **Downloads** straight from Hugging Face (resume, split files, mmproj),
+2. ✅ **Downloads** straight from Hugging Face (resume, split files, mmproj),
    replacing `ollama pull`; delete.
 3. **API for editors:** ollamui serves `/v1/chat/completions`, `/v1/models`,
    `/v1/embeddings` (OpenAI-compatible, loads models on demand); presets

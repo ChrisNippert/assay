@@ -64,7 +64,7 @@
             {{if .Installed}}<a class="btn" href="/chat?model={{.Tag}}">Installed · Chat</a>
             {{else}}<button type="button" class="btn{{if .Best}} primary{{end}}" data-pull="{{.Tag}}" data-alias="{{.Alias}}">Download</button>{{end}}
           </span>
-          {{if .Split}}<span class="split-note small">Split into {{len .Files}} files. Ollama may not be able to pull this one.</span>{{end}}
+          {{if and .Split (not $.Data.SplitsOK)}}<span class="split-note small">Split into {{len .Files}} files. Ollama may not be able to pull this one.</span>{{end}}
         </div>
         {{end}}
       </div>

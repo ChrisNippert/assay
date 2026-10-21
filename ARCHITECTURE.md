@@ -145,11 +145,17 @@ so they must never pass for the model:
 
 ### Downloads (M2)
 
-The main path is `POST /api/pull` with `hf.co/{repo}:{quant}`. Ollama handles
-dedupe, resume and registration, and its progress stream is passed to the
-browser. After a pull, ollamui offers a short alias (`/api/copy`). A fallback
-path (download the GGUF ourselves, `/api/blobs` + `/api/create`) covers repos
-the `hf.co` pull can't handle.
+`internal/pulls` runs downloads in the background and tracks progress; what
+actually downloads is a `Puller`. With the llama.cpp engine, `hf.co/{repo}:{quant}`
+names go to `engine.Pull`: it lists the repo, picks the quant's files (and
+the F16 `mmproj` for vision models), and fetches each with HTTP ranges into
+`blobs/<name>.partial`, resuming after a cancel, a dropped connection or a
+minute-long stall, and checking the sha256 Hugging Face lists before renaming
+it into place. Single files are named by hash (two names share them); split
+models keep their file names in a folder, since llama.cpp finds the later
+parts by name. Unsloth's `params` file becomes the model's default
+settings. The short name is an alias in the manifest (`engine.Copy`). Other
+names (the Ollama library) still pull through Ollama and are imported.
 
 ### Load and eject
 

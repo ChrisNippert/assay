@@ -10,19 +10,19 @@ import (
 
 // embedSuggestion is a download offered on the Knowledge settings.
 type embedSuggestion struct {
-	Name      string
+	Name      string // the short name it's installed as
+	Pull      string // what to download: a Hugging Face GGUF
 	Size      string
 	Desc      string
 	Installed string // the installed name ("" if not installed)
 }
 
 var embedSuggestions = []embedSuggestion{
-	{Name: "qwen3-embedding:0.6b", Size: "~640 MB", Desc: "Strong retrieval for its size, multilingual, long inputs"},
-	{Name: "embeddinggemma", Size: "~620 MB", Desc: "Google's small multilingual embedding model"},
-	{Name: "nomic-embed-text", Size: "~275 MB", Desc: "Light and fast, English-focused"},
-	{Name: "mxbai-embed-large", Size: "~670 MB", Desc: "Strong English retrieval"},
-	{Name: "snowflake-arctic-embed2", Size: "~1.2 GB", Desc: "Multilingual, high quality"},
-	{Name: "bge-m3", Size: "~1.2 GB", Desc: "Multilingual, long inputs"},
+	{Name: "qwen3-embedding:0.6b", Pull: "hf.co/Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0", Size: "~640 MB", Desc: "Strong retrieval for its size, multilingual, long inputs"},
+	{Name: "embeddinggemma", Pull: "hf.co/ggml-org/embeddinggemma-300M-GGUF:Q8_0", Size: "~330 MB", Desc: "Google's small multilingual embedding model"},
+	{Name: "nomic-embed-text", Pull: "hf.co/nomic-ai/nomic-embed-text-v1.5-GGUF:F16", Size: "~275 MB", Desc: "Light and fast, English-focused"},
+	{Name: "mxbai-embed-large", Pull: "hf.co/mixedbread-ai/mxbai-embed-large-v1:F16", Size: "~670 MB", Desc: "Strong English retrieval"},
+	{Name: "bge-m3", Pull: "hf.co/ggml-org/bge-m3-Q8_0-GGUF:Q8_0", Size: "~635 MB", Desc: "Multilingual, long inputs"},
 }
 
 type embedModel struct {

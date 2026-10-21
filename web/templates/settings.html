@@ -81,14 +81,14 @@
   <h3 class="group-title kn-sub">Get an embedding model</h3>
   <div class="boxed-list" id="kn-get">
     {{range .Suggestions}}
-    <div class="row" data-model="{{.Name}}" data-installed="{{.Installed}}">
+    <div class="row" data-model="{{.Name}}" data-hf="{{.Pull}}" data-installed="{{.Installed}}">
       <div class="row-text"><span class="row-title">{{.Name}}</span><span class="row-sub">{{.Size}} · {{.Desc}}</span></div>
       <div class="row-ctrl"><span class="kn-state muted small"></span><button type="button" class="btn kn-btn"></button></div>
     </div>
     {{end}}
     <div class="row" id="kn-custom" data-model="">
-      <div class="row-text"><span class="row-title">Another model</span><span class="row-sub">Any embedding model name from the Ollama library.</span></div>
-      <div class="row-ctrl"><span class="kn-state muted small"></span><input type="text" id="kn-name" placeholder="e.g. all-minilm" aria-label="Embedding model name" size="18" autocomplete="off"><button type="button" class="btn" id="kn-dl">Download</button></div>
+      <div class="row-text"><span class="row-title">Another model</span><span class="row-sub">A Hugging Face GGUF (hf.co/owner/repo:Q8_0), or a name from the Ollama library.</span></div>
+      <div class="row-ctrl"><span class="kn-state muted small"></span><input type="text" id="kn-name" placeholder="hf.co/owner/repo:Q8_0" aria-label="Embedding model name" size="18" autocomplete="off"><button type="button" class="btn" id="kn-dl">Download</button></div>
     </div>
   </div>
   <style>
@@ -258,7 +258,7 @@
     row.dataset.busy = '1';
     paint(row, 'busy', 'Starting…');
     try {
-      const res = await fetch('/api/pulls', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: name, alias: '' }) });
+      const res = await fetch('/api/pulls', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(row.dataset.hf ? { model: row.dataset.hf, alias: name } : { model: name, alias: '' }) });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || res.statusText);
       track(row, body.id);
@@ -277,7 +277,7 @@
   // Pick up downloads already running (started here earlier, or from the downloads menu).
   fetch('/api/pulls').then(r => r.json()).then(jobs => {
     for (const j of jobs) if (j.state === 'running') {
-      const r = rows.find(x => x.dataset.model === j.model);
+      const r = rows.find(x => (x.dataset.hf || x.dataset.model) === j.model);
       if (r && !r.dataset.busy) track(r, j.id);
     }
   }).catch(() => {});

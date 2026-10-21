@@ -238,6 +238,7 @@ type modelPageData struct {
 	ScoreURL string
 	Error    string
 	Partial  bool // render only the detail block, for the Discover panel
+	SplitsOK bool // split quants can be downloaded
 }
 
 var ctxChoices = []int{4096, 8192, 16384, 32768, 65536, 131072}
@@ -323,7 +324,9 @@ func (s *Server) handleModelPage(w http.ResponseWriter, r *http.Request) {
 			Installed: installed[strings.ToLower(tag)],
 		})
 	}
-	markBest(data.Quants)
+	// ollamui's own engine downloads split GGUFs; Ollama may not.
+	_, data.SplitsOK = s.ollama.(fitter)
+	markBest(data.Quants, data.SplitsOK)
 
 	keys := make([]string, 0, len(recommended))
 	for k := range recommended {
@@ -354,12 +357,12 @@ func (s *Server) renderModel(w http.ResponseWriter, p *page, partial bool) {
 }
 
 // markBest flags the largest quant that fits fully on the GPU. Without a
-// GPU it picks the largest that fits in RAM. Split quants are skipped since
-// Ollama may not be able to pull them.
-func markBest(rows []quantRow) {
+// GPU it picks the largest that fits in RAM. Split quants are skipped on
+// the Ollama engine, which may not be able to pull them.
+func markBest(rows []quantRow, splitsOK bool) {
 	best := -1
 	for i, q := range rows {
-		if q.Split || q.Bits() == 0 {
+		if (q.Split && !splitsOK) || q.Bits() == 0 {
 			continue
 		}
 		if q.Fit.Level == hw.FitGPU || q.Fit.Level == hw.FitCPU {
