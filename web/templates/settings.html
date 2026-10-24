@@ -65,6 +65,18 @@
     <div class="row"><div class="row-text"><span class="row-sub">None yet. Changes to a model in Tune show up here.</span></div></div>
     {{end}}
   </div>
+  {{if .Drafts}}
+  <h3 class="group-title settings-sub">Draft models</h3>
+  <p class="small muted">Downloaded helpers (DSpark, DFlash, EAGLE3) that can't chat. Pick one for a model in Tune → Draft model.</p>
+  <div class="boxed-list" id="draft-list">
+    {{range .Drafts}}
+    <div class="row" data-names="{{.Name}}">
+      <div class="row-text"><span class="row-title">{{.Name}}</span><span class="row-sub">{{.Kind}}{{if .For}} for {{.For}}{{end}} · {{bytes .Size}}</span></div>
+      <div class="row-ctrl"><button type="button" class="btn subtle" data-delete="{{.Name}}">Delete</button></div>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
   {{end}}
   {{with .Data.Knowledge}}
   <h2 class="group-title" id="knowledge">Knowledge</h2>

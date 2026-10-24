@@ -13,6 +13,8 @@ type Draft struct {
 	Name string `json:"name"`
 	Size int64  `json:"size"`
 	Kind string `json:"kind,omitempty"`
+	// For is the repo of the model a downloaded draft was made for.
+	For string `json:"for,omitempty"`
 }
 
 // Drafts lists the installed models that can speed up model by speculative
@@ -26,13 +28,26 @@ func (e *Engine) Drafts(name string) ([]Draft, error) {
 	var out []Draft
 	for _, d := range e.store.List() {
 		if e.draftOK(m, d) == nil {
-			out = append(out, Draft{Name: d.Name, Size: d.Size, Kind: d.Draft})
+			out = append(out, Draft{Name: d.Name, Size: d.Size, Kind: d.Draft, For: d.DraftFor})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].Size < out[j].Size || out[i].Size == out[j].Size && out[i].Name < out[j].Name
 	})
 	return out, nil
+}
+
+// DraftModels lists the downloaded drafts (DSpark, DFlash, EAGLE3), which
+// the model lists leave out because they can't chat.
+func (e *Engine) DraftModels() []Draft {
+	var out []Draft
+	for _, d := range e.store.List() {
+		if d.Draft != "" {
+			out = append(out, Draft{Name: d.Name, Size: d.Size, Kind: d.Draft, For: d.DraftFor})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }
 
 // checkDraft says why the model called draft can't draft for m, or nil.

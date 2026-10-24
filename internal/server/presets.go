@@ -105,7 +105,9 @@ type modelDefaults struct {
 	Engine *engineDefaults `json:"engine,omitempty"`
 	// Drafts are the installed models that could draft for this one.
 	Drafts []engine.Draft `json:"drafts,omitempty"`
-	CPUs   int            `json:"cpus,omitempty"`
+	// Speed is what the model has to speed it up (an MTP head).
+	Speed *engine.SpeedInfo `json:"speed,omitempty"`
+	CPUs  int               `json:"cpus,omitempty"`
 }
 
 type engineDefaults struct {
@@ -208,9 +210,33 @@ func (s *Server) handleModelDefaults(w http.ResponseWriter, r *http.Request) {
 		}); ok {
 			d.Drafts, _ = dr.Drafts(name)
 		}
+		if sp, ok := s.ollama.(interface {
+			Speed(string) (engine.SpeedInfo, error)
+		}); ok {
+			if si, err := sp.Speed(name); err == nil {
+				d.Speed = &si
+			}
+		}
 		d.Engine = &engineDefaults{CacheType: ms.CacheType(), FlashAttn: ms.FlashAttn(), KeepAlive: ms.KeepAlive().String()}
 	}
 	writeJSON(w, http.StatusOK, d)
+}
+
+// handleModelMTP says whether the repo a model came from has an MTP head
+// it lacks: GET ?name= -> {available, size}. It asks Hugging Face, so the
+// Tune panel calls it only when the model has none.
+func (s *Server) handleModelMTP(w http.ResponseWriter, r *http.Request) {
+	out := map[string]any{"available": false}
+	if m, ok := s.ollama.(interface {
+		MTPAvailable(context.Context, string) (int64, bool)
+	}); ok {
+		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+		defer cancel()
+		if size, ok := m.MTPAvailable(ctx, r.URL.Query().Get("name")); ok {
+			out["available"], out["size"] = true, size
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // defaultsContext is the automatic context the Tune panel shows.

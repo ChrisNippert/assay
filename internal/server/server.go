@@ -193,6 +193,7 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("GET /api/loaded", s.handleLoaded)
 	mux.HandleFunc("GET /api/models/defaults", s.handleModelDefaults)
 	mux.HandleFunc("PUT /api/models/settings", s.handleModelSettings)
+	mux.HandleFunc("GET /api/models/mtp", s.handleModelMTP)
 	mux.HandleFunc("GET /api/models/folder", s.handleFolder)
 	mux.HandleFunc("POST /api/models/folder", s.handleFolderMove)
 	mux.HandleFunc("DELETE /api/models/folder", s.handleFolderCancel)

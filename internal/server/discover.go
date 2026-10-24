@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"ollamui/internal/engine"
 	"ollamui/internal/hf"
 	"ollamui/internal/hw"
 	"ollamui/internal/scores"
@@ -321,6 +322,10 @@ type modelPageData struct {
 	Drafts   []quantRow
 	Draft    bool
 	DraftFor string
+	// CanDraft is whether drafts can be downloaded (the llama.cpp engine);
+	// MTP is the size of the MTP head that comes with the quant, 0 if none.
+	CanDraft bool
+	MTP      int64
 	Memory   hw.Memory
 	Score    float64 // of the base model, 0 if unrated
 	ScoreOf  string
@@ -400,6 +405,20 @@ func (s *Server) handleModelPage(w http.ResponseWriter, r *http.Request) {
 		data.KVType = f.CacheType()
 	}
 	quants, vision := hf.Quants(repo.ID, files)
+	_, data.CanDraft = s.ollama.(fitter)
+	if mtp := hf.MTP(files); mtp != "" {
+		for _, f := range files {
+			if f.Path == mtp {
+				data.MTP = f.Size
+			}
+		}
+	}
+	// Downloaded drafts aren't in the model list, so ask for them.
+	if dm, ok := s.ollama.(interface{ DraftModels() []engine.Draft }); ok {
+		for _, d := range dm.DraftModels() {
+			installed[strings.ToLower(d.Name)] = true
+		}
+	}
 	data.Vision = vision || repo.Vision()
 	data.Draft, data.DraftFor = repo.IsDraft(), repo.DraftFor()
 	data.In, data.Out = repo.Modalities()
@@ -412,7 +431,8 @@ func (s *Server) handleModelPage(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if q.Draft || data.Draft {
-			data.Drafts = append(data.Drafts, quantRow{Quant: q})
+			tag := hf.OllamaName(repo.ID, engine.QuantTag(q.Name))
+			data.Drafts = append(data.Drafts, quantRow{Quant: q, Tag: tag, Installed: installed[strings.ToLower(tag)]})
 			continue
 		}
 		tag := hf.OllamaName(repo.ID, q.Name)

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"ollamui/internal/engine"
 	"ollamui/internal/hw"
 )
 
@@ -36,6 +37,7 @@ type enginePage struct {
 	// What a model without its own settings gets.
 	CacheType, FlashAttn, KeepAlive string
 	Saved                           []savedModel
+	Drafts                          []engine.Draft // downloaded drafts, which no model list shows
 	// Install is set when ollamui can install llama.cpp (the page's script
 	// fills in the rest from /api/llamacpp).
 	Install bool
@@ -65,6 +67,9 @@ func (s *Server) enginePage(ctx context.Context, e engineInfo) *enginePage {
 		p.Saved = append(p.Saved, savedModel{Name: name, Summary: settingsSummary(opts)})
 	}
 	sort.Slice(p.Saved, func(i, j int) bool { return p.Saved[i].Name < p.Saved[j].Name })
+	if d, ok := e.(interface{ DraftModels() []engine.Draft }); ok {
+		p.Drafts = d.DraftModels()
+	}
 	return p
 }
 
@@ -74,7 +79,7 @@ func settingsSummary(o map[string]any) string {
 	for k := range o {
 		keys = append(keys, k)
 	}
-	order := map[string]int{"num_ctx": 1, "num_gpu": 2, "keep_alive": 3, "cache_type": 4, "flash_attn": 5, "draft_model": 6}
+	order := map[string]int{"num_ctx": 1, "num_gpu": 2, "keep_alive": 3, "cache_type": 4, "flash_attn": 5, "speedup": 6, "spec_ngram": 7, "draft_model": 8}
 	sort.Slice(keys, func(i, j int) bool {
 		oi, oj := order[keys[i]], order[keys[j]]
 		if oi == 0 {
@@ -102,6 +107,14 @@ func settingsSummary(o map[string]any) string {
 			parts = append(parts, v+" cache")
 		case "flash_attn":
 			parts = append(parts, "flash attention "+v)
+		case "speedup":
+			parts = append(parts, map[string]string{"auto": "speed-up auto", "off": "no speed-up", "mtp": "drafts with its MTP head"}[v])
+		case "spec_ngram":
+			if v == "off" {
+				parts = append(parts, "no n-gram guessing")
+			} else {
+				parts = append(parts, "guesses from the conversation")
+			}
 		case "draft_model":
 			parts = append(parts, "drafts with "+v)
 		case "num_thread":
