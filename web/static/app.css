@@ -900,6 +900,7 @@ a.tag-link:hover { border-color: var(--accent-line); color: var(--accent-text); 
   /* App bar: menu button and title share a row; the status drops below. */
   .content-settings .appbar-start, .content-presets .appbar-start, .content-project .appbar-start { flex: 1 1 0; }
   .content-presets .appbar-start { flex-wrap: wrap; row-gap: 0; gap: var(--s1) var(--s3); }
+}
 @media (max-width: 720px) { .found-addrow #adapter-path { flex-basis: 100%; } .found-addrow #adapter-name { flex: 1 1 6rem; } }
 @media (max-width: 760px) {
   .results-pane { padding: var(--s4); flex-basis: 100%; }
@@ -921,3 +922,21 @@ a.tag-link:hover { border-color: var(--accent-line); color: var(--accent-text); 
   .model-page .quant-row .fit { grid-area: fit; grid-column: auto; }
   .model-page .quant-row .quality { grid-area: qual; grid-column: auto; }
 }
+/* ---- layout pass: chat and compare ---- */
+.tool summary { overflow-wrap: anywhere; }
+.tool-body { min-width: 0; }
+@media (max-width: 760px) {
+  /* Row 1: menu, model, Load. Row 2: Tune and Delete chat. */
+  .content-chat .switcher { flex: 1 1 0; min-width: 0; }
+  .content-chat .appbar-start { flex: 1 1 60%; }
+  .content-chat .mem-empty { display: none; }
+  .content-chat .tune-btn, .content-chat #delete-chat { min-height: 40px; }
+  .content-chat .mem-list { flex: 1 1 100%; order: 5; }
+  .content-chat .mem-list:has(.mem-empty) { display: none; }
+  .content-chat .tune-btn { margin-right: auto; }
+  .content-chat { height: 100dvh; }
+  .content-chat .chat { height: auto; flex: 1 1 0; min-height: 0; }
+}
+@media (max-width: 760px) { .msg.user { max-width: 90%; } }
+.cmp-chip { max-width: 100%; min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 760px) { .cmp-grid > .cmp-label { position: sticky; left: 0; background: var(--surface); z-index: 1; } }

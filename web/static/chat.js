@@ -12,6 +12,8 @@
   const scroller = document.getElementById('messages');
   const form = document.getElementById('composer');
   const input = document.getElementById('input');
+  // The long hint doesn't fit one line on a phone and its second line is clipped.
+  if (input && window.matchMedia('(max-width: 760px)').matches) input.placeholder = 'Message';
   const sendBtn = document.getElementById('send');
   let chatId = chatEl.dataset.chatId || '';
 
