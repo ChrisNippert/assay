@@ -125,7 +125,7 @@ func settingsSummary(o map[string]any) string {
 	for k := range o {
 		keys = append(keys, k)
 	}
-	order := map[string]int{"num_ctx": 1, "num_gpu": 2, "keep_alive": 3, "cache_type": 4, "flash_attn": 5}
+	order := map[string]int{"num_ctx": 1, "num_gpu": 2, "keep_alive": 3, "cache_type": 4, "flash_attn": 5, "draft_model": 6}
 	sort.Slice(keys, func(i, j int) bool {
 		oi, oj := order[keys[i]], order[keys[j]]
 		if oi == 0 {
@@ -153,6 +153,10 @@ func settingsSummary(o map[string]any) string {
 			parts = append(parts, v+" cache")
 		case "flash_attn":
 			parts = append(parts, "flash attention "+v)
+		case "draft_model":
+			parts = append(parts, "drafts with "+v)
+		case "num_thread":
+			parts = append(parts, v+" CPU threads")
 		default:
 			parts = append(parts, strings.ReplaceAll(k, "_", " ")+" "+v)
 		}

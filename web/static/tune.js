@@ -39,6 +39,7 @@
   const perModel = () => !!defaults.engine;
 
   const CTX_STEPS = [4096, 8192, 16384, 32768, 65536, 131072, 262144];
+  const gb = (n) => (n >= 1e9 ? (n / 1e9).toFixed(1) + ' GB' : Math.round(n / 1e6) + ' MB');
   const kib = (n) => (n >= 1024 ? Math.round(n / 1024) + 'k' : String(n));
 
   // Each setting is one row. kind: combo (context dropdown), think, choice
@@ -76,6 +77,13 @@
     { key: 'keep_alive', label: 'Keep loaded', kind: 'choice', scope: 'model', engine: true,
       help: 'After the last message',
       choices: [['5m', '5 minutes'], ['30m', '30 minutes'], ['1h', '1 hour'], ['4h', '4 hours'], ['-1', 'Until unloaded']] },
+    // The choices come from the server: installed models with the same vocabulary.
+    { key: 'draft_model', label: 'Draft model', kind: 'choice', scope: 'model', engine: true, none: 'Off',
+      help: 'A small model of the same family guesses ahead; faster writing, a bit more memory',
+      dyn: () => (defaults.drafts || []).map((d) => [d.name, `${d.name.split('/').pop()} (${gb(d.size)})`]),
+      empty: 'No installed model is a match for drafting' },
+    { key: 'draft_max', label: 'Draft length', kind: 'spin', min: 1, max: 64, step: 1, int: true, scope: 'model',
+      placeholder: 'Auto', help: 'Words guessed ahead at a time', when: () => !!(state.options.draft_model ?? saved.draft_model) },
   ];
   const MEMORY = [
     { key: 'cache_type', label: 'Context cache', kind: 'choice', scope: 'model', engine: true,
@@ -84,6 +92,9 @@
     { key: 'flash_attn', label: 'Flash attention', kind: 'choice', scope: 'model', engine: true,
       help: 'Faster; a half or quarter cache needs it',
       choices: [['on', 'On'], ['off', 'Off'], ['auto', 'Auto']] },
+    { key: 'num_thread', label: 'CPU threads', kind: 'choice', scope: 'model', engine: true, int: true, none: 'Auto',
+      help: 'Only matters for layers that run on the CPU',
+      dyn: () => Array.from({ length: defaults.cpus || navigator.hardwareConcurrency || 8 }, (_, i) => [String(i + 1), String(i + 1)]) },
   ];
   // Fallbacks when nothing else sets a value, by engine.
   const OLLAMA_DEFAULTS = { temperature: 0.8, top_p: 0.9, top_k: 40, min_p: 0, repeat_penalty: 1.1, num_predict: -1,
@@ -191,7 +202,7 @@
     if (savedHere(def) && def.key in state.options) { delete state.options[def.key]; return render(); }
     setOption(def, null);
   }
-  const parse = (def, s) => (s === '' ? null : def.kind === 'choice' ? s : def.int ? Math.round(+s) : +s);
+  const parse = (def, s) => (s === '' ? null : def.kind === 'choice' ? (def.int ? +s : s) : def.int ? Math.round(+s) : +s);
   const clamp = (def, v) => Math.min(def.max, Math.max(def.min, v));
 
   function spinButton(def, num, delta, label, path) {
@@ -345,15 +356,17 @@
   function renderChoice(r) {
     const { def, select: sel } = r;
     const { own, inh, over } = layers(def);
-    const label = (v) => def.choices.find(([c]) => c === String(v))?.[1] ?? String(v);
-    const first = inh.value != null ? `Default (${label(inh.value)})` : 'Default';
-    const opts = [['', first], ...def.choices];
+    const choices = def.dyn ? def.dyn() : def.choices;
+    const label = (v) => choices.find(([c]) => c === String(v))?.[1] ?? String(v);
+    const first = def.none || (inh.value != null ? `Default (${label(inh.value)})` : 'Default');
+    const opts = [['', first], ...choices];
     const val = over ? over.value : own;
     if (val != null && !opts.some(([c]) => c === String(val))) opts.push([String(val), String(val)]);
     const same = sel.options.length === opts.length && [...sel.options].every((o, i) => o.value === opts[i][0] && o.text === opts[i][1]);
     if (!same) sel.replaceChildren(...opts.map(([v, t]) => new Option(t, v)));
     sel.value = val != null ? String(val) : '';
-    r.sub.textContent = val != null ? `${origin(def)} · ${def.help}` : def.help;
+    const help = def.empty && !choices.length && val == null ? def.empty : def.help;
+    r.sub.textContent = val != null ? `${origin(def)} · ${help}` : help;
     return over?.from === 'chat' || own != null;
   }
 
@@ -400,7 +413,7 @@
   function render() {
     const preset = currentPreset();
     for (const r of rows) {
-      r.row.hidden = !!r.def.engine && !perModel();
+      r.row.hidden = (!!r.def.engine && !perModel()) || (r.def.when && !r.def.when());
       const k = r.def.kind;
       const changed = k === 'combo' ? renderCombo(r) : k === 'think' ? renderThink(r) : k === 'choice' ? renderChoice(r) : renderNumber(r);
       r.row.classList.toggle('changed', changed);
@@ -409,7 +422,7 @@
     const samplingChanged = SAMPLING.filter((d) => d.key in state.options).length;
     sampling.sub.textContent = samplingChanged ? `${samplingChanged} changed` : 'Top P, top K, penalties, seed. The defaults suit most models.';
     memory.box.hidden = !perModel();
-    memory.sub.textContent = MEMORY.map((d) => `${d.label.toLowerCase()} ${shown(d) ?? 'default'}`).join(' · ');
+    memory.sub.textContent = MEMORY.slice(0, 2).map((d) => `${d.label.toLowerCase()} ${shown(d) ?? 'default'}`).join(' · ');
 
     modelTitle.textContent = baseModel() || 'Model';
     modelSub.textContent = perModel() ? 'Saved for the model, so every chat with it uses these.' : 'For this chat.';

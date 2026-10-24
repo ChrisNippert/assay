@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"runtime"
 	"time"
 
+	"ollamui/internal/engine"
 	"ollamui/internal/ollama"
 	"ollamui/internal/presets"
 )
@@ -126,6 +128,9 @@ type modelDefaults struct {
 	// engine that keeps settings per model.
 	Saved  map[string]any  `json:"saved,omitempty"`
 	Engine *engineDefaults `json:"engine,omitempty"`
+	// Drafts are the installed models that could draft for this one.
+	Drafts []engine.Draft `json:"drafts,omitempty"`
+	CPUs   int            `json:"cpus,omitempty"`
 }
 
 type engineDefaults struct {
@@ -222,6 +227,12 @@ func (s *Server) handleModelDefaults(w http.ResponseWriter, r *http.Request) {
 	}
 	if ms, ok := s.ollama.(modelSettings); ok {
 		d.Saved, _ = ms.Settings(name)
+		d.CPUs = runtime.NumCPU()
+		if dr, ok := s.ollama.(interface {
+			Drafts(string) ([]engine.Draft, error)
+		}); ok {
+			d.Drafts, _ = dr.Drafts(name)
+		}
 		d.Engine = &engineDefaults{CacheType: ms.CacheType(), FlashAttn: ms.FlashAttn(), KeepAlive: ms.KeepAlive().String()}
 	}
 	writeJSON(w, http.StatusOK, d)
