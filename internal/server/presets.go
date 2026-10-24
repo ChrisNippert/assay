@@ -14,7 +14,6 @@ import (
 
 func (s *Server) handlePresetsPage(w http.ResponseWriter, r *http.Request) {
 	p := s.basePage(r.Context(), "presets", "Presets")
-	_, p.Data = s.ollama.(apiEngine)
 	s.render(w, "presets", p)
 }
 
@@ -45,7 +44,7 @@ func (s *Server) handlePresetSave(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "base model is required")
 		return
 	}
-	if p.Base == p.OllamaName() {
+	if p.Base == p.Name {
 		writeError(w, http.StatusBadRequest, "a preset can't use itself as its base")
 		return
 	}
@@ -65,31 +64,12 @@ func (s *Server) handlePresetSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prev, _ := s.presets.Get(name)
+	p.Published = false // presets are listed in the /v1 API; nothing to publish
 	if err := s.presets.Save(&p); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := s.syncPreset(r.Context(), &p, prev); err != nil {
-		writeError(w, http.StatusBadGateway, "Saved, but updating "+p.OllamaName()+" in Ollama failed: "+err.Error())
-		return
-	}
 	writeJSON(w, http.StatusOK, &p)
-}
-
-// syncPreset makes Ollama match a preset: a published preset becomes (or is
-// refreshed as) the model ollamui/<name>; an unpublished one is removed.
-func (s *Server) syncPreset(ctx context.Context, p, prev *presets.Preset) error {
-	if p.Published {
-		req := ollama.CreateRequest{Model: p.OllamaName(), From: p.Base, Parameters: p.Options, System: p.System}
-		return s.ollama.Create(ctx, req, func(ollama.Status) error { return nil })
-	}
-	if prev != nil && prev.Published {
-		if err := s.ollama.Delete(ctx, p.OllamaName()); err != nil && !ollama.IsNotFound(err) {
-			return err
-		}
-	}
-	return nil
 }
 
 func (s *Server) handlePresetDelete(w http.ResponseWriter, r *http.Request) {
@@ -101,12 +81,6 @@ func (s *Server) handlePresetDelete(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
-	}
-	if p.Published {
-		if err := s.ollama.Delete(r.Context(), p.OllamaName()); err != nil && !ollama.IsNotFound(err) {
-			writeError(w, ollamaStatus(err), "couldn't remove "+p.OllamaName()+" from Ollama: "+err.Error())
-			return
-		}
 	}
 	if err := s.presets.Delete(p.Name); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

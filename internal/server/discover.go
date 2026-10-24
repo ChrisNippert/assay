@@ -306,7 +306,9 @@ func (s *Server) handleModelPage(w http.ResponseWriter, r *http.Request) {
 		installed[strings.ToLower(m.Name)] = true
 	}
 	kvf := s.kvFactor(r.Context())
-	data.KVType = s.ollamaEnv(r.Context()).KVCacheType()
+	if f, ok := s.ollama.(fitter); ok {
+		data.KVType = f.CacheType()
+	}
 	quants, vision := hf.Quants(repo.ID, files)
 	data.Vision = vision || repo.Vision()
 	data.Draft, data.DraftFor = repo.IsDraft(), repo.DraftFor()

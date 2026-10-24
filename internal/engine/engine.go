@@ -822,20 +822,6 @@ func num(v any) (float64, bool) {
 // were published as Ollama models, which an editor now reaches through
 // ollamui's own API instead.
 
-// URL names the engine for the UI.
-func (e *Engine) URL() string { return "llama.cpp" }
-
-// Host is where the model servers listen.
-func (e *Engine) Host() string { return "127.0.0.1" }
-
-// Port has no single answer; there's one server per model.
-func (e *Engine) Port() string { return "" }
-
-// Create accepts and ignores a preset publish.
-func (e *Engine) Create(ctx context.Context, req ollama.CreateRequest, fn func(ollama.Status) error) error {
-	return nil
-}
-
 // Settings returns a model's own settings.
 func (e *Engine) Settings(name string) (map[string]any, error) {
 	m, err := e.store.Get(name)

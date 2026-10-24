@@ -3,8 +3,8 @@
 // until opened) the rest of sampling. These are the chat's own, layered over
 // the preset (if any), the model's settings and its recommended defaults.
 // The model part: context, GPU layers, how long it stays loaded and (hidden)
-// memory options. With llama.cpp these are saved for the model straight
-// away, so every chat with it uses them. With Ollama they're per chat too.
+// memory options, saved for the model straight away, so every chat with
+// it uses them.
 // Chat.js reads the chat's settings via window.ollamuiTune when sending.
 (() => {
   const chatEl = document.getElementById('chat');
@@ -21,9 +21,6 @@
   const saveBtn = $('tune-save');
   const saveNewBtn = $('tune-save-new');
   const resetBtn = $('tune-reset');
-  const publishRow = $('tune-publish-row');
-  const publishBox = $('tune-publish');
-  const publishName = $('tune-publish-name');
   const errorEl = $('tune-error');
   const modelTitle = $('tune-model-title');
   const modelSub = $('tune-model-sub');
@@ -437,11 +434,6 @@
     if (preset) saveBtn.textContent = `Save to “${preset.name}”`;
     saveBtn.disabled = !changedCount();
     resetBtn.disabled = !changedCount();
-    publishRow.hidden = !preset || perModel(); // with llama.cpp every preset is in the /v1 API
-    if (preset) {
-      publishBox.checked = !!preset.published;
-      publishName.textContent = 'ollamui/' + preset.name;
-    }
 
     const parts = [];
     const t = effective('temperature');
@@ -542,7 +534,7 @@
 
   saveBtn.addEventListener('click', () => run(saveBtn, async () => {
     const p = currentPreset();
-    await putPreset(p.name, { ...mergedSettings(), published: !!p.published });
+    await putPreset(p.name, mergedSettings());
     clearChanges();
   }));
 
@@ -551,19 +543,9 @@
     const name = prompt('Name for the new preset (lowercase letters, numbers, - . _):', suggestion);
     if (!name) return;
     if (presets.some((p) => p.name === name) && !confirm(`Replace the existing preset “${name}”?`)) return;
-    const saved = await putPreset(name, { ...mergedSettings(), published: false });
+    const saved = await putPreset(name, mergedSettings());
     clearChanges();
     addPresetOption(saved);
-  }));
-
-  publishBox.addEventListener('change', () => run(publishBox, async () => {
-    const p = currentPreset();
-    try {
-      await putPreset(p.name, { ...p, published: publishBox.checked });
-    } catch (err) {
-      publishBox.checked = !publishBox.checked;
-      throw err;
-    }
   }));
 
   function addPresetOption(p) {

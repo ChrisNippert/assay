@@ -31,7 +31,7 @@
     </div>
     {{end}}
 
-    <div class="cmp-section">Model <span class="cmp-src">from Ollama</span></div>
+    <div class="cmp-section">Model <span class="cmp-src">from the model file</span></div>
     <div class="cmp-label">Parameters</div>
     {{range $d.Columns}}<div class="cmp-cell">{{or .Group.Primary.Details.ParameterSize "–"}}</div>{{end}}
     <div class="cmp-label">Quantization</div>

@@ -18,6 +18,7 @@ import (
 	"ollamui/internal/hf"
 	"ollamui/internal/hw"
 	"ollamui/internal/ollama"
+	"ollamui/internal/ollama/ollamatest"
 	"ollamui/internal/presets"
 	"ollamui/internal/projects"
 	"ollamui/internal/pulls"
@@ -123,7 +124,7 @@ func newTestServer(t *testing.T) (*Server, *fakeOllama, *chats.Store) {
 	fake := &fakeOllama{loaded: map[string]time.Time{}}
 	ts := httptest.NewServer(fake)
 	t.Cleanup(ts.Close)
-	client, err := ollama.New(ts.URL)
+	client, err := ollamatest.New(ts.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -388,18 +389,15 @@ func TestModelPagePartial(t *testing.T) {
 	}
 }
 
-func TestPresetPublishAndChat(t *testing.T) {
+func TestPresetSaveAndChat(t *testing.T) {
 	s, fake, store := newTestServer(t)
 	rec := do(s, "PUT", "/api/presets/coder", `{"base":"qwen3:8b","system":"Be terse.","published":true,"options":{"temperature":0.3,"num_ctx":16384}}`)
 	if rec.Code != 200 {
 		t.Fatalf("save: %d %s", rec.Code, rec.Body)
 	}
-	if len(fake.createReqs) != 1 {
-		t.Fatalf("create calls = %d", len(fake.createReqs))
-	}
-	cr := fake.createReqs[0]
-	if cr.Model != "ollamui/coder" || cr.From != "qwen3:8b" || cr.System != "Be terse." || cr.Parameters["temperature"] != 0.3 {
-		t.Errorf("create = %+v", cr)
+	// Presets are listed in the /v1 API; nothing is created anywhere.
+	if len(fake.createReqs) != 0 || strings.Contains(rec.Body.String(), `"published":true`) {
+		t.Errorf("save published something: %d create calls, %s", len(fake.createReqs), rec.Body)
 	}
 
 	// The chat's own tweak wins over the preset; the preset fills the rest.
@@ -419,12 +417,6 @@ func TestPresetPublishAndChat(t *testing.T) {
 	c, _ := store.Get(list[0].ID)
 	if c.Preset != "coder" || c.Options["temperature"] != 0.9 || c.Options["num_ctx"] != nil {
 		t.Errorf("stored chat should keep only its own tweaks: %+v", c)
-	}
-
-	// Unpublishing removes the Ollama model.
-	rec = do(s, "PUT", "/api/presets/coder", `{"base":"qwen3:8b","published":false}`)
-	if rec.Code != 200 || len(fake.deleted) != 1 || fake.deleted[0] != "ollamui/coder" {
-		t.Fatalf("unpublish: %d %v", rec.Code, fake.deleted)
 	}
 }
 

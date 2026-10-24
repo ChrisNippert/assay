@@ -1,9 +1,11 @@
 # ollamui architecture
 
 A lightweight web UI for finding, downloading, tuning and chatting with
-local models. It started on top of Ollama and is moving to running models
-itself with llama.cpp's `llama-server` (see "Engine" below and BACKLOG.md);
-`-engine ollama` keeps the old path while that lands.
+local models. It runs them itself with llama.cpp's `llama-server` (see
+"Engine" below). It started on top of Ollama; since 2026-10-23 Ollama isn't
+needed at all. Models already in `~/.ollama/models` are imported by hard
+link, and `internal/ollama` survives only as the request/response types
+the code passes around.
 
 ## Goals
 
@@ -24,36 +26,32 @@ itself with llama.cpp's `llama-server` (see "Engine" below and BACKLOG.md);
 - Multi-user accounts. It's a single-user tool, optionally reachable from
   your other devices.
 
-## The core idea: presets are real Ollama models
+## The core idea: presets are models in the API
 
-Ollama stores weights by content hash. `POST /api/create` with
-`from: <base>` plus `parameters` and `system` writes a tiny new manifest and
-reuses the base model's weight blobs, so the extra disk cost is negligible.
+A preset is a base model plus settings and a system prompt, edited like an
+Unsloth config (sliders, save) and kept as a TOML file. ollamui's
+OpenAI-compatible API (`/v1`, see "Engine") lists every preset as a model
+under its own name, so Zed and other clients use it like any model, with
+those settings applied. Nothing is created or copied: the preset file is the
+only copy. (Until 2026-10-23 presets were "published" into Ollama as
+`ollamui/<name>` models; the `published` field in old preset files is
+ignored.)
 
-So a preset is edited like an Unsloth config (sliders, save), and when
-marked **published** ollamui upserts it as `ollamui/<preset-name>`. Zed and
-other clients then see it as an ordinary model with those settings baked in.
-
-- The preset file is the source of truth. Ollama holds a derived copy.
-- ollamui only creates, updates or deletes models under `ollamui/`. It never
-  modifies models it didn't create.
-- On startup, published presets are compared with `/api/show` and any drift
-  is flagged so you can re-sync.
-
-Per-chat tweaks are sent as `options` on each `/api/chat` request and create
-nothing in Ollama until you choose "Save to preset".
+Per-chat tweaks are layered over the preset on each request and change
+nothing until you choose "Save to preset".
 
 ## Components
 
 ```
-browser ──HTTP──► ollamui (Go) ──HTTP──► Ollama :11434 ◄── Zed, etc.
-                     │        └──HTTP──► speech service :8485 (optional, voice mode)
+browser, Zed ──HTTP──► ollamui (Go) ──HTTP──► llama-server, one per loaded model
+                          │        └──HTTP──► speech service :8485 (optional, voice)
                      │
-                     ├── internal/engine   llama-server per model, model store, Ollama import
+                     ├── internal/engine   llama-server per model, model store, Ollama import, /v1 proxy
                      ├── internal/gguf     GGUF header reader (arch, context, size, template)
-                     ├── internal/ollama   typed API client, NDJSON streaming, server env
+                     ├── internal/ollama   shared request/response types (ollamatest: a client for tests)
+                     ├── internal/llamacpp install and update llama.cpp releases
                      ├── internal/hf       HF search, file tree, quant parsing, fit estimate   (M2)
-                     ├── internal/presets  TOML presets + sync to ollamui/*                   (M3)
+                     ├── internal/presets  TOML presets, option validation                      (M3)
                      ├── internal/chats    one JSON file per chat
                      ├── internal/scores   intelligence index (Artificial Analysis via OpenRouter)
                      ├── internal/bench    saved speed tests, one JSON file per model digest
@@ -72,8 +70,7 @@ code doesn't care which engine runs (`server.Backend`).
 - **Store**: `<data>/models/` holds `blobs/` (GGUF files) and one JSON
   manifest per model (name, aliases, files, projector, default params).
   Ollama's models are imported by hard link (symlink across disks), so
-  nothing is copied and Ollama keeps working; re-imported every 10 s while
-  pulls still go through Ollama.
+  nothing is copied and Ollama keeps working if you still use it.
 - **Processes**: started on demand with `-np 1` (more slots overfill VRAM),
   `-c 32768` unless a context is asked for (letting `--fit` pick grew it to
   262k and writing dropped 3×), `--fit` lowers it if memory is short. Other
@@ -153,10 +150,11 @@ code doesn't care which engine runs (`server.Backend`).
 
 ### internal/ollama
 
-A thin typed client for `/api/version`, `tags`, `ps`, `show`, `delete`,
-`copy`, `pull`, `create` and `chat`. Streaming endpoints decode NDJSON one
-object at a time and turn mid-stream `{"error": …}` lines into Go errors.
-Cancelling the request context aborts generation or download in Ollama.
+Ollama's API shapes (`ChatRequest`, `ShowResponse`, `PullProgress`, …),
+which the engine and server still pass around, plus `APIError`. The HTTP
+client that once talked to Ollama lives on in `internal/ollama/ollamatest`,
+only so the server tests can drive their fake backend through it. Pulls
+accept only `hf.co/…` names; an Ollama library name gets a clear error.
 
 ### internal/hf (M2)
 
@@ -218,29 +216,16 @@ it into place. Single files are named by hash (two names share them); split
 models keep their file names in a folder, since llama.cpp finds the later
 parts by name. Unsloth's `params` file becomes the model's default
 settings. The short name is an alias in the manifest (`engine.Copy`). Other
-names (the Ollama library) still pull through Ollama and are imported.
+names (the Ollama library) are refused with a hint to use an `hf.co/` name.
 
 ### Load and eject
 
-Ollama has no explicit load endpoint. A `/api/generate` request with no
-prompt loads a model, and `keep_alive: 0` unloads it. Loading from the UI
-pins the model (`keep_alive: -1`) until you eject it, the way Unsloth and
-LM Studio behave. Every chat request resets Ollama's keep-alive timer, so
-ollamui sends `keep_alive: -1` with chats to pinned models to keep them
-pinned. A model counts as pinned when `/api/ps` reports an expiry more than
-a year away. The sidebar shows each loaded model's VRAM, how much of it is
+Loading from the UI starts the model's llama-server and pins it
+(`keep_alive: -1`) until you eject it, the way Unsloth and LM Studio behave;
+otherwise a model unloads after its keep-alive (5 minutes by default, or its
+own setting) without requests. Every request refreshes the timer, and a
+pinned model stays pinned. The sidebar shows each loaded model's VRAM, how much of it is
 on the GPU, and whether it stays until ejected or auto-unloads.
-
-### Server settings
-
-Ollama's tuning that matters most (K/V cache type, flash attention,
-parallel requests) is server-wide environment only. ollamui reads it from
-the running `ollama serve` process (`/proc/<pid>/environ`, matched by port;
-readable when it runs as the same user), falling back to the systemd
-unit's configuration (`systemctl show`). `/settings` shows it and writes a
-`sudo` drop-in snippet for changes; ollamui never runs sudo. Auto context
-scales its cache estimate by the K/V type and by `OLLAMA_NUM_PARALLEL`,
-since Ollama gives every parallel slot its own cache.
 
 ### Voice
 
@@ -359,13 +344,13 @@ fine for tens of thousands of chunks. Deleting a project keeps its chats.
 text (`internal/rag`: text and code, HTML, PDF via `pdftotext`, DOCX, ODT;
 20 MB max), split into ~1,500-character chunks with 200 of overlap
 (headings and PDF pages tracked, code fences kept whole), embed 16 at a time
-through Ollama's `/api/embed` with "file · heading" prefixed, then store.
+through the engine (llama-server's embeddings endpoint) with "file · heading" prefixed, then store.
 Progress shows on the project page. Files wait (not fail) until an
 embedding model is chosen; restarts pick up unfinished files.
 
 **Embedding model** (Settings → Knowledge, `knowledge.json`): the user picks
 and downloads one (suggestions: qwen3-embedding:0.6b, embeddinggemma,
-nomic-embed-text, …; any Ollama embedding model works). One index holds one
+nomic-embed-text, all as `hf.co/` GGUFs; any GGUF embedding model works). One index holds one
 model's vectors; switching models re-indexes every project.
 
 **Retrieval** (in `prepareTurn`): for a chat in a project with indexed
@@ -397,8 +382,8 @@ against a strict pattern before they touch the filesystem.
     (CSRF).
   - No login. For access from other devices, use Tailscale (bind to the
     tailnet IP or `tailscale serve`). Don't expose it to the internet.
-  - Ollama itself can stay on localhost. Remote browsers only talk to
-    ollamui.
+  - The llama-servers listen on 127.0.0.1 only. Remote browsers and
+    editors only talk to ollamui.
 
 ## Storage
 
@@ -406,7 +391,7 @@ No database. Plain files under XDG directories:
 
 ```
 ~/.config/ollamui/
-  config.toml            listen address, Ollama URL, HF token        (M2)
+  config.toml            listen address, HF token (planned)          (M2)
   presets/<name>.toml    one preset per file                         (M3)
   voice.json             voice mode settings (Settings → Voice)
   knowledge.json         RAG settings: embedding model, excerpts per answer
@@ -449,8 +434,8 @@ Design reference: direction **F** on the design canvas
   streamed replies always come from the server). A full install needs
   HTTPS or localhost; over plain HTTP it's an "Add to Home screen" shortcut.
 - **Settings**: a jump bar, then Models (llama.cpp build and backend, the
-  defaults, models with their own settings and a "Use defaults" button;
-  the Ollama server's variables with `-engine ollama`), Knowledge, Voice,
+  install/update, defaults, models folder, the `/v1` URL, models with their
+  own settings and a "Use defaults" button), Knowledge, Voice,
   This machine. Below 1180px wide Tune floats over the chat instead of
   docking beside it. A mic button next to Send dictates
   into the box; the bar under the composer shows listening / reading aloud

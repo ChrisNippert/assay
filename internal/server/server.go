@@ -34,7 +34,7 @@ import (
 	"ollamui/web"
 )
 
-// Backend runs the models: the llama.cpp engine, or Ollama.
+// Backend runs the models: the llama.cpp engine (a fake in tests).
 type Backend = backend
 
 type backend interface {
@@ -47,10 +47,6 @@ type backend interface {
 	Delete(ctx context.Context, model string) error
 	Chat(ctx context.Context, req ollama.ChatRequest, fn func(ollama.ChatResponse) error) error
 	Embed(ctx context.Context, model string, input []string) ([][]float32, error)
-	Create(ctx context.Context, req ollama.CreateRequest, fn func(ollama.Status) error) error
-	URL() string
-	Host() string
-	Port() string
 }
 
 // fitter is a backend that sizes the context itself (llama.cpp's --fit):
@@ -64,7 +60,7 @@ type Options struct {
 	Presets *presets.Store
 	HF      *hf.Client
 	Pulls   *pulls.Manager
-	// LlamaCpp installs llama.cpp releases (Settings); nil with Ollama.
+	// LlamaCpp installs llama.cpp releases (Settings); nil turns that off.
 	LlamaCpp *llamacpp.Manager
 	// Scores is optional; without it nothing is rated.
 	Scores *scores.Store
@@ -106,7 +102,6 @@ type Server struct {
 	voiceSt    *voice.SettingsStore
 	speech     *voice.Launcher
 	search     searchCache
-	env        envCache
 	ctxBase    sync.Map // model name → measured weight memory, for picking context
 	// ctxCap is model name → largest context worth trying, learned when a
 	// bigger one spilled onto the CPU.
@@ -150,7 +145,6 @@ func New(opts Options) (*Server, error) {
 	if s.voiceSt == nil {
 		s.voiceSt, _ = voice.OpenSettings("") // in memory
 	}
-	s.env.read = func(ctx context.Context) ollama.ServerEnv { return ollama.ReadServerEnv(ctx, s.ollama.Port()) }
 	if s.log == nil {
 		s.log = slog.Default()
 	}
@@ -195,7 +189,6 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("GET /api/knowledge/settings", s.handleRAGSettings)
 	mux.HandleFunc("PUT /api/knowledge/settings", s.handleRAGSettingsSave)
 	mux.HandleFunc("POST /api/bench", s.handleBench)
-	mux.HandleFunc("GET /api/ollama/env", s.handleOllamaEnv)
 
 	mux.HandleFunc("GET /api/loaded", s.handleLoaded)
 	mux.HandleFunc("GET /api/models/defaults", s.handleModelDefaults)
@@ -292,8 +285,7 @@ type page struct {
 	Models    []ollama.Model
 	Loaded    []loadedModel
 	Presets   []*presets.Preset
-	OllamaURL string
-	OllamaErr string
+	ModelsErr string // couldn't list the models
 	Data      any
 
 	// For ModelGroups' fit and speed.
@@ -322,7 +314,7 @@ func (p *page) IsLoaded(name string) bool {
 }
 
 func (s *Server) basePage(ctx context.Context, active, title string) *page {
-	p := &page{Active: active, Title: title, OllamaURL: s.ollama.URL(), memory: s.memory, bench: s.bench}
+	p := &page{Active: active, Title: title, memory: s.memory, bench: s.bench}
 	if list, err := s.chats.List(); err == nil {
 		p.Chats = list
 	} else {
@@ -342,7 +334,7 @@ func (s *Server) basePage(ctx context.Context, active, title string) *page {
 	defer cancel()
 	models, err := s.ollama.List(ctx)
 	if err != nil {
-		p.OllamaErr = err.Error()
+		p.ModelsErr = err.Error()
 		return p
 	}
 	sort.Slice(models, func(i, j int) bool { return models[i].Name < models[j].Name })

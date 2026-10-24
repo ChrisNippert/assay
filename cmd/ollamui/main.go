@@ -41,8 +41,6 @@ func main() {
 
 func run() error {
 	listen := flag.String("listen", "127.0.0.1:8484", "address to serve the UI on")
-	ollamaURL := flag.String("ollama", ollama.ResolveHost(os.Getenv("OLLAMA_HOST")), "Ollama server URL (with -engine ollama, and for importing and pulling models meanwhile)")
-	engineName := flag.String("engine", "llama.cpp", `what runs the models: "llama.cpp" or "ollama"`)
 	llamaServer := flag.String("llama-server", os.Getenv("OLLAMUI_LLAMA_SERVER"), "llama.cpp's llama-server binary (default: ~/.local/share/ollamui/llama.cpp/llama-server, then the release installed from Settings, then PATH)")
 	cacheType := flag.String("cache-type", "q8_0", "K/V cache type for llama.cpp: f16, q8_0 or q4_0")
 	ollamaModels := flag.String("ollama-models", filepath.Join(os.Getenv("HOME"), ".ollama", "models"), "Ollama's models folder, imported (by hard link) into ollamui's own")
@@ -68,10 +66,6 @@ func run() error {
 	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 
-	client, err := ollama.New(*ollamaURL)
-	if err != nil {
-		return err
-	}
 	store, err := chats.Open(filepath.Join(*dataDir, "chats"))
 	if err != nil {
 		return fmt.Errorf("open chat store: %w", err)
@@ -110,56 +104,46 @@ func run() error {
 	// The engine: llama.cpp runs the models ollamui keeps; Ollama's models
 	// are imported by hard link, so nothing is downloaded twice.
 	hfClient := hf.New(hf.DefaultBaseURL, os.Getenv("HF_TOKEN"))
-	var models server.Backend = client
-	var puller pulls.Puller = client
-	var eng *engine.Engine
-	var llama *llamacpp.Manager
-	if *engineName == "llama.cpp" {
-		folder := engine.FolderSetting{File: filepath.Join(*configDir, "models.json"), Pinned: *modelsFlag != ""}
-		modelsDir := *modelsFlag
-		if modelsDir == "" {
-			modelsDir = engine.LoadFolder(folder.File)
-			// A disk that isn't mounted must not get a fresh empty store.
-			if _, err := os.Stat(modelsDir); modelsDir != "" && err != nil {
-				log.Warn("the saved models folder isn't there (is its disk mounted?); using the default", "dir", modelsDir, "err", err)
-				modelsDir = ""
-			}
+	folder := engine.FolderSetting{File: filepath.Join(*configDir, "models.json"), Pinned: *modelsFlag != ""}
+	modelsDir := *modelsFlag
+	if modelsDir == "" {
+		modelsDir = engine.LoadFolder(folder.File)
+		// A disk that isn't mounted must not get a fresh empty store.
+		if _, err := os.Stat(modelsDir); modelsDir != "" && err != nil {
+			log.Warn("the saved models folder isn't there (is its disk mounted?); using the default", "dir", modelsDir, "err", err)
+			modelsDir = ""
 		}
-		if modelsDir == "" {
-			modelsDir = filepath.Join(*dataDir, "models")
-		}
-		store, err := engine.OpenStore(modelsDir)
-		if err != nil {
-			return fmt.Errorf("model store: %w", err)
-		}
-		if n, err := store.ImportOllama(*ollamaModels); err != nil {
-			log.Warn("import Ollama models", "err", err)
-		} else if n > 0 {
-			log.Info("imported Ollama models", "count", n)
-		}
-		llama = llamacpp.NewManager(*dataDir, *llamaServer, nil, log)
-		bin, _ := llama.Resolve()
-		if bin == "" {
-			log.Warn("llama-server not found: models can't run until llama.cpp is installed (see Settings)")
-		}
-		eng = engine.New(store, engine.Options{Server: bin, CacheType: *cacheType, FlashAttn: "on", Log: log})
-		llama.Eng = eng
-		eng.OllamaDir = *ollamaModels
-		eng.Folder = folder
-		eng.HF = hfClient
-		models = eng
-		puller = enginePuller{eng, client}
-	} else if *engineName != "ollama" {
-		return fmt.Errorf("unknown engine %q", *engineName)
 	}
+	if modelsDir == "" {
+		modelsDir = filepath.Join(*dataDir, "models")
+	}
+	modelStore, err := engine.OpenStore(modelsDir)
+	if err != nil {
+		return fmt.Errorf("model store: %w", err)
+	}
+	if n, err := modelStore.ImportOllama(*ollamaModels); err != nil {
+		log.Warn("import Ollama models", "err", err)
+	} else if n > 0 {
+		log.Info("imported Ollama models", "count", n)
+	}
+	llama := llamacpp.NewManager(*dataDir, *llamaServer, nil, log)
+	bin, _ := llama.Resolve()
+	if bin == "" {
+		log.Warn("llama-server not found: models can't run until llama.cpp is installed (see Settings)")
+	}
+	eng := engine.New(modelStore, engine.Options{Server: bin, CacheType: *cacheType, FlashAttn: "on", Log: log})
+	llama.Eng = eng
+	eng.OllamaDir = *ollamaModels
+	eng.Folder = folder
+	eng.HF = hfClient
 	srv, err := server.New(server.Options{
-		Ollama:        models,
+		Ollama:        eng,
 		Chats:         store,
 		Presets:       presetStore,
 		Projects:      projectStore,
 		RAGSettings:   ragSettings,
 		HF:            hfClient,
-		Pulls:         pulls.New(puller, log),
+		Pulls:         pulls.New(enginePuller{eng}, log),
 		LlamaCpp:      llama,
 		Scores:        scoreStore,
 		Bench:         bench.Open(filepath.Join(*dataDir, "bench")),
@@ -182,9 +166,7 @@ func run() error {
 	engineDone := make(chan struct{})
 	go func() {
 		defer close(engineDone)
-		if eng != nil {
-			eng.Run(ctx) // unloads idle models, and all of them on exit
-		}
+		eng.Run(ctx) // unloads idle models, and all of them on exit
 	}()
 	launcherDone := make(chan struct{})
 	go func() {
@@ -193,14 +175,6 @@ func run() error {
 			launcher.Run(ctx) // stops the speech service when ollamui exits
 		}
 	}()
-
-	checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	if v, err := client.Version(checkCtx); err != nil {
-		log.Warn("can't reach Ollama yet; the UI will show an error until it's up", "url", client.URL(), "err", err)
-	} else {
-		log.Info("connected to Ollama", "url", client.URL(), "version", v)
-	}
-	cancel()
 
 	if !isLoopback(*listen) {
 		log.Warn("listening beyond this machine: anyone who can reach this address can chat, load and delete models", "listen", *listen)
@@ -275,32 +249,19 @@ func displayAddr(addr string) string {
 	return net.JoinHostPort(host, port)
 }
 
-// enginePuller downloads Hugging Face models with the engine itself and
-// anything else (Ollama library names, e.g. the embedding models) through
-// Ollama, then imports it.
+// enginePuller downloads models from Hugging Face. Ollama library names
+// (no hf.co/ prefix) can't be fetched without Ollama.
 type enginePuller struct {
-	eng    *engine.Engine
-	ollama *ollama.Client
+	eng *engine.Engine
 }
 
 func (p enginePuller) Pull(ctx context.Context, model string, fn func(ollama.PullProgress) error) error {
-	if _, _, ok := engine.ParseHFName(model); ok {
-		return p.eng.Pull(ctx, model, fn)
+	if _, _, ok := engine.ParseHFName(model); !ok {
+		return fmt.Errorf("%s isn't a Hugging Face model: use a name like hf.co/<owner>/<repo>:<quant>", model)
 	}
-	if err := p.ollama.Pull(ctx, model, fn); err != nil {
-		return err
-	}
-	p.eng.Import()
-	return nil
+	return p.eng.Pull(ctx, model, fn)
 }
 
 func (p enginePuller) Copy(ctx context.Context, src, dst string) error {
-	if p.eng.Has(src) {
-		return p.eng.Copy(ctx, src, dst)
-	}
-	if err := p.ollama.Copy(ctx, src, dst); err != nil {
-		return err
-	}
-	p.eng.Import()
-	return nil
+	return p.eng.Copy(ctx, src, dst)
 }

@@ -75,9 +75,11 @@ Stages (the app keeps working after each):
    model per model; measure it on the GPU when it's free: CPU-only it gave
    1.55×). Compare's speed test and RAG embeddings already go through the
    engine. Left: auto context from real memory numbers (`--fit`).
-5. **Install and clean up:** ✅ (2026-10-23) one-click llama.cpp (Vulkan)
-   install and update from GitHub releases, beside your own build. Left:
-   removal of the Ollama client, docs.
+5. ✅ **Install and clean up** (2026-10-23): one-click llama.cpp (Vulkan)
+   install and update from GitHub releases, beside your own build; the
+   Ollama client, `-engine ollama`, `-ollama`, the Ollama server settings
+   and preset publishing are gone. Ollama models are still imported from
+   `~/.ollama/models` by hard link (`-ollama-models`).
 
 Also pending: keyword search (BM25) for RAG so project files work without
 an embedding model (a user asked a project chat about a PDF and got

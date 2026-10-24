@@ -1,7 +1,12 @@
 // Package ollama is a small typed client for the Ollama HTTP API.
-package ollama
+// Package ollamatest is an Ollama HTTP client kept only for the server
+// tests, which drive a fake Ollama server through it. ollamui itself runs
+// models with llama.cpp (internal/engine).
+package ollamatest
 
 import (
+	"ollamui/internal/ollama"
+
 	"bytes"
 	"context"
 	"encoding/json"
@@ -75,26 +80,6 @@ func ResolveHost(v string) string {
 	return scheme + "://" + net.JoinHostPort(host, port)
 }
 
-// APIError is an error response from Ollama.
-type APIError struct {
-	StatusCode int
-	Message    string
-}
-
-func (e *APIError) Error() string {
-	// Errors that arrive mid-stream come with a 200 status, which says nothing useful.
-	if e.StatusCode == http.StatusOK {
-		return "ollama: " + e.Message
-	}
-	return fmt.Sprintf("ollama: %s (HTTP %d)", e.Message, e.StatusCode)
-}
-
-// IsNotFound reports whether err is Ollama saying the model doesn't exist.
-func IsNotFound(err error) bool {
-	var apiErr *APIError
-	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound
-}
-
 func (c *Client) do(ctx context.Context, method, path string, body any) (*http.Response, error) {
 	var rdr io.Reader
 	if body != nil {
@@ -134,7 +119,7 @@ func readError(resp *http.Response) error {
 	if msg == "" {
 		msg = resp.Status
 	}
-	return &APIError{StatusCode: resp.StatusCode, Message: msg}
+	return &ollama.APIError{StatusCode: resp.StatusCode, Message: msg}
 }
 
 // call makes a non-streaming request and decodes the response into out
@@ -174,7 +159,7 @@ func stream[T any](ctx context.Context, c *Client, path string, in any, fn func(
 			Error string `json:"error"`
 		}
 		if json.Unmarshal(raw, &e) == nil && e.Error != "" {
-			return &APIError{StatusCode: resp.StatusCode, Message: e.Error}
+			return &ollama.APIError{StatusCode: resp.StatusCode, Message: e.Error}
 		}
 		var v T
 		if err := json.Unmarshal(raw, &v); err != nil {
@@ -198,26 +183,26 @@ func (c *Client) Version(ctx context.Context) (string, error) {
 }
 
 // List returns the models installed locally.
-func (c *Client) List(ctx context.Context) ([]Model, error) {
+func (c *Client) List(ctx context.Context) ([]ollama.Model, error) {
 	var out struct {
-		Models []Model `json:"models"`
+		Models []ollama.Model `json:"models"`
 	}
 	err := c.call(ctx, http.MethodGet, "/api/tags", nil, &out)
 	return out.Models, err
 }
 
 // Running returns the models currently loaded in memory.
-func (c *Client) Running(ctx context.Context) ([]RunningModel, error) {
+func (c *Client) Running(ctx context.Context) ([]ollama.RunningModel, error) {
 	var out struct {
-		Models []RunningModel `json:"models"`
+		Models []ollama.RunningModel `json:"models"`
 	}
 	err := c.call(ctx, http.MethodGet, "/api/ps", nil, &out)
 	return out.Models, err
 }
 
 // Show returns details about one model.
-func (c *Client) Show(ctx context.Context, model string) (*ShowResponse, error) {
-	var out ShowResponse
+func (c *Client) Show(ctx context.Context, model string) (*ollama.ShowResponse, error) {
+	var out ollama.ShowResponse
 	if err := c.call(ctx, http.MethodPost, "/api/show", map[string]string{"model": model}, &out); err != nil {
 		return nil, err
 	}
@@ -265,19 +250,19 @@ func keepAliveValue(s string) any {
 
 // Pull downloads a model, calling fn with each progress update.
 // Names like "hf.co/unsloth/Qwen3-8B-GGUF:Q4_K_M" pull from Hugging Face.
-func (c *Client) Pull(ctx context.Context, model string, fn func(PullProgress) error) error {
+func (c *Client) Pull(ctx context.Context, model string, fn func(ollama.PullProgress) error) error {
 	req := map[string]any{"model": model, "stream": true}
 	return stream(ctx, c, "/api/pull", req, fn)
 }
 
 // Create creates or replaces a model, calling fn with each status update.
-func (c *Client) Create(ctx context.Context, req CreateRequest, fn func(Status) error) error {
+func (c *Client) Create(ctx context.Context, req ollama.CreateRequest, fn func(ollama.Status) error) error {
 	req.Stream = ptr(true)
 	return stream(ctx, c, "/api/create", req, fn)
 }
 
 // Chat sends a conversation and streams the reply to fn.
-func (c *Client) Chat(ctx context.Context, req ChatRequest, fn func(ChatResponse) error) error {
+func (c *Client) Chat(ctx context.Context, req ollama.ChatRequest, fn func(ollama.ChatResponse) error) error {
 	req.Stream = ptr(true)
 	return stream(ctx, c, "/api/chat", req, fn)
 }

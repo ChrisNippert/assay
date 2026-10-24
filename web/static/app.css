@@ -375,7 +375,6 @@ table.models { width: 100%; border-collapse: collapse; }
 /* ---- presets ---- */
 .settings-cell { white-space: normal !important; max-width: 420px; }
 .settings-cell .tag { margin: 1px 0; }
-.publish { display: inline-flex; gap: 6px; align-items: center; }
 
 .settings-warn { color: var(--warn); }
 .mf-path { word-break: break-all; }

@@ -80,10 +80,10 @@
     new MutationObserver(apply).observe(list, { childList: true });
   })();
   </script>
-  {{else if not .OllamaErr}}
+  {{else if not .ModelsErr}}
   <div class="lib-empty">
     <h2>No models yet</h2>
-    <p class="muted">Find a GGUF model on Hugging Face and pull it into Ollama in one click.</p>
+    <p class="muted">Find a GGUF model on Hugging Face and download it in one click.</p>
     <a class="btn primary" href="/discover">Browse Discover</a>
   </div>
   {{end}}

@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -233,15 +232,6 @@ func (s *Server) handleSpeak(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", ctype)
 	w.Header().Set("Cache-Control", "no-store")
 	io.Copy(w, body)
-}
-
-// ollamaParallel is how many requests Ollama serves at once per model.
-// Unknown (a remote Ollama, no systemd) counts as 1.
-func (s *Server) ollamaParallel(ctx context.Context) int {
-	if n, err := strconv.Atoi(strings.TrimSpace(s.ollamaEnv(ctx).Vars["OLLAMA_NUM_PARALLEL"])); err == nil && n > 0 {
-		return n
-	}
-	return 1
 }
 
 // voiceTurn streams a spoken reply. Besides the usual events it sends "say"

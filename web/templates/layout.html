@@ -84,7 +84,7 @@
     </div>
     {{block "appbar-end" .}}{{end}}
   </header>
-  {{if .OllamaErr}}<div class="banner error" role="alert">Can't reach Ollama at {{.OllamaURL}}. Is it running? <span class="muted">({{.OllamaErr}})</span></div>{{end}}
+  {{if .ModelsErr}}<div class="banner error" role="alert">Couldn't read the installed models. <span class="muted">({{.ModelsErr}})</span></div>{{end}}
   {{template "content" .}}
 </main>
 </div>

@@ -12,7 +12,7 @@
   {{with .Data.Error}}<div class="banner error" role="alert">{{.}}</div>{{end}}
 
   {{with .Data.Repo}}
-  {{if $.Data.Draft}}<div class="banner draft-banner" role="note"><strong>This is a draft model, not a model to chat with.</strong> It's a small helper for speculative decoding: it guesses the next few tokens so {{with $.Data.DraftFor}}<a href="/discover?open={{.}}">{{.}}</a>{{else}}the big model it was trained for{{end}} can confirm them in one step and write faster. Ollama {{if $.Data.Drafts}}can't use draft GGUFs yet, so there's nothing to download here.{{else}}can't use it.{{end}}</div>{{end}}
+  {{if $.Data.Draft}}<div class="banner draft-banner" role="note"><strong>This is a draft model, not a model to chat with.</strong> It's a small helper for speculative decoding: it guesses the next few tokens so {{with $.Data.DraftFor}}<a href="/discover?open={{.}}">{{.}}</a>{{else}}the big model it was trained for{{end}} can confirm them in one step and write faster. ollamui can't download draft GGUFs yet; to speed a model up, pick a smaller model of the same family as its draft in Tune.</div>{{end}}
   <header class="model-head">
     <div class="model-title">
       <h1>{{.Name}}</h1>
@@ -64,14 +64,14 @@
             {{if .Installed}}<a class="btn" href="/chat?model={{.Tag}}">Installed · Chat</a>
             {{else}}<button type="button" class="btn{{if .Best}} primary{{end}}" data-pull="{{.Tag}}" data-alias="{{.Alias}}">Download</button>{{end}}
           </span>
-          {{if and .Split (not $.Data.SplitsOK)}}<span class="split-note small">Split into {{len .Files}} files. Ollama may not be able to pull this one.</span>{{end}}
+          {{if and .Split (not $.Data.SplitsOK)}}<span class="split-note small">Split into {{len .Files}} files. This one may not download.</span>{{end}}
         </div>
         {{end}}
       </div>
       {{with $.Data.Drafts}}
       {{if not $.Data.Draft}}
       <h3 class="draft-head">Draft models <span class="tag draft">speculative decoding</span></h3>
-      <p class="muted small">Small helpers that guess ahead so the full model writes faster. They can't chat on their own, and Ollama can't use draft GGUFs yet, so they aren't offered for download.</p>
+      <p class="muted small">Small helpers that guess ahead so the full model writes faster. They can't chat on their own, and ollamui can't download draft GGUFs yet, so they aren't offered. A smaller model of the same family works as a draft instead (Tune → Draft model).</p>
       {{end}}
       <div class="quant-list">
         {{range .}}

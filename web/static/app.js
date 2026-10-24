@@ -116,7 +116,7 @@
       const name = btn.dataset.delete;
       const all = (btn.closest('[data-names]')?.dataset.names || name).split(' ');
       const label = all.length > 1 ? `${name}\n(also ${all.slice(1).join(', ')})` : name;
-      if (!confirm(`Delete ${label} from disk?\n\nOther apps using Ollama will lose it too.`)) return;
+      if (!confirm(`Delete ${label} from disk?`)) return;
       btn.disabled = true;
       try {
         await post('/api/models/delete', { names: all });
@@ -345,25 +345,6 @@
   pollDownloads();
 
   // ---- presets page ----
-  document.addEventListener('change', async (e) => {
-    const box = e.target.closest('[data-publish]');
-    if (!box) return;
-    box.disabled = true;
-    try {
-      const res = await fetch('/api/presets');
-      const preset = (await res.json()).find((p) => p.name === box.dataset.publish);
-      const put = await fetch('/api/presets/' + encodeURIComponent(preset.name), {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...preset, published: box.checked }),
-      });
-      if (!put.ok) throw new Error(await errorText(put));
-    } catch (err) {
-      box.checked = !box.checked;
-      alert(err.message);
-    }
-    box.disabled = false;
-  });
   document.addEventListener('click', async (e) => {
     const del = e.target.closest('[data-delete-preset]');
     if (!del) return;
