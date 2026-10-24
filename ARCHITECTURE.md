@@ -478,6 +478,28 @@ prompt after the project's instructions, numbered for citation. They're
 streamed to the page (`sources` event) and saved on the reply, shown as a
 folded "N passages from the project's files" list.
 
+### Context compression
+
+`internal/server/compress.go`. Before a reply the prompt is counted with
+llama-server's `/tokenize` (+~12 tokens per message; a 3-chars-per-token
+estimate without it; a reply's `prompt_n` only counts uncached tokens, so it
+can't measure the history). Past 80% of the context, or with less than
+max(num_predict, 1k) left for the reply, the oldest messages are summarized
+by the same model (one request, thinking off, temperature 0.2, ≤512 tokens,
+no reply format). The cut is the fewest older messages that leave the rest
+within half the context (keeping at least the last 4, starting at a user
+message). The summary is stored in the chat (`compression`: text, upTo,
+model, saved) and sent inside the system message, so templates that reject
+a second system message are fine, followed by the messages from `upTo`. It
+is extended when more messages need folding (in runs of about half the
+context) and dropped by an edit or regenerate reaching before `upTo`; any
+change forgets the chat's saved KV cache. Thinking is never sent. Per chat:
+Tune → "Compress automatically" (Default/On/Off), else the preset, else
+Settings → Chats (`chats.json`). Manual: Tune's "Compress now" / "Undo"
+(`POST /api/chats/{id}/compress`, `DELETE …/compression`). The page shows a
+divider at `upTo` that folds open to the summary. Checked on Qwen3.5-2B at
+4k context: compressed on turn 13 and still recalled a fact from turn 1.
+
 ### internal/chats
 
 One JSON file per conversation. Writes go to a temp file and are renamed into
