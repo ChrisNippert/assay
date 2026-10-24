@@ -4,6 +4,7 @@
   <nav class="settings-nav" aria-label="Settings sections">
     <a href="#models">Models</a>
     {{if .Data.Knowledge}}<a href="#knowledge">Knowledge</a>{{end}}
+    <a href="#tools">Tools</a>
     {{if .Data.Voice}}<a href="#voice">Voice</a>{{end}}
     <a href="#machine">This machine</a>
   </nav>
@@ -114,6 +115,32 @@
     #kn-get .row-ctrl { gap: .6rem; }
     #kn-get .kn-state:empty { display: none; }
   </style>
+  {{end}}
+
+  {{with .Data.Tools}}
+  <h2 class="group-title" id="tools">Tools</h2>
+  <p class="muted small">Models that support tools can call these while answering; each call shows in the reply as a row you can open. Switch tools off for a single chat in Tune. Changes save right away.</p>
+  <div class="boxed-list" id="tl-list" data-settings="{{json .Settings}}">
+    <div class="row">
+      <div class="row-text"><span class="row-title">Web search</span><span class="row-sub" id="tl-search-sub"></span></div>
+      <div class="row-ctrl"><select id="tl-search" aria-label="Web search">
+        <option value="off">Off</option>
+        <option value="searxng">SearXNG</option>
+        <option value="duckduckgo">DuckDuckGo</option>
+      </select></div>
+    </div>
+    <div class="row" id="tl-searx-row" hidden>
+      <div class="row-text"><span class="row-title">SearXNG address</span><span class="row-sub">Your instance, with the JSON format enabled in its settings.</span></div>
+      <div class="row-ctrl"><input type="url" id="tl-searx" placeholder="http://localhost:8888" aria-label="SearXNG address" size="22" autocomplete="off" value="{{.Settings.SearxURL}}"></div>
+    </div>
+    {{range .Catalog}}{{if ne .Name "web_search"}}
+    <label class="row tl-tool">
+      <div class="row-text"><span class="row-title">{{.Title}}</span><span class="row-sub">{{.Desc}}</span></div>
+      <div class="row-ctrl"><input type="checkbox" data-tool="{{.Name}}"{{if .On}} checked{{end}} aria-label="{{.Title}}"></div>
+    </label>
+    {{end}}{{end}}
+  </div>
+  <p class="small muted" id="tl-note" role="status"></p>
   {{end}}
 
   {{with .Data.Voice}}
@@ -356,6 +383,37 @@
       await audio.play();
     } catch (err) { status.textContent = `Couldn’t preview: ${err.message}`; btn.disabled = false; }
   });
+})();
+(() => {
+  // ---- tools ----
+  const list = document.getElementById('tl-list');
+  if (!list) return;
+  const cur = JSON.parse(list.dataset.settings);
+  const search = document.getElementById('tl-search'), searx = document.getElementById('tl-searx'), note = document.getElementById('tl-note');
+  const sub = document.getElementById('tl-search-sub'), searxRow = document.getElementById('tl-searx-row');
+  search.value = cur.search || 'off';
+  const SUB = {
+    off: 'Off: the model can’t search the web.',
+    searxng: 'Asks your own SearXNG instance.',
+    duckduckgo: 'Reads DuckDuckGo’s web page: needs no account, but may break when they change it.',
+  };
+  function paint() {
+    sub.textContent = SUB[search.value];
+    searxRow.hidden = search.value !== 'searxng';
+  }
+  paint();
+  async function save() {
+    paint();
+    const off = [...list.querySelectorAll('input[data-tool]')].filter((c) => !c.checked).map((c) => c.dataset.tool);
+    if (document.getElementById('tl-search').value === 'searxng' && !searx.value.trim()) { note.textContent = 'Enter the SearXNG address to use it.'; return; }
+    note.textContent = 'Saving…';
+    try {
+      const res = await fetch('/api/tools/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ search: search.value, searxUrl: searx.value.trim(), off }) });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+      note.textContent = 'Saved.';
+    } catch (err) { note.textContent = `Couldn’t save: ${err.message}`; }
+  }
+  list.addEventListener('change', save);
 })();
 (() => {
   // ---- knowledge ----

@@ -29,6 +29,7 @@
     {{with .Data.Chat}}<button type="button" class="btn subtle" id="delete-chat">Delete chat</button>{{end}}
 {{end}}
 {{define "sources"}}<details class="sources"><summary>{{len .}} passage{{if ne (len .) 1}}s{{end}} from the project's files</summary><ol>{{range .}}<li value="{{.N}}"><span class="src-file">{{.File}}{{with .Page}} · page {{.}}{{end}}{{with .Heading}} · {{.}}{{end}}</span><span class="src-text">{{.Text}}</span></li>{{end}}</ol></details>{{end}}
+{{define "tool"}}<details class="tool{{if .Error}} err{{end}}"><summary>{{.Label}}</summary><div class="tool-body"><div class="tool-k">{{.Name}}</div><pre class="tool-pre">{{pretty .Args}}</pre><div class="tool-k">Result</div><pre class="tool-pre">{{.Result}}</pre></div></details>{{end}}
 {{define "content"}}
 <div class="chat" id="chat" data-chat-id="{{with .Data.Chat}}{{.ID}}{{end}}" data-project="{{with .Data.Project}}{{.ID}}{{end}}" data-tune="{{json .Data.Tune}}" data-presets="{{json .Presets}}" data-loaded="{{json .LoadedNames}}">
 
@@ -48,6 +49,7 @@
             <div class="msg user"><div class="bubble">{{.Content}}</div></div>
             {{else}}
             <div class="msg assistant">
+              {{range .Calls}}{{if .Think}}<details class="thinking"><summary>Thinking</summary><div class="thinking-text">{{.Think}}</div></details>{{end}}{{if .Said}}<div class="md said">{{.Said}}</div>{{end}}{{template "tool" .}}{{end}}
               {{if .Thinking}}<details class="thinking"><summary>Thinking</summary><div class="thinking-text">{{.Thinking}}</div></details>{{end}}
               {{with .Spoken}}<div class="spoken">{{.}}</div>{{end}}
               <div class="md">{{.Content}}</div>

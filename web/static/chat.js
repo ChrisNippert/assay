@@ -325,6 +325,13 @@
     md.innerHTML = renderMarkdown(asJSON ? '```json\n' + src + '\n```' : src);
   }
 
+  // The reply's own text: text the model wrote between tool calls (.said)
+  // is part of the transcript, not of the answer.
+  function finalText(msg) {
+    const mds = [...msg.querySelectorAll(':scope > .md:not(.said)')];
+    return mds.at(-1)?.dataset.src ?? '';
+  }
+
   function addActions(msg) {
     const bar = el('div', 'msg-actions');
     if (msg.classList.contains('user')) bar.append(actionBtn('copy', 'Copy'), actionBtn('edit', 'Edit and resend'));
@@ -401,7 +408,7 @@
     if (action === 'copy') {
       const src = msg.classList.contains('user')
         ? msg.querySelector('.bubble').textContent
-        : msg.querySelector('.md')?.dataset.src ?? '';
+        : finalText(msg);
       try {
         await copyText(src);
         btn.innerHTML = btn.innerHTML.replace(/<svg([^>]*)>.*<\/svg>/s, `<svg$1>${ICONS.check}</svg>`);
@@ -409,7 +416,7 @@
       } catch { btn.title = 'Couldn’t copy'; }
       return;
     }
-    if (action === 'speak') { window.ollamuiVoice?.read(msg.querySelector('.md')?.dataset.src ?? ''); return; }
+    if (action === 'speak') { window.ollamuiVoice?.read(finalText(msg)); return; }
     if (controller || !chatId) return; // busy streaming, or nothing saved yet
     if (action === 'edit') startEdit(msg);
     if (action === 'redo') regenerate(msg);
@@ -640,6 +647,31 @@
     }
   });
 
+  // A tool call as a foldable row, like thinking: a one-line summary that
+  // opens to the arguments and the result. Rendered the same way by the
+  // server for saved chats (templates/chat.html).
+  const PENDING = {
+    web_search: 'Searching the web…', fetch_url: 'Reading a page…', calculator: 'Calculating…',
+    search_chats: 'Searching your chats…', search_project: 'Searching the project’s files…', current_time: 'Checking the time…',
+  };
+  function prettyJSON(s) {
+    try { return JSON.stringify(JSON.parse(s), null, 2); } catch { return s; }
+  }
+  function toolRow(call) {
+    const box = el('details', 'tool pending');
+    box.append(el('summary', null, call.label || PENDING[call.name] || `Running ${call.name}…`));
+    const body = el('div', 'tool-body');
+    body.append(el('div', 'tool-k', call.name), el('pre', 'tool-pre', prettyJSON(call.args)));
+    box.append(body);
+    return box;
+  }
+  function fillTool(box, call) {
+    box.classList.remove('pending');
+    box.classList.toggle('err', !!call.error);
+    box.querySelector('summary').textContent = call.label;
+    box.querySelector('.tool-body').append(el('div', 'tool-k', 'Result'), el('pre', 'tool-pre', call.result));
+  }
+
   // The excerpts a reply was given, folded under it like the server renders them.
   function sourcesBox(sources) {
     const box = el('details', 'sources');
@@ -677,14 +709,20 @@
     addActions(userMsg);
     list.append(userMsg);
     const reply = el('div', 'msg assistant');
-    const thinkBox = el('details', 'thinking');
-    thinkBox.hidden = true;
-    thinkBox.append(el('summary', null, 'Thinking…'));
-    const thinkText = el('div', 'thinking-text');
-    thinkBox.append(thinkText);
+    // The reply is a run of segments (thinking, text), with a row for each
+    // tool call between them; these are the current segment's elements.
+    let thinkBox, thinkText, md;
+    const newSegment = () => {
+      thinkBox = el('details', 'thinking');
+      thinkBox.hidden = true;
+      thinkBox.append(el('summary', null, 'Thinking…'));
+      thinkText = el('div', 'thinking-text');
+      thinkBox.append(thinkText);
+      md = el('div', 'md');
+    };
+    newSegment();
     const spoken = el('div', 'spoken');
     spoken.hidden = true;
-    const md = el('div', 'md');
     const stats = el('div', 'stats', 'Waiting for model…');
     stats.setAttribute('role', 'button');
     stats.tabIndex = 0;
@@ -697,6 +735,7 @@
     controller = new AbortController();
     let content = '';
     let thinking = '';
+    const running = new Map(); // tool call id -> its row, until the result is in
 
     try {
       const res = await fetch('/api/chat', {
@@ -722,6 +761,27 @@
           case 'sources':
             reply.insertBefore(sourcesBox(ev.sources), stats);
             break;
+          case 'tool': {
+            // End this segment: keep what was written as part of the transcript.
+            if (thinking) thinkBox.querySelector('summary').textContent = 'Thinking';
+            if (thinking && !content) thinkBox.open = false;
+            if (content) { md.classList.add('said'); thinkBox.open = false; } else md.remove();
+            if (!thinking) thinkBox.remove();
+            const row = toolRow(ev.call);
+            running.set(ev.call.id, row);
+            stats.before(row);
+            content = thinking = '';
+            newSegment();
+            stats.before(thinkBox, md);
+            stats.textContent = '';
+            break;
+          }
+          case 'toolresult': {
+            const row = running.get(ev.call.id);
+            if (row) { fillTool(row, ev.call); running.delete(ev.call.id); }
+            stats.textContent = 'Waiting for model…';
+            break;
+          }
           case 'thinking':
             if (!thinking) { thinkBox.hidden = false; thinkBox.open = true; stats.textContent = ''; }
             thinking += ev.text;
@@ -758,6 +818,11 @@
       }
     } finally {
       if (thinking) thinkBox.querySelector('summary').textContent = 'Thinking';
+      for (const row of running.values()) { // stopped mid-call
+        row.classList.remove('pending');
+        row.querySelector('summary').textContent = 'Stopped before the call finished';
+      }
+      if (!content && !thinking && reply.querySelector('.tool')) md.remove(); // nothing after the last call
       controller = null;
       sendBtn.textContent = 'Send';
       voice.end?.();

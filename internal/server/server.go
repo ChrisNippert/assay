@@ -490,6 +490,15 @@ var templateFuncs = template.FuncMap{
 		return string(b), err
 	},
 	"deref": func(b *bool) bool { return b != nil && *b },
+	// pretty indents a JSON string (tool arguments); anything else stays as is.
+	"pretty": func(s string) string {
+		var v any
+		if json.Unmarshal([]byte(s), &v) != nil {
+			return s
+		}
+		b, _ := json.MarshalIndent(v, "", "  ")
+		return string(b)
+	},
 	"lower": func(s string) string {
 		if s == "" {
 			return s
