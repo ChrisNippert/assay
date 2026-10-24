@@ -29,7 +29,11 @@
   let presets = JSON.parse(chatEl.dataset.presets || 'null') || [];
   const initial = JSON.parse(chatEl.dataset.tune || '{}');
   // This chat's own changes. Anything not in here is inherited.
-  const state = { options: { ...(initial.options || {}) }, system: initial.system || '', think: initial.think ?? null };
+  const state = { options: { ...(initial.options || {}) }, system: initial.system || '', think: initial.think ?? null, compress: initial.compress ?? null };
+  // The chat's summary of its oldest messages (see server compress.go), and
+  // how many messages it has on the page.
+  const chatState = { compression: initial.compression || null, messages: initial.messages || 0 };
+  const KEEP_LATEST = 4; // messages a summary never covers
   let defaults = { options: {}, system: '', contextLength: 0, thinking: false };
   // The model's saved settings (llama.cpp only).
   let saved = {};
@@ -231,6 +235,7 @@
   }
   function resetRow(def) {
     if (def.kind === 'think') { state.think = null; return render(); }
+    if (def.kind === 'compress') { state.compress = null; return render(); }
     // A chat's own value over a saved one goes first.
     if (savedHere(def) && def.key in state.options) { delete state.options[def.key]; return render(); }
     setOption(def, null);
@@ -322,6 +327,77 @@
   CHAT.forEach((d) => buildRow(d, $('tune-chat')));
   const sampling = buildExpander('tune-sampling', 'Advanced', SAMPLING, $('tune-sampling-box'));
   MODEL.forEach((d) => buildRow(d, $('tune-model')));
+
+  // ---- automatic compression ----
+  // "Compress automatically" is the chat's own choice, else its preset's, else
+  // the default in Settings. Below it, the summary of the chat's oldest
+  // messages, with buttons to make one now or to undo it. Both reload the page.
+  {
+    const def = { key: 'compress', label: 'Compress automatically', kind: 'compress', help: 'Summarize the oldest messages when a chat nears the context length' };
+    const { row, sub, ctrl, reset } = rowShell(def);
+    const sel = el('select', 'combo');
+    sel.id = 'tp-compress';
+    sel.append(new Option('Default', ''), new Option('On', 'on'), new Option('Off', 'off'));
+    sel.addEventListener('change', () => { state.compress = sel.value === '' ? null : sel.value === 'on'; render(); });
+    ctrl.append(sel);
+    row.title = def.help;
+    reset.addEventListener('click', () => resetRow(def));
+    rows.push({ def, row, sub, reset, select: sel });
+    $('tune-chat').append(row);
+  }
+  const sumRow = el('div', 'row');
+  const sumText = el('div', 'row-text');
+  const sumSub = el('div', 'row-sub');
+  sumText.append(el('div', 'row-title', 'Earlier messages'), sumSub);
+  const sumCtrl = el('div', 'row-ctrl');
+  const nowBtn = el('button', 'btn', 'Compress now');
+  nowBtn.type = 'button';
+  nowBtn.id = 'tune-compress-now';
+  const undoBtn = el('button', 'btn subtle', 'Undo');
+  undoBtn.type = 'button';
+  undoBtn.id = 'tune-compress-undo';
+  sumCtrl.append(nowBtn, undoBtn);
+  sumRow.append(sumText, sumCtrl);
+  $('tune-chat').append(sumRow);
+
+  function renderCompress(r) {
+    const p = currentPreset();
+    r.select.options[0].text = p?.compress != null ? `Preset (${p.compress ? 'on' : 'off'})` : 'Default';
+    r.select.value = state.compress === null ? '' : state.compress ? 'on' : 'off';
+    r.sub.textContent = 'Summarizes the oldest messages when a chat nears the context length';
+    return state.compress !== null;
+  }
+
+  function renderSummary() {
+    const { compression: c, messages: n } = chatState;
+    const canMake = !!chatEl.dataset.chatId && n > KEEP_LATEST && (!c || n - KEEP_LATEST > c.upTo);
+    const saved = c?.saved ? ` · saves about ${c.saved >= 1000 ? (c.saved / 1000).toFixed(1) + 'k' : c.saved} tokens` : '';
+    sumSub.textContent = c ? `${c.upTo} messages summarized${saved}`
+      : n > KEEP_LATEST ? `Nothing summarized. The last ${KEEP_LATEST} messages are always sent as they are`
+        : 'Nothing to summarize yet';
+    nowBtn.disabled = !canMake;
+    undoBtn.hidden = !c;
+  }
+
+  async function chatAction(btn, busyText, url, init) {
+    errorEl.textContent = '';
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = busyText;
+    try {
+      const res = await fetch(url, init);
+      if (!res.ok) throw new Error(await errorText(res));
+      location.reload();
+    } catch (err) {
+      errorEl.textContent = err.message;
+      btn.textContent = label;
+      btn.disabled = false;
+    }
+  }
+  nowBtn.addEventListener('click', () => chatAction(nowBtn, 'Summarizing…',
+    `/api/chats/${encodeURIComponent(chatEl.dataset.chatId)}/compress`, { method: 'POST' }));
+  undoBtn.addEventListener('click', () => chatAction(undoBtn, 'Undoing…',
+    `/api/chats/${encodeURIComponent(chatEl.dataset.chatId)}/compression`, { method: 'DELETE' }));
 
   // ---- LoRA adapters ----
   // The installed adapters for this model's architecture: each on or off,
@@ -473,7 +549,7 @@
 
   // ---- rendering ----
   function changedCount() {
-    return Object.keys(state.options).length + (state.system ? 1 : 0) + (state.think !== null ? 1 : 0);
+    return Object.keys(state.options).length + (state.system ? 1 : 0) + (state.think !== null ? 1 : 0) + (state.compress !== null ? 1 : 0);
   }
 
   function describe(inh) {
@@ -661,7 +737,7 @@
     for (const r of rows) {
       r.row.hidden = (!!r.def.engine && !perModel()) || (r.def.when && !r.def.when());
       const k = r.def.kind;
-      const changed = k === 'format' ? renderFormat(r) : k === 'combo' ? renderCombo(r) : k === 'think' ? renderThink(r) : k === 'choice' ? renderChoice(r) : renderNumber(r);
+      const changed = k === 'format' ? renderFormat(r) : k === 'combo' ? renderCombo(r) : k === 'think' ? renderThink(r) : k === 'compress' ? renderCompress(r) : k === 'choice' ? renderChoice(r) : renderNumber(r);
       r.row.classList.toggle('changed', changed);
       r.reset.hidden = !changed;
     }
@@ -689,6 +765,7 @@
     if (t != null) parts.push(`temp ${fmt(t)}`);
     const c = shown(MODEL[0]);
     if (c != null) parts.push(`${kib(c)} ctx`);
+    renderSummary();
     const n = changedCount();
     summary.textContent = ['Tune', ...parts, n ? `${n} changed` : ''].filter(Boolean).join(' · ');
     openBtn.classList.toggle('has-changes', n > 0);
@@ -766,6 +843,7 @@
       options: { ...(p?.options || {}), ...state.options },
       system: state.system || p?.system || '',
       think: state.think ?? p?.think ?? null,
+      compress: state.compress ?? p?.compress ?? null,
     };
   }
 
@@ -773,6 +851,7 @@
     state.options = {};
     state.system = '';
     state.think = null;
+    state.compress = null;
   }
 
   async function run(btn, fn) {
@@ -824,7 +903,12 @@
       return p ? { preset: p.name } : { model: select.value };
     },
     settings() {
-      return { options: state.options, system: state.system, think: state.think };
+      return { options: state.options, system: state.system, think: state.think, compress: state.compress };
+    },
+    // chat.js reports the chat's summary and how many messages it shows.
+    setChat(c) {
+      Object.assign(chatState, c);
+      render();
     },
     // The reply format in effect (the chat's, else the preset's), for display.
     replyFormat: () => shown(FORMAT) ?? 'text',

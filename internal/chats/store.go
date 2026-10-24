@@ -64,17 +64,64 @@ type Source struct {
 // Chat is a whole conversation. Options, System and Think are this chat's
 // own tweaks, applied on top of the preset (if any).
 type Chat struct {
-	ID       string         `json:"id"`
-	Title    string         `json:"title"`
-	Model    string         `json:"model"`
-	Preset   string         `json:"preset,omitempty"`
-	Project  string         `json:"project,omitempty"` // project ID, "" for none
-	Options  map[string]any `json:"options,omitempty"`
-	System   string         `json:"system,omitempty"`
-	Think    *bool          `json:"think,omitempty"`
-	Created  time.Time      `json:"created"`
-	Updated  time.Time      `json:"updated"`
-	Messages []Message      `json:"messages"`
+	ID      string         `json:"id"`
+	Title   string         `json:"title"`
+	Model   string         `json:"model"`
+	Preset  string         `json:"preset,omitempty"`
+	Project string         `json:"project,omitempty"` // project ID, "" for none
+	Options map[string]any `json:"options,omitempty"`
+	System  string         `json:"system,omitempty"`
+	Think   *bool          `json:"think,omitempty"`
+	// Compress is this chat's "Compress automatically" choice; nil follows
+	// the preset, then the default in Settings.
+	Compress *bool `json:"compress,omitempty"`
+	// Compression, if set, stands for the messages before its UpTo index
+	// when the chat is sent. The messages themselves stay in Messages.
+	Compression *Compression `json:"compression,omitempty"`
+	Created     time.Time    `json:"created"`
+	Updated     time.Time    `json:"updated"`
+	Messages    []Message    `json:"messages"`
+}
+
+// Compression is a summary of a chat's oldest messages, sent in their
+// place to keep the prompt within the context length.
+type Compression struct {
+	Text string `json:"text"`
+	// UpTo is the index of the first message not covered: Messages[:UpTo]
+	// are summarized.
+	UpTo int `json:"upTo"`
+	// Model wrote the summary.
+	Model string `json:"model,omitempty"`
+	// Saved is about how many tokens the summarized messages took, less the
+	// summary's own, as the page reports it.
+	Saved   int       `json:"saved,omitempty"`
+	Created time.Time `json:"created"`
+}
+
+// DropCompressionFrom removes the summary if message i (counting from 0)
+// is summarized or cut: an edit or regenerate from there changes what the
+// summary stands for. It reports whether it removed one.
+func (c *Chat) DropCompressionFrom(i int) bool {
+	if c.Compression == nil || i >= c.Compression.UpTo {
+		return false
+	}
+	c.Compression = nil
+	return true
+}
+
+// UserIndex returns the index in Messages of the n-th user message (from
+// 0), or -1.
+func (c *Chat) UserIndex(n int) int {
+	for i, m := range c.Messages {
+		if m.Role != "user" {
+			continue
+		}
+		if n == 0 {
+			return i
+		}
+		n--
+	}
+	return -1
 }
 
 // TruncateAtUser drops the n-th user message (from 0) and everything after

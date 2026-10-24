@@ -29,6 +29,8 @@ type settingsData struct {
 	Engine    *enginePage // nil with Ollama
 	Voice     voicePage
 	Knowledge knowledgePage
+	// CompressAuto is the default for chats' "Compress automatically".
+	CompressAuto bool
 }
 
 // enginePage is the Models section with llama.cpp.
@@ -154,7 +156,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	p := s.basePage(r.Context(), "settings", "Settings")
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
-	d := settingsData{Memory: s.memory}
+	d := settingsData{Memory: s.memory, CompressAuto: s.chatSt.Get().CompressAuto}
 	d.Version, _ = s.ollama.Version(ctx)
 	if e, ok := s.ollama.(engineInfo); ok {
 		d.Engine = s.enginePage(ctx, e)

@@ -31,9 +31,14 @@ type chatPageData struct {
 
 // tuneState is this chat's own tweaks, handed to the Tune panel.
 type tuneState struct {
-	Options map[string]any `json:"options"`
-	System  string         `json:"system"`
-	Think   *bool          `json:"think"`
+	Options  map[string]any `json:"options"`
+	System   string         `json:"system"`
+	Think    *bool          `json:"think"`
+	Compress *bool          `json:"compress"`
+	// Compression is the chat's summary, if it has one; Messages counts the
+	// chat's messages.
+	Compression *chats.Compression `json:"compression"`
+	Messages    int                `json:"messages"`
 }
 
 func (s *Server) handleChatPage(w http.ResponseWriter, r *http.Request) {
@@ -53,7 +58,7 @@ func (s *Server) handleChatPage(w http.ResponseWriter, r *http.Request) {
 		data.Chat = c
 		data.Model = c.Model
 		data.Preset = c.Preset
-		data.Tune = tuneState{Options: c.Options, System: c.System, Think: c.Think}
+		data.Tune = tuneState{Options: c.Options, System: c.System, Think: c.Think, Compress: c.Compress, Compression: c.Compression, Messages: len(c.Messages)}
 		p.ChatID = c.ID
 		p.Title = c.Title
 	}
@@ -211,6 +216,9 @@ type sendRequest struct {
 	Options map[string]any `json:"options"`
 	System  string         `json:"system"`
 	Think   *bool          `json:"think"`
+	// Compress is the chat's "Compress automatically" choice; nil keeps the
+	// chat's own, else its preset's, else the default in Settings.
+	Compress *bool `json:"compress"`
 	// FromUser, when set, drops that user message (counting user messages
 	// from 0) and everything after it before sending: edit and regenerate.
 	FromUser *int `json:"fromUser"`
@@ -227,12 +235,14 @@ type sendRequest struct {
 
 // event is one line of the NDJSON stream sent back to the browser.
 type event struct {
-	Type    string         `json:"type"` // chat, sources, thinking, content, say, done, error
+	Type    string         `json:"type"` // chat, sources, thinking, content, say, status, compressed, uncompressed, done, error
 	ID      string         `json:"id,omitempty"`
 	Text    string         `json:"text,omitempty"`
 	Stats   *chats.Stats   `json:"stats,omitempty"`
 	Message string         `json:"message,omitempty"`
 	Sources []chats.Source `json:"sources,omitempty"`
+	// Compression is the summary a "compressed" event made.
+	Compression *chats.Compression `json:"compression,omitempty"`
 }
 
 func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
@@ -255,6 +265,7 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 	if len(t.sources) > 0 && emit(event{Type: "sources", Sources: t.sources}) != nil {
 		return
 	}
+	s.compressTurn(r.Context(), t, emit)
 	var content, thinking strings.Builder
 	var stats *chats.Stats
 	err := s.ollama.Chat(r.Context(), t.req, func(resp ollama.ChatResponse) error {
@@ -308,6 +319,12 @@ type turn struct {
 	fitted int
 	// ctxSaved: the model's own settings set its context, so it isn't auto.
 	ctxSaved bool
+	// system is the system prompt without a compression summary (see buildMessages).
+	system string
+	// compress: the chat compresses automatically (see compressOn).
+	compress bool
+	// dropped: an edit cut the summary away before this send.
+	dropped bool
 }
 
 // stats turns Ollama's final chunk into the stats saved with the reply.
@@ -377,15 +394,20 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 			}
 		}
 	}
+	var dropped bool
 	if req.FromUser != nil {
+		at := c.UserIndex(*req.FromUser)
 		if !c.TruncateAtUser(*req.FromUser) {
 			writeError(w, http.StatusBadRequest, "no such message")
 			return nil, false
 		}
+		// A summary of messages the edit cut (or of any before them) no
+		// longer stands for this chat.
+		dropped = c.DropCompressionFrom(at)
 		s.forgetChat(c.ID) // a saved cache may hold the messages just cut
 	}
 	c.Model = req.Model // switching models mid-chat is allowed
-	c.Preset, c.Options, c.System, c.Think = req.Preset, overrides, req.System, req.Think
+	c.Preset, c.Options, c.System, c.Think, c.Compress = req.Preset, overrides, req.System, req.Think, req.Compress
 	c.Messages = append(c.Messages, chats.Message{Role: "user", Content: req.Content, Created: time.Now()})
 	if err := s.chats.Save(c); err != nil {
 		s.log.Error("save chat", "err", err)
@@ -412,10 +434,8 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 	if req.Spoken || req.Voice && s.voiceSt.Get().Prose {
 		system = strings.TrimSpace(system + "\n\n" + voiceSystem)
 	}
-	msgs := toOllama(c.Messages)
-	if system != "" {
-		msgs = append([]ollama.Message{{Role: "system", Content: system}}, msgs...)
-	}
+	t.system, t.dropped, t.compress = system, dropped, s.compressOn(c, preset)
+	msgs := buildMessages(system, c.Compression, c.Messages)
 	// Without a context length from the chat or preset, Ollama would use its
 	// small default (4k on most GPUs), which thinking models fill quickly.
 	// Pick the largest that fits on the GPU instead.

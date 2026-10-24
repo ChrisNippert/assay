@@ -722,6 +722,15 @@
           case 'sources':
             reply.insertBefore(sourcesBox(ev.sources), stats);
             break;
+          case 'status':
+            stats.textContent = ev.text || '';
+            break;
+          case 'compressed':
+            placeCompression(ev.compression);
+            break;
+          case 'uncompressed':
+            placeCompression(null);
+            break;
           case 'thinking':
             if (!thinking) { thinkBox.hidden = false; thinkBox.open = true; stats.textContent = ''; }
             thinking += ev.text;
@@ -764,7 +773,30 @@
       addActions(reply);
       input.focus();
       refreshLoaded(); // chatting loads the model, so the memory list may have changed
+      window.ollamuiTune?.setChat({ messages: list.querySelectorAll(':scope > .msg').length });
     }
+  }
+
+  // The divider for a chat's summary sits before the message it stands
+  // above: message number upTo. Only one is shown; null removes it.
+  function placeCompression(c) {
+    for (const d of list.querySelectorAll('.compress-divider')) d.remove();
+    if (c) {
+      const div = compressDivider(c);
+      const msgs = list.querySelectorAll(':scope > .msg');
+      if (msgs[c.upTo]) msgs[c.upTo].before(div);
+      else list.append(div);
+    }
+    window.ollamuiTune?.setChat({ compression: c || null });
+  }
+
+  function compressDivider(c) {
+    const box = el('details', 'compress-divider');
+    const n = c.saved >= 1000 ? (c.saved / 1000).toFixed(1) + 'k' : String(c.saved || 0);
+    const saved = c.saved ? `, saved ~${n} tokens` : '';
+    box.append(el('summary', null, `Earlier messages summarized · ${c.upTo} messages${saved}`));
+    box.append(el('div', 'compress-text', c.text));
+    return box;
   }
 
   // voice.js works with the chat through this.

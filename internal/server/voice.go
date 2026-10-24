@@ -250,6 +250,7 @@ func (s *Server) voiceTurn(w http.ResponseWriter, r *http.Request, t *turn, talk
 	if len(t.sources) > 0 && emit(event{Type: "sources", Sources: t.sources}) != nil {
 		return
 	}
+	s.compressTurn(r.Context(), t, emit)
 	ctx := r.Context()
 	if talkerName == "" {
 		talkerName = s.voiceSt.Get().Talker

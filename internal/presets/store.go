@@ -27,10 +27,13 @@ const Namespace = "ollamui/"
 
 // Preset is a base model plus settings.
 type Preset struct {
-	Name      string         `toml:"-" json:"name"`
-	Base      string         `toml:"base" json:"base"`
-	System    string         `toml:"system,omitempty" json:"system,omitempty"`
-	Think     *bool          `toml:"think,omitempty" json:"think,omitempty"`
+	Name   string `toml:"-" json:"name"`
+	Base   string `toml:"base" json:"base"`
+	System string `toml:"system,omitempty" json:"system,omitempty"`
+	Think  *bool  `toml:"think,omitempty" json:"think,omitempty"`
+	// Compress is "Compress automatically" for chats with this preset; nil
+	// follows the default in Settings.
+	Compress  *bool          `toml:"compress,omitempty" json:"compress,omitempty"`
 	Published bool           `toml:"published" json:"published"`
 	Options   map[string]any `toml:"options,omitempty" json:"options,omitempty"`
 }

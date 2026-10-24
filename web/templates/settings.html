@@ -116,6 +116,15 @@
   </style>
   {{end}}
 
+  <h2 class="group-title" id="chats">Chats</h2>
+  <div class="boxed-list" id="ch-list">
+    <div class="row">
+      <div class="row-text"><span class="row-title">Compress long chats</span><span class="row-sub">When a chat nears the context length, the model summarizes its oldest messages so the chat can go on. The full history stays on the page. A chat or preset can choose otherwise in Tune.</span></div>
+      <div class="row-ctrl"><select id="ch-compress" aria-label="Compress long chats"><option value="on"{{if .Data.CompressAuto}} selected{{end}}>On</option><option value="off"{{if not .Data.CompressAuto}} selected{{end}}>Off</option></select></div>
+    </div>
+  </div>
+  <p class="small muted" id="ch-note" role="status"></p>
+
   {{with .Data.Voice}}
   <h2 class="group-title" id="voice">Voice</h2>
   {{if .Status.Available}}<p class="muted small">Used by the mic button in chat. The speech service is running{{if .Status.Managed}}; ollamui stops it after 10 minutes without voice use{{end}}. Changes save right away.</p>
@@ -355,6 +364,18 @@
       audio.onended = () => { btn.disabled = false; };
       await audio.play();
     } catch (err) { status.textContent = `Couldn’t preview: ${err.message}`; btn.disabled = false; }
+  });
+})();
+(() => {
+  // ---- chats ----
+  const sel = document.getElementById('ch-compress'), note = document.getElementById('ch-note');
+  sel.addEventListener('change', async () => {
+    note.textContent = 'Saving…';
+    try {
+      const res = await fetch('/api/chats/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ compressAuto: sel.value === 'on' }) });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+      note.textContent = 'Saved. Chats without their own choice follow it.';
+    } catch (err) { note.textContent = `Couldn’t save: ${err.message}`; }
   });
 })();
 (() => {

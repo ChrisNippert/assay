@@ -66,11 +66,14 @@ type fitter interface{ CacheType() string }
 
 // Options configures a Server.
 type Options struct {
-	Ollama  backend
-	Chats   *chats.Store
-	Presets *presets.Store
-	HF      *hf.Client
-	Pulls   *pulls.Manager
+	Ollama backend
+	Chats  *chats.Store
+	// ChatSettings holds the chat preferences (automatic compression); nil
+	// keeps them in memory.
+	ChatSettings *chats.SettingsStore
+	Presets      *presets.Store
+	HF           *hf.Client
+	Pulls        *pulls.Manager
 	// LlamaCpp installs llama.cpp releases (Settings); nil turns that off.
 	LlamaCpp *llamacpp.Manager
 	// Scores is optional; without it nothing is rated.
@@ -98,6 +101,7 @@ type Options struct {
 type Server struct {
 	ollama  backend
 	chats   *chats.Store
+	chatSt  *chats.SettingsStore
 	presets *presets.Store
 	hf      *hf.Client
 	pulls   *pulls.Manager
@@ -134,7 +138,7 @@ type Server struct {
 // New builds the server and its routes.
 func New(opts Options) (*Server, error) {
 	s := &Server{
-		ollama: opts.Ollama, chats: opts.Chats, presets: opts.Presets,
+		ollama: opts.Ollama, chats: opts.Chats, chatSt: opts.ChatSettings, presets: opts.Presets,
 		hf: opts.HF, pulls: opts.Pulls, llama: opts.LlamaCpp, scores: opts.Scores, bench: opts.Bench, projects: opts.Projects, ragSt: opts.RAGSettings, indexQueue: make(chan indexJob, 256), voice: opts.Voice, voiceSt: opts.VoiceSettings, speech: opts.VoiceLauncher, memory: opts.Memory, log: opts.Logger,
 		vramUsed: hw.VRAMUsed,
 	}
@@ -155,6 +159,9 @@ func New(opts Options) (*Server, error) {
 	}
 	if s.voiceSt == nil {
 		s.voiceSt, _ = voice.OpenSettings("") // in memory
+	}
+	if s.chatSt == nil {
+		s.chatSt, _ = chats.OpenSettings("") // in memory
 	}
 	if s.log == nil {
 		s.log = slog.Default()
@@ -220,6 +227,10 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("POST /api/chat", s.handleChatSend)
 	mux.HandleFunc("DELETE /api/chats/{id}", s.handleDeleteChat)
 	mux.HandleFunc("PATCH /api/chats/{id}", s.handleRenameChat)
+	mux.HandleFunc("POST /api/chats/{id}/compress", s.handleCompress)
+	mux.HandleFunc("DELETE /api/chats/{id}/compression", s.handleUncompress)
+	mux.HandleFunc("GET /api/chats/settings", s.handleChatSettings)
+	mux.HandleFunc("PUT /api/chats/settings", s.handleChatSettings)
 	mux.HandleFunc("GET /api/voice", s.handleVoiceStatus)
 	mux.HandleFunc("POST /api/voice/transcribe", s.handleTranscribe)
 	mux.HandleFunc("POST /api/voice/speak", s.handleSpeak)

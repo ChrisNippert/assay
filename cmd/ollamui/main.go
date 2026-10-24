@@ -118,6 +118,10 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("knowledge settings: %w", err)
 	}
+	chatSettings, err := chats.OpenSettings(filepath.Join(*configDir, "chats.json"))
+	if err != nil {
+		return fmt.Errorf("chat settings: %w", err)
+	}
 	// The engine: llama.cpp runs the models ollamui keeps; Ollama's models
 	// are imported by hard link, so nothing is downloaded twice.
 	hfClient := hf.New(hf.DefaultBaseURL, os.Getenv("HF_TOKEN"))
@@ -157,6 +161,7 @@ func run() error {
 	srv, err := server.New(server.Options{
 		Ollama:        eng,
 		Chats:         store,
+		ChatSettings:  chatSettings,
 		Presets:       presetStore,
 		Projects:      projectStore,
 		RAGSettings:   ragSettings,

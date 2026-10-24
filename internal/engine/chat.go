@@ -284,3 +284,36 @@ func serverError(res *http.Response) error {
 	}
 	return &ollama.APIError{StatusCode: res.StatusCode, Message: msg}
 }
+
+// Tokenize counts the tokens text is for a model, with llama-server's own
+// tokenizer (no chat template). The model loads with options first if it
+// isn't loaded, as a chat request would. It also returns the context length
+// the server runs with.
+func (e *Engine) Tokenize(ctx context.Context, model string, options map[string]any, text string) (int, int, error) {
+	p, _, err := e.ensure(ctx, model, options)
+	if err != nil {
+		return 0, 0, err
+	}
+	p.touch(0, e.opt.KeepAlive)
+	b, _ := json.Marshal(map[string]string{"content": text})
+	hreq, _ := http.NewRequestWithContext(ctx, http.MethodPost, p.base+"/tokenize", bytes.NewReader(b))
+	hreq.Header.Set("Content-Type", "application/json")
+	res, err := e.http.Do(hreq)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return 0, 0, serverError(res)
+	}
+	var out struct {
+		Tokens []int `json:"tokens"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		return 0, 0, err
+	}
+	p.mu.Lock()
+	n := p.ctx
+	p.mu.Unlock()
+	return len(out.Tokens), n, nil
+}
