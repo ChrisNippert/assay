@@ -26,7 +26,7 @@ func fakeProc(t *testing.T, h http.HandlerFunc, settings map[string]any) (*Engin
 	t.Cleanup(ts.Close)
 	e := New(store, Options{})
 	m, _ = store.Get(m.Name)
-	p := &proc{model: m, opts: loadOptsFrom(m.options(nil)), base: ts.URL, done: make(chan struct{})}
+	p := &proc{model: m, opts: planSpeed(m, loadOptsFrom(m.options(nil))), base: ts.URL, done: make(chan struct{})}
 	e.procs[m.Name] = p
 	return e, p
 }

@@ -45,6 +45,9 @@ type Candidate struct {
 	Projector    string    `json:"-"`
 	ProjectorAt  string    `json:"-"` // the projector as found
 	ProjectorSHA string    `json:"-"`
+	MTP          string    `json:"-"` // the multi-token-prediction head, likewise
+	MTPAt        string    `json:"-"`
+	MTPSHA       string    `json:"-"`
 	Size         int64     `json:"size"`
 	Modified     time.Time `json:"modified"`
 	// Adapter is set for a LoRA adapter, which is offered as one rather
@@ -266,6 +269,17 @@ func projectorOf(files []gfile) *gfile {
 	return nil
 }
 
+// mtpOf finds the multi-token-prediction head among a repo's files.
+func mtpOf(files []gfile) *gfile {
+	want := hf.MTP(hfFiles(files))
+	for i := range files {
+		if want != "" && files[i].rel == want {
+			return &files[i]
+		}
+	}
+	return nil
+}
+
 func hfFiles(files []gfile) []hf.File {
 	out := make([]hf.File, len(files))
 	for i, f := range files {
@@ -275,7 +289,7 @@ func hfFiles(files []gfile) []hf.File {
 }
 
 // makeCandidate builds a candidate from a model's files (already ordered).
-func makeCandidate(name, repo, quant string, files []gfile, proj *gfile) Candidate {
+func makeCandidate(name, repo, quant string, files []gfile, proj, mtp *gfile) Candidate {
 	c := Candidate{Name: name, Repo: repo, Quant: quant}
 	for _, f := range files {
 		c.Files = append(c.Files, f.abs)
@@ -291,6 +305,10 @@ func makeCandidate(name, repo, quant string, files []gfile, proj *gfile) Candida
 		c.Projector, c.ProjectorAt, c.ProjectorSHA = proj.abs, proj.path, proj.sha
 		c.Size += proj.size
 	}
+	if mtp != nil {
+		c.MTP, c.MTPAt, c.MTPSHA = mtp.abs, mtp.path, mtp.sha
+		c.Size += mtp.size
+	}
 	return c
 }
 
@@ -302,7 +320,7 @@ func repoCandidates(repo string, files []gfile) []Candidate {
 		byRel[f.rel] = f
 	}
 	quants, _ := hf.Quants(repo, hfFiles(files))
-	proj := projectorOf(files)
+	proj, mtp := projectorOf(files), mtpOf(files)
 	var out []Candidate
 	for _, q := range quants {
 		if q.Draft {
@@ -313,7 +331,7 @@ func repoCandidates(repo string, files []gfile) []Candidate {
 			fs = append(fs, byRel[p])
 		}
 		if completeSplit(fs) {
-			out = append(out, makeCandidate(hf.OllamaName(repo, q.Name), repo, q.Name, fs, proj))
+			out = append(out, makeCandidate(hf.OllamaName(repo, q.Name), repo, q.Name, fs, proj, mtp))
 		}
 	}
 	return out
@@ -357,7 +375,7 @@ func looseCandidates(files []gfile, name func(base, quant string) string) []Cand
 				base = base[:len(base)-n]
 			}
 		}
-		out = append(out, makeCandidate(name(base, quant), "", quant, fs, projectorOf(byDir[k.dir])))
+		out = append(out, makeCandidate(name(base, quant), "", quant, fs, projectorOf(byDir[k.dir]), nil))
 	}
 	return out
 }
@@ -772,10 +790,7 @@ func FindCandidate(sources []Source, id, dir, name string) (Candidate, bool) {
 func (s *Store) fileInfos() []os.FileInfo {
 	var out []os.FileInfo
 	for _, m := range s.everything() {
-		for _, f := range append(append([]string(nil), m.Files...), m.Projector) {
-			if f == "" {
-				continue
-			}
+		for _, f := range m.AllFiles() {
 			if info, err := os.Stat(s.Blob(f)); err == nil {
 				out = append(out, info)
 			}
@@ -866,6 +881,13 @@ func (s *Store) ImportFound(source string, cs []Candidate) (int, error) {
 				m.Projector = c.ProjectorAt
 			}
 		}
+		if c.MTP != "" {
+			if name, _, err := s.linkFile(c.MTP, c.MTPSHA, "", ""); err == nil {
+				m.MTP = name
+			} else {
+				m.MTP = c.MTPAt
+			}
+		}
 		m.Digest = c.SHAs[0]
 		if m.Digest == "" {
 			m.Digest = pathHash(c.Files[0])
@@ -930,10 +952,7 @@ func linkKind(p string) string {
 // whose target the other app has since removed.
 func (s *Store) Missing(m *Model) []string {
 	var out []string
-	for _, f := range append(append([]string(nil), m.Files...), m.Projector) {
-		if f == "" {
-			continue
-		}
+	for _, f := range m.AllFiles() {
 		if _, err := os.Stat(s.Blob(f)); err != nil {
 			out = append(out, f)
 		}

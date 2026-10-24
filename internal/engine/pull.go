@@ -60,12 +60,16 @@ func pickQuant(quants []hf.Quant, tag string) (hf.Quant, bool) {
 		return hf.Quant{}, false
 	}
 	for _, q := range quants {
-		if strings.EqualFold(q.Name, tag) {
+		if strings.EqualFold(q.Name, tag) || strings.EqualFold(QuantTag(q.Name), tag) {
 			return q, true
 		}
 	}
 	return hf.Quant{}, false
 }
+
+// QuantTag is a quant's name as it goes in a model name: a draft's
+// "DSpark Q8_0" becomes "DSpark-Q8_0".
+func QuantTag(quant string) string { return strings.ReplaceAll(quant, " ", "-") }
 
 var unsafeChars = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
@@ -106,7 +110,25 @@ func (e *Engine) Pull(ctx context.Context, name string, fn func(ollama.PullProgr
 		}
 		return "hf-" + unsafeChars.ReplaceAllString(repo+"-"+q.Name, "_") + "/" + path.Base(p)
 	}
-	m := &Model{Name: "hf.co/" + repo + ":" + q.Name, Repo: repo, Quant: q.Name, Source: "hf"}
+	m := &Model{Name: "hf.co/" + repo + ":" + QuantTag(q.Name), Repo: repo, Quant: q.Name, Source: "hf"}
+	// A draft can't chat. It's a file beside the quants of the model it was
+	// made for, or the whole repo is one (then the repo says what for).
+	var info *hf.Repo
+	if ir, ok := e.HF.(interface {
+		Info(context.Context, string) (*hf.Repo, error)
+	}); ok {
+		info, _ = ir.Info(ctx, repo)
+	}
+	switch {
+	case q.Draft:
+		m.Draft, m.DraftFor = q.Kind, repo
+		if info != nil && info.IsDraft() {
+			m.DraftFor = info.DraftFor()
+		}
+	case info != nil && info.IsDraft():
+		m.Draft, m.DraftFor = hf.DraftSlug(info.Arch()+" "+info.Name()), info.DraftFor()
+	}
+	isDraft := m.Draft != ""
 	type job struct{ src, dst string }
 	var jobs []job
 	for _, p := range q.Files {
@@ -114,9 +136,13 @@ func (e *Engine) Pull(ctx context.Context, name string, fn func(ollama.PullProgr
 		m.Files = append(m.Files, d)
 		jobs = append(jobs, job{p, d})
 	}
-	if pr := hf.Projector(files); vision && pr != "" && !q.Draft {
+	if pr := hf.Projector(files); vision && pr != "" && !isDraft {
 		m.Projector = dest(pr, false)
 		jobs = append(jobs, job{pr, m.Projector})
+	}
+	if mtp := hf.MTP(files); mtp != "" && !isDraft {
+		m.MTP = dest(mtp, false)
+		jobs = append(jobs, job{mtp, m.MTP})
 	}
 	for _, j := range jobs {
 		f := byPath[j.src]

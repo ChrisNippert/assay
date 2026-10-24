@@ -12,7 +12,7 @@
   {{with .Data.Error}}<div class="banner error" role="alert">{{.}}</div>{{end}}
 
   {{with .Data.Repo}}
-  {{if $.Data.Draft}}<div class="banner draft-banner" role="note"><strong>This is a draft model, not a model to chat with.</strong> It's a small helper for speculative decoding: it guesses the next few tokens so {{with $.Data.DraftFor}}<a href="/discover?open={{.}}">{{.}}</a>{{else}}the big model it was trained for{{end}} can confirm them in one step and write faster. ollamui can't download draft GGUFs yet; to speed a model up, pick a smaller model of the same family as its draft in Tune.</div>{{end}}
+  {{if $.Data.Draft}}<div class="banner draft-banner" role="note"><strong>This is a draft model, not a model to chat with.</strong> It's a small helper for speculative decoding: it guesses the next few tokens so {{with $.Data.DraftFor}}<a href="/discover?open={{.}}">{{.}}</a>{{else}}the big model it was trained for{{end}} can confirm them in one step and write faster.{{if $.Data.CanDraft}} Download one below and pick it as the draft of the model it was made for in Tune.{{else}} Downloading drafts needs the llama.cpp engine.{{end}}</div>{{end}}
   {{if $.Data.Generator}}<div class="banner draft-banner" role="note"><strong>This model makes {{join $.Data.Out " and "}}, which ollamui can't run.</strong> ollamui can't run image, video or audio generators yet: llama.cpp runs text models, plus image and some audio input through an mmproj file. The files are on <a href="https://huggingface.co/{{.ID}}" target="_blank" rel="noopener">Hugging Face ↗</a> for other tools.</div>{{else if $.Data.CantRun}}<div class="banner draft-banner" role="note"><strong>{{$.Data.CantRun}}.</strong> The files are on <a href="https://huggingface.co/{{.ID}}" target="_blank" rel="noopener">Hugging Face ↗</a> for other tools.</div>{{end}}
   <header class="model-head">
     <div class="model-title">
@@ -73,7 +73,7 @@
       {{with $.Data.Drafts}}
       {{if not $.Data.Draft}}
       <h3 class="draft-head">Draft models <span class="tag draft">speculative decoding</span></h3>
-      <p class="muted small">Small helpers that guess ahead so the full model writes faster. They can't chat on their own, and ollamui can't download draft GGUFs yet, so they aren't offered. A smaller model of the same family works as a draft instead (Tune → Draft model).</p>
+      <p class="muted small">Small helpers that guess ahead so the full model writes faster. They can't chat on their own; once downloaded they're offered as the draft of this model in Tune → Draft model{{if not $.Data.CanDraft}} (needs the llama.cpp engine to download){{end}}.</p>
       {{end}}
       <div class="quant-list">
         {{range .}}
@@ -81,11 +81,16 @@
           <span class="quant-name mono">{{.Name}}</span>
           <span class="quant-size">{{bytes .Size}}</span>
           <span class="tag draft" title="Not the actual model: a draft for speculative decoding">Draft, not the model</span>
-          <span class="quant-action"><a class="btn subtle" href="https://huggingface.co/{{$.Data.Repo.ID}}/blob/main/{{index .Files 0}}" target="_blank" rel="noopener">View file ↗</a></span>
+          <span class="quant-action">
+            {{if .Installed}}<span class="muted small">Installed</span>
+            {{else if $.Data.CanDraft}}<button type="button" class="btn" data-pull="{{.Tag}}" data-alias="">Download</button>
+            {{else}}<a class="btn subtle" href="https://huggingface.co/{{$.Data.Repo.ID}}/blob/main/{{index .Files 0}}" target="_blank" rel="noopener">View file ↗</a>{{end}}
+          </span>
         </div>
         {{end}}
       </div>
       {{end}}
+      {{if and $.Data.Quants $.Data.MTP}}<p class="muted small">Comes with an MTP head ({{bytes $.Data.MTP}}), downloaded with the quant: the model drafts for itself and writes faster.</p>{{end}}
       {{if $.Data.Quants}}<label class="alias-opt small"><input type="checkbox" id="add-alias" checked> Also give it a short name (e.g. <span class="mono">{{(index $.Data.Quants 0).Alias}}</span>) so it's easy to pick in Zed</label>{{end}}
     </section>
 

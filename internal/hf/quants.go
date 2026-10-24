@@ -17,6 +17,9 @@ type Quant struct {
 	// Draft marks a small draft model shipped next to the real one, for
 	// speculative decoding (DSpark, DFlash, EAGLE). It can't chat by itself.
 	Draft bool
+	// Kind is what sort of draft it is: "dspark", "dflash", "eagle3" or
+	// "draft" (a plain small model). Empty unless Draft.
+	Kind string
 }
 
 // Bits is a rough bits-per-weight class used for quality labels and sorting.
@@ -97,9 +100,59 @@ func draftKind(p string) string {
 	return "Draft"
 }
 
+// DraftSlug names the kind of draft a path holds in lowercase: "dspark",
+// "dflash", "eagle3", or "draft" for a plain small draft model.
+func DraftSlug(p string) string {
+	m := draftPattern.FindStringSubmatch(p)
+	if m == nil {
+		return "draft"
+	}
+	switch w := strings.ToLower(m[2]); {
+	case w == "dspark":
+		return "dspark"
+	case strings.HasPrefix(w, "dflash"):
+		return "dflash"
+	case strings.HasPrefix(w, "eagle"):
+		return "eagle3"
+	}
+	return "draft"
+}
+
+// IsMTPFile reports whether a repo path is a multi-token-prediction head:
+// "mtp-Model.gguf" or anything under "mtp/".
+func IsMTPFile(p string) bool {
+	lower := strings.ToLower(p)
+	return strings.HasSuffix(lower, ".gguf") && (strings.HasPrefix(strings.ToLower(path.Base(p)), "mtp-") || strings.HasPrefix(lower, "mtp/"))
+}
+
+// MTP picks the repo's multi-token-prediction head to go with its quants,
+// or "". Unsloth's Gemma 4 repos ship one (mtp-<model>.gguf) next to the
+// quants; llama.cpp loads it as the draft model with --spec-type draft-mtp.
+// With several, Q8_0, then F16, then BF16 are preferred, else the first.
+func MTP(files []File) string {
+	var all []string
+	for _, f := range files {
+		if f.Type == "file" && IsMTPFile(f.Path) {
+			all = append(all, f.Path)
+		}
+	}
+	sort.Strings(all)
+	for _, want := range []string{"q8_0", "f16", "bf16"} {
+		for _, p := range all {
+			if strings.Contains(strings.ToLower(path.Base(p)), want) && !(want == "f16" && strings.Contains(strings.ToLower(path.Base(p)), "bf16")) {
+				return p
+			}
+		}
+	}
+	if len(all) > 0 {
+		return all[0]
+	}
+	return ""
+}
+
 // Quants groups a repo's GGUF files into quants. It skips vision projector
-// (mmproj), imatrix and multi-token-prediction (MTP) files, and reports
-// whether a vision projector was present. Draft models for speculative
+// (mmproj), imatrix and multi-token-prediction (MTP) files (see MTP), and
+// reports whether a vision projector was present. Draft models for speculative
 // decoding come back as quants with Draft set, named by their file, so they
 // never pass for the real model's quant.
 func Quants(repo string, files []File) (quants []Quant, hasVision bool) {
@@ -114,8 +167,7 @@ func Quants(repo string, files []File) (quants []Quant, hasVision bool) {
 		case isProjector(lower):
 			hasVision = true
 			continue
-		case strings.Contains(lower, "imatrix"), strings.HasPrefix(lower, "mtp-"),
-			strings.HasPrefix(strings.ToLower(f.Path), "mtp/"):
+		case strings.Contains(lower, "imatrix"), IsMTPFile(f.Path):
 			continue
 		}
 		split := splitSuffix.MatchString(base)
@@ -139,6 +191,9 @@ func Quants(repo string, files []File) (quants []Quant, hasVision bool) {
 		q := byName[key]
 		if q == nil {
 			q = &Quant{Name: name, Draft: draft}
+			if draft {
+				q.Kind = DraftSlug(f.Path)
+			}
 			byName[key] = q
 		}
 		q.Files = append(q.Files, f.Path)

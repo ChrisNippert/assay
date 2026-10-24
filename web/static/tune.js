@@ -74,13 +74,26 @@
     { key: 'keep_alive', label: 'Keep loaded', kind: 'choice', scope: 'model', engine: true,
       help: 'After the last message',
       choices: [['5m', '5 minutes'], ['30m', '30 minutes'], ['1h', '1 hour'], ['4h', '4 hours'], ['-1', 'Until unloaded']] },
-    // The choices come from the server: installed models with the same vocabulary.
+    // What drafts for the model. Auto: its MTP head if it has one. Measured
+    // here, a small separate draft model was slower than none, so Auto
+    // leaves those to the Draft model row.
+    { key: 'speedup', label: 'Speed-up', kind: 'choice', scope: 'model', engine: true,
+      none: () => (defaults.speed?.mtp ? 'Auto (MTP head)' : 'Auto (none for this model)'),
+      help: 'Writes several words per step; the same words as without it',
+      dyn: () => [['off', 'Off'], ...(defaults.speed?.mtp ? [['mtp', 'MTP head only']] : [])] },
+    { key: 'spec_ngram', label: 'Guess from the conversation', kind: 'choice', scope: 'model', engine: true,
+      none: () => `Auto (${speedPlan().includes('n-gram guessing') ? 'on' : 'off'})`,
+      help: 'Speeds up code and edits by reusing what’s already in the chat; costs nothing',
+      choices: [['on', 'On'], ['off', 'Off']] },
+    // The choices come from the server: installed models with the same
+    // vocabulary, and downloaded drafts made for this model.
     { key: 'draft_model', label: 'Draft model', kind: 'choice', scope: 'model', engine: true, none: 'Off',
-      help: 'A small model of the same family guesses ahead; faster writing, a bit more memory',
-      dyn: () => (defaults.drafts || []).map((d) => [d.name, `${d.name.split('/').pop().replace('-GGUF', '').replace(':', ' ')} (${gb(d.size)})`]),
+      help: 'A separate small model guesses ahead; used instead of the MTP head',
+      dyn: () => (defaults.drafts || []).map((d) => [d.name, `${d.name.split('/').pop().replace('-GGUF', '').replace(':', ' ')} (${d.kind ? d.kind + ', ' : ''}${gb(d.size)})`]),
       empty: 'No installed model is a match for drafting' },
     { key: 'draft_max', label: 'Draft length', kind: 'spin', min: 1, max: 64, step: 1, int: true, scope: 'model',
-      placeholder: 'Auto', help: 'Words guessed ahead at a time', when: () => !!(state.options.draft_model ?? saved.draft_model) },
+      placeholder: 'Auto', help: 'Words guessed ahead at a time',
+      when: () => speedPlan().some((p) => p === 'MTP head' || p === 'draft model') },
   ];
   const MEMORY = [
     { key: 'cache_type', label: 'Context cache', kind: 'choice', scope: 'model', engine: true,
@@ -514,7 +527,7 @@
     const { own, inh, over } = layers(def);
     const choices = def.dyn ? def.dyn() : def.choices;
     const label = (v) => choices.find(([c]) => c === String(v))?.[1] ?? String(v);
-    const first = def.none || (inh.value != null ? `Default (${label(inh.value)})` : 'Default');
+    const first = (typeof def.none === 'function' ? def.none() : def.none) || (inh.value != null ? `Default (${label(inh.value)})` : 'Default');
     const opts = [['', first], ...choices];
     const val = over ? over.value : own;
     if (val != null && !opts.some(([c]) => c === String(val))) opts.push([String(val), String(val)]);
@@ -523,7 +536,66 @@
     sel.value = val != null ? String(val) : '';
     const help = def.empty && !choices.length && val == null ? def.empty : def.help;
     r.sub.textContent = val != null ? `${origin(def)} · ${help}` : help;
+    if (def.key === 'speedup') addMTPGet(r.sub);
     return over?.from === 'chat' || own != null;
+  }
+
+  // What the speed-up settings amount to, in words.
+  function speedPlan() {
+    const own = (k) => state.options[k] ?? saved[k];
+    const sp = own('speedup') || 'auto';
+    const draft = own('draft_model');
+    const out = [];
+    if (sp === 'mtp' || (sp === 'auto' && !draft)) { if (defaults.speed?.mtp) out.push('MTP head'); }
+    else if (sp === 'auto' && draft) out.push('draft model');
+    const ng = own('spec_ngram');
+    if ((ng !== undefined && ng !== 'off') || (ng === undefined && sp === 'auto')) out.push('n-gram guessing');
+    return out;
+  }
+
+  // A model downloaded without its repo's MTP head can fetch it.
+  const mtpGet = { name: '', size: 0, busy: false };
+  function addMTPGet(sub) {
+    if (!mtpGet.size || mtpGet.name !== defaults.speed?.name) return;
+    const b = el('button', 'btn subtle', mtpGet.busy ? 'Downloading…' : `Download its MTP head (${gb(mtpGet.size)})`);
+    b.type = 'button';
+    b.disabled = mtpGet.busy;
+    b.addEventListener('click', downloadMTP);
+    sub.append(' ', b);
+  }
+  async function downloadMTP() {
+    mtpGet.busy = true;
+    render();
+    try {
+      const res = await fetch('/api/pulls', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: mtpGet.name, alias: '' }) });
+      if (!res.ok) throw new Error(await errorText(res));
+      const job = await res.json();
+      for (;;) {
+        await new Promise((ok) => setTimeout(ok, 1500));
+        const j = (await (await fetch('/api/pulls')).json()).find((x) => x.id === job.id);
+        if (!j || j.state !== 'running') {
+          if (j?.state === 'failed') throw new Error(j.error);
+          break;
+        }
+      }
+      mtpGet.size = 0;
+      await loadDefaults();
+    } catch (err) {
+      mtpGet.busy = false;
+      modelStatus.textContent = `Couldn’t download the MTP head: ${err.message}`;
+      render();
+    }
+  }
+  async function checkMTP() {
+    const name = defaults.speed?.name;
+    mtpGet.name = name || '';
+    mtpGet.size = 0;
+    mtpGet.busy = false;
+    if (!name) return;
+    try {
+      const j = await (await fetch('/api/models/mtp?name=' + encodeURIComponent(name))).json();
+      if (j.available && defaults.speed?.name === name) { mtpGet.size = j.size; render(); }
+    } catch {}
   }
 
   function renderNumber(r) {
@@ -622,6 +694,7 @@
     buildLoRA();
     modelStatus.textContent = '';
     render();
+    checkMTP();
   }
 
   // ---- open / close ----

@@ -46,6 +46,7 @@ func fakeHFCache(t *testing.T, link bool) string {
 	file("rev2", "Q8_0/Qwen3-8B-Q8_0-00001-of-00002.gguf", 'b', "q8 part one")
 	file("rev2", "Q8_0/Qwen3-8B-Q8_0-00002-of-00002.gguf", 'c', "q8 part two")
 	file("rev2", "mmproj-F16.gguf", 'd', "projector")
+	file("rev2", "mtp-Qwen3-8B.gguf", '7', "mtp head")
 	file("rev2", "dspark-Qwen3-8B-Q8_0.gguf", 'e', "a draft model")
 	file("rev2", "Qwen3-8B-Q2_K-00001-of-00003.gguf", 'f', "incomplete split set")
 	put(t, filepath.Join(repo, "blobs", sha('9')+".incomplete"), "half a download")
@@ -86,8 +87,11 @@ func TestScanHFCache(t *testing.T) {
 		if len(q8.Files) != 2 || !strings.HasSuffix(q8.Rels[0], "00001-of-00002.gguf") || q8.Quant != "Q8_0" || q8.Repo != "unsloth/Qwen3-8B-GGUF" {
 			t.Errorf("q8 = %+v", q8)
 		}
-		if q8.Projector == "" || q8.Size != int64(len("q8 part one")+len("q8 part two")+len("projector")) {
+		if q8.Projector == "" || q8.Size != int64(len("q8 part one")+len("q8 part two")+len("projector")+len("mtp head")) {
 			t.Errorf("projector/size = %q %d", q8.Projector, q8.Size)
+		}
+		if q8.MTP == "" || !strings.HasSuffix(q8.MTPAt, "mtp-Qwen3-8B.gguf") {
+			t.Errorf("the repo's MTP head should come along: %+v", q8)
 		}
 		q4 := m["hf.co/unsloth/Qwen3-8B-GGUF:Q4_K_M"]
 		if link && (q4.SHAs[0] != sha('a') || !strings.HasSuffix(q4.Files[0], sha('a'))) {
@@ -232,6 +236,9 @@ func TestImportFoundHardLink(t *testing.T) {
 	q8, _ := st.Get("hf.co/unsloth/Qwen3-8B-GGUF:Q8_0")
 	if len(q8.Files) != 2 || filepath.Base(q8.Files[1]) != "Qwen3-8B-Q8_0-00002-of-00002.gguf" || filepath.Dir(q8.Files[0]) != filepath.Dir(q8.Files[1]) || q8.Projector == "" {
 		t.Errorf("q8 = %+v", q8)
+	}
+	if q8.MTP != "sha256-"+sha('7')+".gguf" || m.MTP != q8.MTP || len(q8.AllFiles()) != 4 {
+		t.Errorf("the MTP head should link too: %q", q8.MTP)
 	}
 	// Imported models no longer show up, nor does anything twice.
 	f := NewFinder("")

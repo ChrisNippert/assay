@@ -107,17 +107,27 @@ code doesn't care which engine runs (`server.Backend`).
   llama.cpp: they're simply listed. Settings → Models shows the base URL.
   Checked: Qwen3.5-2B returned a proper `tool_calls` for a one-function
   `tools` list.
-- **Speculative decoding.** A model's settings may carry `draft_model`
-  (another installed model) and `draft_max`. They're part of a loaded
-  server's identity, so changing them restarts it; `args` adds `-md <draft
-  blob>` and `--spec-draft-n-max N` (this llama.cpp renamed the old
-  `--draft-max`); the draft's GPU layers and context are left to `--fit`.
-  `Engine.Drafts` offers only smaller models with the same vocabulary
-  (`gguf.File.SameVocab`: token count, tokenizer model and pre, bos/eos),
-  and `ensure` re-checks, so a mismatch is an ordinary load error. Tune's
-  MODEL group has "Draft model" and "Draft length". Measured on the CPU
-  (GPU busy): Qwen3.5-9B with a 2B draft 3.98 vs 2.56 tok/s; not yet
-  measured on the GPU.
+- **Speculative decoding** (`internal/engine/speed.go`). Per-model
+  `speedup` (auto | off | mtp) and `spec_ngram` (on | off | an `ngram-*`
+  type) sit next to `draft_model` and `draft_max`; all are part of a loaded
+  server's identity. `planSpeed` decides what runs; `args` passes `-md
+  <file>` and `--spec-type <list>`. llama-server loads `-md` but ignores it
+  without `--spec-type` (so `draft_model` silently did nothing before
+  2026-10-24, and its old "1.55× on CPU" figure wasn't real speculation): a
+  draft model gets `draft-simple`, a downloaded EAGLE3/DFlash/DSpark draft
+  `draft-<kind>`, and an MTP head (Unsloth's separate `mtp-<model>.gguf`,
+  fetched beside the quant by `Pull`, attached by cache imports, stored as
+  `Model.MTP`) `draft-mtp`. **Auto = the model's MTP head if it has one, plus
+  `ngram-mod`; never a small draft model.** Measured on the RX 6700 XT
+  (tok/s, prose / code edit): Gemma 4 12B 40.8 / 39.5, with its MTP head
+  58.9 / 98, with head + n-gram up to 70 / 128; n-gram alone is free on
+  prose and took Qwen3.5-9B from 51 to 272 on repeated code; a 2B draft
+  slowed Qwen3.5-9B to 29 on prose and Gemma E4B slowed the 12B to 24, so
+  Auto skips them. A draft the user picks wins over the head. Draft models
+  are manifests with `Draft` (kind) and `DraftFor`, hidden from
+  `Engine.List`, offered by `Engine.Drafts` to the model they were made for.
+  Installed models without a head get a "Download its MTP head" button in
+  Tune. Untested: real EAGLE3/DFlash/DSpark drafts.
 - **GPU layers and memory.** Auto (no `num_gpu`) passes no `-ngl`, so
   llama.cpp's `--fit` sizes the load to free memory, keeping layers on the
   GPU and moving MoE experts to RAM (Gemma 4 26B-A4B IQ4_NL, 14.8 GB on a
