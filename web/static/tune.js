@@ -22,8 +22,6 @@
   const saveNewBtn = $('tune-save-new');
   const resetBtn = $('tune-reset');
   const errorEl = $('tune-error');
-  const modelTitle = $('tune-model-title');
-  const modelSub = $('tune-model-sub');
   const modelStatus = $('tune-model-status');
 
   let presets = JSON.parse(chatEl.dataset.presets || 'null') || [];
@@ -51,7 +49,7 @@
     { key: 'tools', label: 'Tools', kind: 'tools' },
     { key: 'temperature', label: 'Temperature', kind: 'scale', min: 0, max: 2, step: 0.05, short: 'temp',
       help: 'Lower stays focused, higher gets more varied' },
-    { key: 'num_predict', label: 'Max reply length', kind: 'spin', min: -1, max: 262144, step: 256, int: true,
+    { key: 'num_predict', label: 'Reply length', kind: 'spin', min: -1, max: 262144, step: 256, int: true,
       help: 'Tokens' },
   ];
   const SAMPLING = [
@@ -86,7 +84,7 @@
       none: () => (defaults.speed?.mtp ? 'Auto (MTP head)' : 'Auto (none for this model)'),
       help: 'Writes several words per step; the same words as without it',
       dyn: () => [['off', 'Off'], ...(defaults.speed?.mtp ? [['mtp', 'MTP head only']] : [])] },
-    { key: 'spec_ngram', label: 'Guess from the conversation', kind: 'choice', scope: 'model', engine: true,
+    { key: 'spec_ngram', label: 'Guess from chat', kind: 'choice', scope: 'model', engine: true,
       none: () => `Auto (${speedPlan().includes('n-gram guessing') ? 'on' : 'off'})`,
       help: 'Speeds up code and edits by reusing what’s already in the chat; costs nothing',
       choices: [['on', 'On'], ['off', 'Off']] },
@@ -329,16 +327,32 @@
     return { box, sub };
   }
 
-  CHAT.forEach((d) => buildRow(d, $('tune-chat')));
-  const sampling = buildExpander('tune-sampling', 'Advanced', SAMPLING, $('tune-sampling-box'));
-  MODEL.forEach((d) => buildRow(d, $('tune-model')));
+  // Sections (see chat.html): Reply style, Sampling, Context & memory,
+  // Performance & loading. Each open/closed state is remembered.
+  const byKey = (k) => CHAT.find((d) => d.key === k);
+  buildRow(byKey('think'), $('tune-reply'));
+  buildRow(byKey('tools'), $('tune-reply'));
+  buildFormat($('tune-reply'));
+  buildRow(byKey('num_predict'), $('tune-reply'));
+  buildRow(byKey('temperature'), $('tune-sampling-box'));
+  const sampling = buildExpander('tune-sampling', 'More sampling', SAMPLING, $('tune-sampling-box'));
+  MODEL.forEach((d) => buildRow(d, $(d.key === 'num_ctx' ? 'tune-context' : 'tune-perf')));
+  const secs = ['reply', 'sampling', 'context', 'perf'].map((id) => {
+    const box = $('tsec-' + id);
+    try {
+      const v = localStorage.getItem('tune:sec:' + id);
+      if (v !== null) box.open = v === '1';
+      box.addEventListener('toggle', () => localStorage.setItem('tune:sec:' + id, box.open ? '1' : '0'));
+    } catch {}
+    return { id, box, sub: $('tsec-' + id + '-sub') };
+  });
 
   // ---- automatic compression ----
   // "Compress automatically" is the chat's own choice, else its preset's, else
   // the default in Settings. Below it, the summary of the chat's oldest
   // messages, with buttons to make one now or to undo it. Both reload the page.
   {
-    const def = { key: 'compress', label: 'Compress automatically', kind: 'compress', help: 'Summarize the oldest messages when a chat nears the context length' };
+    const def = { key: 'compress', label: 'Auto-compress', kind: 'compress', help: 'Summarize the oldest messages when a chat nears the context length' };
     const { row, sub, ctrl, reset } = rowShell(def);
     const sel = el('select', 'combo');
     sel.id = 'tp-compress';
@@ -348,7 +362,7 @@
     row.title = def.help;
     reset.addEventListener('click', () => resetRow(def));
     rows.push({ def, row, sub, reset, select: sel });
-    $('tune-chat').append(row);
+    $('tune-context').append(row);
   }
   const sumRow = el('div', 'row');
   const sumText = el('div', 'row-text');
@@ -363,7 +377,7 @@
   undoBtn.id = 'tune-compress-undo';
   sumCtrl.append(nowBtn, undoBtn);
   sumRow.append(sumText, sumCtrl);
-  $('tune-chat').append(sumRow);
+  $('tune-context').append(sumRow);
 
   function renderCompress(r) {
     const p = currentPreset();
@@ -416,7 +430,7 @@
   loraHead.append(loraText);
   lora.box.append(loraHead, lora.list);
   lora.box.hidden = true;
-  $('tune-model').append(lora.box);
+  $('tune-perf').append(lora.box);
   const loraList = () => saved.lora || [];
   const setLoRA = (list) => setModelOption({ key: 'lora' }, list.length ? list : null);
 
@@ -490,10 +504,9 @@
     }
   }
 
-  const memory = buildExpander('tune-memory', 'Memory', MEMORY, $('tune-memory-box'));
-  buildFormat($('tune-format-box'));
+  const memory = buildExpander('tune-memory', 'Memory & loading', MEMORY, $('tune-perf'));
 
-  // The reply format row sits under Advanced. Its text box shows for a
+  // The reply format row sits under Reply style. Its text box shows for a
   // schema or a grammar.
   function buildFormat(parent) {
     const { row, sub, ctrl, reset } = rowShell(FORMAT);
@@ -760,15 +773,29 @@
       const changed = k === 'format' ? renderFormat(r) : k === 'combo' ? renderCombo(r) : k === 'think' ? renderThink(r) : k === 'compress' ? renderCompress(r) : k === 'tools' ? renderTools(r) : k === 'choice' ? renderChoice(r) : renderNumber(r);
       r.row.classList.toggle('changed', changed);
       r.reset.hidden = !changed;
+      if (r.sub.textContent) r.row.title = r.sub.textContent; // the line is clipped to one row
     }
     const samplingChanged = SAMPLING.filter((d) => d.key in state.options).length;
-    sampling.sub.textContent = samplingChanged ? `${samplingChanged} changed` : 'Top P, top K, penalties, seed. The defaults suit most models.';
+    sampling.sub.textContent = samplingChanged ? `${samplingChanged} changed` : 'Top P, top K, penalties, seed';
     memory.box.hidden = !perModel();
     memory.sub.textContent = MEMORY.slice(0, 2).map((d) => `${d.label.toLowerCase()} ${shown(d) ?? 'default'}`).join(' · ');
     renderLoRA();
 
-    modelTitle.textContent = baseModel() || 'Model';
-    modelSub.textContent = perModel() ? 'Saved for the model, so every chat with it uses these.' : 'For this chat.';
+    const changedIn = (keys) => keys.filter((k) => k in state.options).length;
+    const subs = {
+      reply: [state.system ? 1 : 0, state.think !== null ? 1 : 0, state.tools !== null ? 1 : 0, changedIn(['num_predict', 'reply_format', 'reply_schema', 'reply_grammar'])].reduce((a, b) => a + b, 0),
+      sampling: changedIn(['temperature', ...SAMPLING.map((d) => d.key)]),
+    };
+    const perm = perModel() ? 'saved for the model' : 'this chat';
+    const t0 = effective('temperature');
+    const c0 = shown(MODEL[0]);
+    const text = {
+      reply: subs.reply ? `${subs.reply} changed` : '',
+      sampling: subs.sampling ? `${subs.sampling} changed` : t0 != null ? `temp ${fmt(t0)}` : '',
+      context: [c0 != null ? `${kib(c0)} ctx` : '', perm].filter(Boolean).join(' · '),
+      perf: perModel() ? `${shown(MODEL[1]) == null ? 'auto GPU' : shown(MODEL[1]) + ' GPU layers'} · ${perm}` : '',
+    };
+    for (const sc of secs) sc.sub.textContent = text[sc.id];
 
     if (document.activeElement !== systemEl) systemEl.value = state.system;
     systemEl.placeholder = preset?.system || defaults.system || 'None. Describe how the model should behave';
