@@ -232,7 +232,7 @@ func (s *Server) compressTo(ctx context.Context, c *chats.Chat, model string, op
 }
 
 // summaryInstructions asks for a summary the chat can carry on from.
-const summaryInstructions = `Condense the conversation below so the assistant can carry on without the full text. Write a compact, factual summary: decisions made, facts, the user's preferences and goals, open questions, names, numbers, dates and code identifiers, as they were. Use short bullets or short paragraphs. Don't add anything the conversation doesn't say, and don't address the user. Keep it under 300 words.`
+const summaryInstructions = `Condense the conversation below so the assistant can carry on without the full text. Write only the summary itself: a compact, factual account of decisions made, facts, the user's preferences and goals, open questions, names, numbers, dates and code identifiers, as they were. Use short bullets or short paragraphs. Don't add a title, don't mention this request, don't address the user, and don't add anything the conversation doesn't say. Keep it under 300 words.`
 
 // summarize folds msgs into old (a summary, or "") and returns the new summary.
 // Long input goes in pieces of about budget tokens, each folded into the last.

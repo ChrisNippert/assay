@@ -28,7 +28,7 @@
     </button>
     {{with .Data.Chat}}<button type="button" class="btn subtle" id="delete-chat">Delete chat</button>{{end}}
 {{end}}
-{{define "compressed"}}<details class="compress-divider"><summary>Earlier messages summarized · {{.UpTo}} messages{{if .Saved}}, saved ~{{compact .Saved}} tokens{{end}}</summary><div class="compress-text">{{.Text}}</div></details>{{end}}
+{{define "compressed"}}<details class="compress-divider"><summary>Earlier messages summarized · {{.UpTo}} messages{{if .Saved}}, saved ~{{compact .Saved}} tokens{{end}}</summary><div class="compress-text md">{{.Text}}</div></details>{{end}}
 {{define "sources"}}<details class="sources"><summary>{{len .}} passage{{if ne (len .) 1}}s{{end}} from the project's files</summary><ol>{{range .}}<li value="{{.N}}"><span class="src-file">{{.File}}{{with .Page}} · page {{.}}{{end}}{{with .Heading}} · {{.}}{{end}}</span><span class="src-text">{{.Text}}</span></li>{{end}}</ol></details>{{end}}
 {{define "content"}}
 <div class="chat" id="chat" data-chat-id="{{with .Data.Chat}}{{.ID}}{{end}}" data-project="{{with .Data.Project}}{{.ID}}{{end}}" data-tune="{{json .Data.Tune}}" data-presets="{{json .Presets}}" data-loaded="{{json .LoadedNames}}">
