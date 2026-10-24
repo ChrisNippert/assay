@@ -71,20 +71,21 @@ Stages (the app keeps working after each):
 4. **Settings and tuning:** ✅ an engine section (llama.cpp version,
    backend, defaults, models with their own settings) replaces the Ollama
    server page, and cache type / flash attention / keep loaded are per
-   model in Tune. Left: threads; auto
-   context uses real memory numbers from `llama-server` (and/or `--fit`);
-   Compare's speed test, the voice talker (`-ngl 0 -t 4`) and RAG
-   embeddings move over. Speculative decoding with draft models.
-5. **Install and clean up:** a one-click llama.cpp (Vulkan) install from
-   its GitHub releases, removal of the Ollama client, docs.
+   model in Tune. ✅ (2026-10-23) threads and speculative decoding (draft
+   model per model; measure it on the GPU when it's free: CPU-only it gave
+   1.55×). Compare's speed test and RAG embeddings already go through the
+   engine. Left: auto context from real memory numbers (`--fit`).
+5. **Install and clean up:** ✅ (2026-10-23) one-click llama.cpp (Vulkan)
+   install and update from GitHub releases, beside your own build. Left:
+   removal of the Ollama client, docs.
 
 Also pending: keyword search (BM25) for RAG so project files work without
 an embedding model (a user asked a project chat about a PDF and got
 nothing because no embedding model had been picked).
 
-### 2. Choose where models are stored (S–M)
+### 2. ✅ Choose where models are stored (done 2026-10-23)
 
-Asked for 2026-10-23. Models live in `<data>/models` (hard links from
+Done: see ARCHITECTURE.md, "Models folder". Was asked for 2026-10-23. Models live in `<data>/models` (hard links from
 `~/.ollama/models` on import), fixed by `-data`. Add a "Models folder"
 row in Settings → Models: pick a path, ollamui moves `blobs/` and the
 manifests there (with progress; stop loaded models first) and remembers

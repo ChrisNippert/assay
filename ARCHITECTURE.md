@@ -110,6 +110,46 @@ code doesn't care which engine runs (`server.Backend`).
   llama.cpp: they're simply listed. Settings → Models shows the base URL.
   Checked: Qwen3.5-2B returned a proper `tool_calls` for a one-function
   `tools` list.
+- **Speculative decoding.** A model's settings may carry `draft_model`
+  (another installed model) and `draft_max`. They're part of a loaded
+  server's identity, so changing them restarts it; `args` adds `-md <draft
+  blob>` and `--spec-draft-n-max N` (this llama.cpp renamed the old
+  `--draft-max`); the draft's GPU layers and context are left to `--fit`.
+  `Engine.Drafts` offers only smaller models with the same vocabulary
+  (`gguf.File.SameVocab`: token count, tokenizer model and pre, bos/eos),
+  and `ensure` re-checks, so a mismatch is an ordinary load error. Tune's
+  MODEL group has "Draft model" and "Draft length". Measured on the CPU
+  (GPU busy): Qwen3.5-9B with a 2B draft 3.98 vs 2.56 tok/s; not yet
+  measured on the GPU.
+- **CPU threads.** `num_thread` becomes `-t` (Tune → Memory). Only matters
+  for layers on the CPU; 4 threads beat the default (all 16) on a CPU-only
+  9B (3.7 vs 2.6 tok/s, one sample), so Auto may deserve a better default.
+- **Models folder.** Chosen by `-models`, else `<config>/models.json`, else
+  `<data>/models`. `Store.Plan(dst)` validates a target (resolves symlinks;
+  refuses itself, inside, containing, a file, or a non-empty folder that
+  isn't a store) and says move or switch, same disk or not, bytes to copy.
+  Same disk: `blobs/` and `manifests/` are renamed (hard links survive).
+  Another disk: copied through `.part` files with progress, sizes checked,
+  then the store swaps and the originals go; hard links become copies. A
+  failure or cancel removes the copies. `Engine.MoveFolder` refuses loads,
+  stops all models, moves, clears the GGUF cache and saves the choice, all
+  live. A running download refuses a move. Ollama imports already in the
+  store aren't re-imported; across disks new ones become symlinks.
+  `/api/models/folder` (GET info and mounts, POST start, DELETE cancel,
+  POST `/check`); Settings → Models has the row.
+- **Installing llama.cpp** (`internal/llamacpp`). The binary is, in order:
+  `-llama-server`, `<data>/llama.cpp/` (your own build, never written to),
+  the release ollamui installed in `<data>/llama.cpp-release/`, then PATH;
+  `<data>/llamacpp.json` can put the release first. The installer reads
+  GitHub's `/releases` list, not `/latest` (llama.cpp's builds are all
+  pre-releases; "latest" is an old tag with no binaries), and takes the
+  newest with an asset for this system: Linux `ubuntu-vulkan-*.tar.gz`,
+  macOS `macos-*.tar.gz`, Windows `win-vulkan-*.zip`. It downloads (sha256
+  when GitHub gives one), unpacks safely into `<dir>.new`, and swaps via
+  `<dir>.old`. `Engine.SetServer` switches binaries live; running models
+  keep their process. Updating the release in use with models loaded asks
+  first, then stops them. A probe (`--version`, `--list-devices`) warns when
+  Vulkan sees no GPU; it isn't run on your own ROCm build.
 
 ### internal/ollama
 
