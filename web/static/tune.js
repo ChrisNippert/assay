@@ -80,7 +80,7 @@
     // The choices come from the server: installed models with the same vocabulary.
     { key: 'draft_model', label: 'Draft model', kind: 'choice', scope: 'model', engine: true, none: 'Off',
       help: 'A small model of the same family guesses ahead; faster writing, a bit more memory',
-      dyn: () => (defaults.drafts || []).map((d) => [d.name, `${d.name.split('/').pop()} (${gb(d.size)})`]),
+      dyn: () => (defaults.drafts || []).map((d) => [d.name, `${d.name.split('/').pop().replace('-GGUF', '').replace(':', ' ')} (${gb(d.size)})`]),
       empty: 'No installed model is a match for drafting' },
     { key: 'draft_max', label: 'Draft length', kind: 'spin', min: 1, max: 64, step: 1, int: true, scope: 'model',
       placeholder: 'Auto', help: 'Words guessed ahead at a time', when: () => !!(state.options.draft_model ?? saved.draft_model) },
@@ -234,6 +234,7 @@
           setOption(def, parse(def, sel.value));
         }
       });
+      if (def.dyn) sel.style.maxWidth = '9.5rem'; // model names are long
       ctrl.append(sel);
       r.select = sel;
     } else {
