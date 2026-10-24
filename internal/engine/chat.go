@@ -24,8 +24,60 @@ var sampling = map[string]string{
 }
 
 type chatMessage struct {
-	Role    string `json:"role"`
-	Content any    `json:"content"`
+	Role             string     `json:"role"`
+	Content          any        `json:"content"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"`
+	ToolCalls        []wireCall `json:"tool_calls,omitempty"`
+	ToolCallID       string     `json:"tool_call_id,omitempty"`
+}
+
+// wireCall is a tool call in OpenAI's shape, where the arguments are a
+// JSON string.
+type wireCall struct {
+	Index    int    `json:"index"`
+	ID       string `json:"id,omitempty"`
+	Type     string `json:"type,omitempty"`
+	Function struct {
+		Name      string `json:"name,omitempty"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+// toWire converts calls from Ollama's shape (arguments as an object).
+func toWire(calls []ollama.ToolCall) []wireCall {
+	var out []wireCall
+	for i, c := range calls {
+		w := wireCall{Index: i, ID: c.ID, Type: "function"}
+		w.Function.Name = c.Function.Name
+		w.Function.Arguments = string(c.Function.Arguments)
+		if w.Function.Arguments == "" {
+			w.Function.Arguments = "{}"
+		}
+		out = append(out, w)
+	}
+	return out
+}
+
+// fromWire is the other way: arguments that aren't a JSON object (a model
+// that wrote garbage) are kept as a string so the loop can tell the model.
+func fromWire(calls []wireCall) []ollama.ToolCall {
+	var out []ollama.ToolCall
+	for _, w := range calls {
+		var c ollama.ToolCall
+		c.ID = w.ID
+		c.Function.Name = w.Function.Name
+		args := strings.TrimSpace(w.Function.Arguments)
+		if args == "" {
+			args = "{}"
+		}
+		if json.Valid([]byte(args)) {
+			c.Function.Arguments = json.RawMessage(args)
+		} else {
+			c.Function.Arguments, _ = json.Marshal(args)
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 type contentPart struct {
@@ -41,7 +93,7 @@ func chatBody(m *Model, req ollama.ChatRequest) map[string]any {
 	msgs := make([]chatMessage, 0, len(req.Messages))
 	for _, x := range req.Messages {
 		if len(x.Images) == 0 {
-			msgs = append(msgs, chatMessage{Role: x.Role, Content: x.Content})
+			msgs = append(msgs, chatMessage{Role: x.Role, Content: x.Content, ReasoningContent: x.Thinking, ToolCalls: toWire(x.ToolCalls), ToolCallID: x.ToolCallID})
 			continue
 		}
 		parts := []contentPart{{Type: "text", Text: x.Content}}
@@ -51,6 +103,10 @@ func chatBody(m *Model, req ollama.ChatRequest) map[string]any {
 		msgs = append(msgs, chatMessage{Role: x.Role, Content: parts})
 	}
 	body := map[string]any{"messages": msgs, "stream": true, "timings_per_token": false, "cache_prompt": true}
+	if len(req.Tools) > 0 {
+		body["tools"] = req.Tools
+		body["parallel_tool_calls"] = true
+	}
 	opts := m.options(req.Options)
 	for k, v := range opts {
 		if f, ok := sampling[k]; ok {
@@ -101,8 +157,9 @@ func replyFields(opts map[string]any) map[string]any {
 type chunk struct {
 	Choices []struct {
 		Delta struct {
-			Content          string `json:"content"`
-			ReasoningContent string `json:"reasoning_content"`
+			Content          string     `json:"content"`
+			ReasoningContent string     `json:"reasoning_content"`
+			ToolCalls        []wireCall `json:"tool_calls"`
 		} `json:"delta"`
 		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
@@ -179,6 +236,7 @@ func (e *Engine) Chat(ctx context.Context, req ollama.ChatRequest, fn func(ollam
 	final := ollama.ChatResponse{Model: req.Model, Done: true, DoneReason: "stop", LoadDuration: int64(loadDur)}
 	sc := bufio.NewScanner(res.Body)
 	sc.Buffer(make([]byte, 64<<10), 8<<20)
+	var calls []wireCall // streamed in pieces, joined by index
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		data, ok := strings.CutPrefix(line, "data:")
@@ -209,6 +267,17 @@ func (e *Engine) Chat(ctx context.Context, req ollama.ChatRequest, fn func(ollam
 			if ch.FinishReason != nil && *ch.FinishReason != "" {
 				final.DoneReason = *ch.FinishReason
 			}
+			for _, tc := range ch.Delta.ToolCalls {
+				for len(calls) <= tc.Index {
+					calls = append(calls, wireCall{})
+				}
+				w := &calls[tc.Index]
+				if tc.ID != "" {
+					w.ID = tc.ID
+				}
+				w.Function.Name += tc.Function.Name
+				w.Function.Arguments += tc.Function.Arguments
+			}
 			if ch.Delta.Content == "" && ch.Delta.ReasoningContent == "" {
 				continue
 			}
@@ -225,7 +294,7 @@ func (e *Engine) Chat(ctx context.Context, req ollama.ChatRequest, fn func(ollam
 	replied = true
 	final.CreatedAt = time.Now()
 	final.TotalDuration = int64(time.Since(start))
-	final.Message = ollama.Message{Role: "assistant"}
+	final.Message = ollama.Message{Role: "assistant", ToolCalls: fromWire(calls)}
 	return fn(final)
 }
 

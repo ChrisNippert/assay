@@ -31,6 +31,7 @@ type Preset struct {
 	Base      string         `toml:"base" json:"base"`
 	System    string         `toml:"system,omitempty" json:"system,omitempty"`
 	Think     *bool          `toml:"think,omitempty" json:"think,omitempty"`
+	Tools     *bool          `toml:"tools,omitempty" json:"tools,omitempty"`
 	Published bool           `toml:"published" json:"published"`
 	Options   map[string]any `toml:"options,omitempty" json:"options,omitempty"`
 }

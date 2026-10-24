@@ -29,6 +29,7 @@ type settingsData struct {
 	Engine    *enginePage // nil with Ollama
 	Voice     voicePage
 	Knowledge knowledgePage
+	Tools     toolsPage
 }
 
 // enginePage is the Models section with llama.cpp.
@@ -161,6 +162,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	d.Voice = s.voicePage(ctx)
 	d.Knowledge = s.knowledgePage(ctx, r.URL.Query().Get("pulled"))
+	d.Tools = s.toolsPage()
 	p.Data = d
 	s.render(w, "settings", p)
 }

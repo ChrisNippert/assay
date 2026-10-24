@@ -1,6 +1,9 @@
 package ollama
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // Details describes a model's format and quantization.
 type Details struct {
@@ -52,6 +55,30 @@ type Message struct {
 	Content  string   `json:"content"`
 	Thinking string   `json:"thinking,omitempty"`
 	Images   []string `json:"images,omitempty"`
+	// ToolCalls are the calls an assistant message asks for; a "tool"
+	// message carries one call's result, named by ToolCallID.
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+}
+
+// ToolCall is one function call the model asked for. Arguments is the JSON
+// object the model wrote.
+type ToolCall struct {
+	ID       string `json:"id,omitempty"`
+	Function struct {
+		Name      string          `json:"name"`
+		Arguments json.RawMessage `json:"arguments,omitempty"`
+	} `json:"function"`
+}
+
+// Tool describes a function the model may call (OpenAI/Ollama shape).
+type Tool struct {
+	Type     string `json:"type"`
+	Function struct {
+		Name        string         `json:"name"`
+		Description string         `json:"description"`
+		Parameters  map[string]any `json:"parameters"`
+	} `json:"function"`
 }
 
 // ChatRequest is the body of /api/chat.
@@ -61,6 +88,7 @@ type ChatRequest struct {
 	Stream   *bool          `json:"stream,omitempty"`
 	Think    any            `json:"think,omitempty"` // bool, or "low"/"medium"/"high" for some models
 	Options  map[string]any `json:"options,omitempty"`
+	Tools    []Tool         `json:"tools,omitempty"`
 	// KeepAlive is how long the model stays loaded after the request.
 	KeepAlive any `json:"keep_alive,omitempty"`
 	// ChatID names the ollamui chat the request belongs to, so the engine can

@@ -13,6 +13,7 @@ import (
 	"ollamui/internal/ollama"
 	"ollamui/internal/presets"
 	"ollamui/internal/projects"
+	"ollamui/internal/tools"
 )
 
 // --- pages ---
@@ -34,6 +35,7 @@ type tuneState struct {
 	Options map[string]any `json:"options"`
 	System  string         `json:"system"`
 	Think   *bool          `json:"think"`
+	Tools   *bool          `json:"tools"`
 }
 
 func (s *Server) handleChatPage(w http.ResponseWriter, r *http.Request) {
@@ -53,7 +55,7 @@ func (s *Server) handleChatPage(w http.ResponseWriter, r *http.Request) {
 		data.Chat = c
 		data.Model = c.Model
 		data.Preset = c.Preset
-		data.Tune = tuneState{Options: c.Options, System: c.System, Think: c.Think}
+		data.Tune = tuneState{Options: c.Options, System: c.System, Think: c.Think, Tools: c.Tools}
 		p.ChatID = c.ID
 		p.Title = c.Title
 	}
@@ -211,6 +213,9 @@ type sendRequest struct {
 	Options map[string]any `json:"options"`
 	System  string         `json:"system"`
 	Think   *bool          `json:"think"`
+	// Tools lets the model call tools: nil leaves it to the preset, then
+	// to on (when the model supports them).
+	Tools *bool `json:"tools"`
 	// FromUser, when set, drops that user message (counting user messages
 	// from 0) and everything after it before sending: edit and regenerate.
 	FromUser *int `json:"fromUser"`
@@ -227,12 +232,14 @@ type sendRequest struct {
 
 // event is one line of the NDJSON stream sent back to the browser.
 type event struct {
-	Type    string         `json:"type"` // chat, sources, thinking, content, say, done, error
+	Type    string         `json:"type"` // chat, sources, thinking, content, tool, toolresult, say, done, error
 	ID      string         `json:"id,omitempty"`
 	Text    string         `json:"text,omitempty"`
 	Stats   *chats.Stats   `json:"stats,omitempty"`
 	Message string         `json:"message,omitempty"`
 	Sources []chats.Source `json:"sources,omitempty"`
+	// Call is a tool call: "tool" when it starts, "toolresult" when done.
+	Call *chats.ToolCall `json:"call,omitempty"`
 }
 
 func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
@@ -255,32 +262,10 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 	if len(t.sources) > 0 && emit(event{Type: "sources", Sources: t.sources}) != nil {
 		return
 	}
-	var content, thinking strings.Builder
-	var stats *chats.Stats
-	err := s.ollama.Chat(r.Context(), t.req, func(resp ollama.ChatResponse) error {
-		if t := resp.Message.Thinking; t != "" {
-			thinking.WriteString(t)
-			if err := emit(event{Type: "thinking", Text: t}); err != nil {
-				return err
-			}
-		}
-		if t := resp.Message.Content; t != "" {
-			content.WriteString(t)
-			if err := emit(event{Type: "content", Text: t}); err != nil {
-				return err
-			}
-		}
-		if resp.Done {
-			if t.auto.Fit {
-				t.fitted = s.fittedContext(r.Context(), t.req.Model).Ctx
-			}
-			stats = t.stats(resp)
-		}
-		return nil
-	})
-	s.saveReply(t, content.String(), thinking.String(), "", stats)
+	content, thinking, stats, err := s.chatLoop(r.Context(), t, emit)
+	s.saveReply(t, content, thinking, "", stats)
 	if err == nil {
-		s.noteThinking(t.req, thinking.Len() > 0)
+		s.noteThinking(t.req, thinking != "")
 	}
 	if err != nil {
 		if r.Context().Err() == nil {
@@ -304,6 +289,9 @@ type turn struct {
 	replyModel string
 	// sources are the project-file excerpts put in the prompt.
 	sources []chats.Source
+	// tools are what the model may call this reply; calls are the ones it made.
+	tools []tools.Tool
+	calls []chats.ToolCall
 	// fitted is the context llama.cpp chose, once the reply is done.
 	fitted int
 	// ctxSaved: the model's own settings set its context, so it isn't auto.
@@ -347,7 +335,7 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 		writeError(w, http.StatusBadRequest, "model and content are required")
 		return nil, false
 	}
-	options, system, think := overrides, req.System, req.Think
+	options, system, think, wantTools := overrides, req.System, req.Think, req.Tools
 	if preset != nil {
 		options = presets.Merge(preset.Options, overrides)
 		if system == "" {
@@ -355,6 +343,9 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 		}
 		if think == nil {
 			think = preset.Think
+		}
+		if wantTools == nil {
+			wantTools = preset.Tools
 		}
 	}
 	if err := presets.CheckReplyFormat(options); err != nil {
@@ -385,7 +376,7 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 		s.forgetChat(c.ID) // a saved cache may hold the messages just cut
 	}
 	c.Model = req.Model // switching models mid-chat is allowed
-	c.Preset, c.Options, c.System, c.Think = req.Preset, overrides, req.System, req.Think
+	c.Preset, c.Options, c.System, c.Think, c.Tools = req.Preset, overrides, req.System, req.Think, req.Tools
 	c.Messages = append(c.Messages, chats.Message{Role: "user", Content: req.Content, Created: time.Now()})
 	if err := s.chats.Save(c); err != nil {
 		s.log.Error("save chat", "err", err)
@@ -411,6 +402,12 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 	}
 	if req.Spoken || req.Voice && s.voiceSt.Get().Prose {
 		system = strings.TrimSpace(system + "\n\n" + voiceSystem)
+	}
+	if !req.Voice {
+		t.tools = s.turnTools(r.Context(), c, wantTools, c.Model)
+	}
+	if len(t.tools) > 0 {
+		system = strings.TrimSpace(system + "\n\n" + toolsSystem)
 	}
 	msgs := toOllama(c.Messages)
 	if system != "" {
@@ -442,7 +439,7 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 		}
 	}
 	_, t.ctxSaved = saved["num_ctx"]
-	t.req = ollama.ChatRequest{Model: c.Model, Messages: msgs, Options: options, ChatID: c.ID}
+	t.req = ollama.ChatRequest{Model: c.Model, Messages: msgs, Options: options, ChatID: c.ID, Tools: toolDefs(t.tools)}
 	if think != nil {
 		t.req.Think = *think
 	}
@@ -475,7 +472,7 @@ func streamEvents(w http.ResponseWriter) func(event) error {
 
 // saveReply keeps whatever was generated, even if the user stopped it early.
 func (s *Server) saveReply(t *turn, content, thinking, spoken string, stats *chats.Stats) {
-	if content == "" && thinking == "" && spoken == "" {
+	if content == "" && thinking == "" && spoken == "" && len(t.calls) == 0 {
 		return
 	}
 	model := t.chat.Model
@@ -487,6 +484,7 @@ func (s *Server) saveReply(t *turn, content, thinking, spoken string, stats *cha
 		Content:  content,
 		Thinking: thinking,
 		Spoken:   spoken,
+		Calls:    t.calls,
 		Model:    model,
 		Stats:    stats,
 		Sources:  t.sources,
@@ -524,6 +522,8 @@ func (s *Server) handleDeleteChat(w http.ResponseWriter, r *http.Request) {
 func toOllama(msgs []chats.Message) []ollama.Message {
 	out := make([]ollama.Message, 0, len(msgs))
 	for _, m := range msgs {
+		// Tool calls the reply made come first, as the model saw them.
+		out = append(out, toolMessages(m)...)
 		out = append(out, ollama.Message{Role: m.Role, Content: m.Content})
 	}
 	return out
