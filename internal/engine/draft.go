@@ -70,8 +70,14 @@ func (e *Engine) draftOK(m, d *Model) error {
 		// Made for one model, with its own vocabulary tricks (EAGLE3 and
 		// DFlash drafts read the target's hidden state), so the size and
 		// vocabulary rules for ordinary drafts don't apply.
-		if d.DraftFor != "" && modelCore(d.DraftFor) != modelCore(m.Repo) {
+		// A draft that doesn't say what it's for is matched by name:
+		// "Qwen3-8B-EAGLE3-Speculator" is for "Qwen3-8B".
+		core := modelCore(m.Repo)
+		switch {
+		case d.DraftFor != "" && modelCore(d.DraftFor) != core:
 			return fmt.Errorf("draft model %s was made for %s, not %s", d.Name, d.DraftFor, m.Name)
+		case d.DraftFor == "" && (core == "" || !strings.Contains(modelCore(d.Repo), core)):
+			return fmt.Errorf("draft model %s doesn't say which model it's for, and it isn't named for %s", d.Name, m.Name)
 		}
 		return nil
 	}

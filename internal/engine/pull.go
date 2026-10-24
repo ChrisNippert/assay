@@ -111,18 +111,24 @@ func (e *Engine) Pull(ctx context.Context, name string, fn func(ollama.PullProgr
 		return "hf-" + unsafeChars.ReplaceAllString(repo+"-"+q.Name, "_") + "/" + path.Base(p)
 	}
 	m := &Model{Name: "hf.co/" + repo + ":" + QuantTag(q.Name), Repo: repo, Quant: q.Name, Source: "hf"}
-	if q.Draft {
-		// A draft can't chat. It was made for the model whose repo it sits
-		// in, or for the base the draft repo names.
-		m.Draft, m.DraftFor = q.Kind, repo
-		if ir, ok := e.HF.(interface {
-			Info(context.Context, string) (*hf.Repo, error)
-		}); ok {
-			if info, err := ir.Info(ctx, repo); err == nil && info.IsDraft() {
-				m.DraftFor = info.DraftFor()
-			}
-		}
+	// A draft can't chat. It's a file beside the quants of the model it was
+	// made for, or the whole repo is one (then the repo says what for).
+	var info *hf.Repo
+	if ir, ok := e.HF.(interface {
+		Info(context.Context, string) (*hf.Repo, error)
+	}); ok {
+		info, _ = ir.Info(ctx, repo)
 	}
+	switch {
+	case q.Draft:
+		m.Draft, m.DraftFor = q.Kind, repo
+		if info != nil && info.IsDraft() {
+			m.DraftFor = info.DraftFor()
+		}
+	case info != nil && info.IsDraft():
+		m.Draft, m.DraftFor = hf.DraftSlug(info.Arch()+" "+info.Name()), info.DraftFor()
+	}
+	isDraft := m.Draft != ""
 	type job struct{ src, dst string }
 	var jobs []job
 	for _, p := range q.Files {
@@ -130,11 +136,11 @@ func (e *Engine) Pull(ctx context.Context, name string, fn func(ollama.PullProgr
 		m.Files = append(m.Files, d)
 		jobs = append(jobs, job{p, d})
 	}
-	if pr := hf.Projector(files); vision && pr != "" && !q.Draft {
+	if pr := hf.Projector(files); vision && pr != "" && !isDraft {
 		m.Projector = dest(pr, false)
 		jobs = append(jobs, job{pr, m.Projector})
 	}
-	if mtp := hf.MTP(files); mtp != "" && !q.Draft {
+	if mtp := hf.MTP(files); mtp != "" && !isDraft {
 		m.MTP = dest(mtp, false)
 		jobs = append(jobs, job{mtp, m.MTP})
 	}

@@ -36,6 +36,8 @@ func speedEngine(t *testing.T) (*Engine, *Model) {
 		{Name: "small", Files: []string{"small.gguf"}, Size: 10},
 		{Name: "spark", Files: []string{"spark.gguf"}, Draft: "dspark", DraftFor: "Org/Big", Size: 5},
 		{Name: "other-spark", Files: []string{"os.gguf"}, Draft: "eagle3", DraftFor: "Org/Else", Size: 5},
+		{Name: "named", Files: []string{"n.gguf"}, Draft: "eagle3", Repo: "x/Big-EAGLE3-Speculator-GGUF", Size: 5},
+		{Name: "unnamed", Files: []string{"u.gguf"}, Draft: "dflash", Repo: "x/Other-DFlash-GGUF", Size: 5},
 	} {
 		if err := st.Put(m); err != nil {
 			t.Fatal(err)
@@ -122,6 +124,9 @@ func TestDraftChoices(t *testing.T) {
 	// "spark" was made for Org/Big (matches o/Big-GGUF); "other-spark" for another model.
 	if !slices.Contains(names, "spark") || slices.Contains(names, "other-spark") || slices.Contains(names, "big") {
 		t.Errorf("drafts for big = %v", names)
+	}
+	if !slices.Contains(names, "named") || slices.Contains(names, "unnamed") {
+		t.Errorf("a draft with no stated base is matched by name: %v", names)
 	}
 	if err := e.checkDraft(big, "other-spark"); err == nil {
 		t.Error("accepted a draft made for another model")
