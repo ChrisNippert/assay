@@ -400,9 +400,14 @@
     range.style.setProperty('--pct', (Math.min(+range.value, max) / max) * 100 + '%');
     const of = defaults.layers ? ` of ${max}` : '';
     const from = origin(def);
-    if (val == null) sub.textContent = `Auto: all that fit${defaults.layers ? ` (${max} layers)` : ''}`;
-    else if (val >= max) sub.textContent = `${from}: all ${max} on the GPU`;
-    else sub.textContent = `${from}: ${val}${of} on the GPU, the rest on the CPU (slower)${perModel() ? '' : ' · auto context off'}`;
+    // A number set by hand turns llama.cpp's fitting off (ollamui falls
+    // back to Auto if it then runs out of memory), so Auto says what it does.
+    const handSet = perModel() ? ' · fixed, so not fitted to memory' : ' · auto context off';
+    if (val == null) sub.textContent = perModel()
+      ? `Auto: fits the model to free GPU memory${defaults.layers ? ` (${max} layers in all)` : ''}; MoE experts go to RAM when needed`
+      : `Auto: all that fit${defaults.layers ? ` (${max} layers)` : ''}`;
+    else if (val >= max) sub.textContent = `${from}: all ${max} on the GPU${perModel() ? handSet : ''}`;
+    else sub.textContent = `${from}: ${val}${of} on the GPU, the rest on the CPU (slower)${handSet}`;
     return own !== undefined || over?.from === 'chat';
   }
 

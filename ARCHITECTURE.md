@@ -118,6 +118,15 @@ code doesn't care which engine runs (`server.Backend`).
   MODEL group has "Draft model" and "Draft length". Measured on the CPU
   (GPU busy): Qwen3.5-9B with a 2B draft 3.98 vs 2.56 tok/s; not yet
   measured on the GPU.
+- **GPU layers and memory.** Auto (no `num_gpu`) passes no `-ngl`, so
+  llama.cpp's `--fit` sizes the load to free memory, keeping layers on the
+  GPU and moving MoE experts to RAM (Gemma 4 26B-A4B IQ4_NL, 14.8 GB on a
+  12 GB card: 33 tok/s). A number set by hand turns `--fit` off ("n_gpu_layers
+  already set by user"), and too many layers crash the load. So the engine
+  watches the whole log for allocation failures (`oomRe`; the error's tail
+  is usually only a backtrace) and, on one, loads again with Auto; the
+  process keeps the asked-for options so the next request doesn't restart
+  it. Tune's GPU layers row says Auto fits to memory and a number doesn't.
 - **CPU threads.** `num_thread` becomes `-t` (Tune → Memory). Only matters
   for layers on the CPU; 4 threads beat the default (all 16) on a CPU-only
   9B (3.7 vs 2.6 tok/s, one sample), so Auto may deserve a better default.

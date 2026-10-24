@@ -161,6 +161,9 @@ type proc struct {
 	busy     int // requests in flight
 	tail     []string
 	err      error
+	oom      string        // the first out-of-memory line it printed, if any
+	logDone  chan struct{} // closed once its output has all been read
+	fitted   bool          // asked for a layer count that didn't fit; --fit chose
 }
 
 func (p *proc) running() bool {
@@ -286,11 +289,33 @@ func (e *Engine) ensure(ctx context.Context, name string, options map[string]any
 		e.makeRoom(m.Name)
 	}
 	p, err = e.start(ctx, m, o)
+	if err != nil && o.GPULayers > 0 && outOfMemory(err) && ctx.Err() == nil {
+		// A fixed layer count turns llama.cpp's --fit off, so too many
+		// layers for the GPU just crash. Load it the way Auto would: --fit
+		// keeps what fits on the GPU and, for MoE models, moves experts to
+		// RAM. The process keeps the asked-for options, so the next request
+		// with the same settings doesn't restart it.
+		e.opt.Log.Warn("too many GPU layers for free memory; loading with automatic fitting instead", "model", m.Name, "asked", o.GPULayers)
+		auto := o
+		auto.GPULayers = -1
+		if p, err = e.start(ctx, m, auto); err == nil {
+			p.opts = o
+			p.fitted = true
+		}
+	}
 	if err == nil {
 		p.asked = name
 	}
 	return p, err == nil, err
 }
+
+// errGPUMemory is a load that ran out of GPU memory.
+var errGPUMemory = errors.New("not enough GPU memory")
+
+// oomRe matches llama.cpp's allocation failures (CUDA, ROCm, Vulkan, Metal).
+var oomRe = regexp.MustCompile(`(?i)out of memory|failed to allocate|unable to allocate|ErrorOutOfDeviceMemory`)
+
+func outOfMemory(err error) bool { return errors.Is(err, errGPUMemory) }
 
 // makeRoom stops other models that use the GPU, so the new one gets it
 // whole, like Ollama does. Pinned models, CPU-only models and embedding
@@ -341,7 +366,7 @@ func (e *Engine) start(ctx context.Context, m *Model, o loadOpts) (*proc, error)
 		return nil, err
 	}
 	cmd.Stdout = cmd.Stderr
-	p := &proc{model: m, opts: o, cmd: cmd, base: fmt.Sprintf("http://127.0.0.1:%d", port), done: make(chan struct{})}
+	p := &proc{model: m, opts: o, cmd: cmd, base: fmt.Sprintf("http://127.0.0.1:%d", port), done: make(chan struct{}), logDone: make(chan struct{})}
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start llama-server: %w", err)
 	}
@@ -359,6 +384,16 @@ func (e *Engine) start(ctx context.Context, m *Model, o loadOpts) (*proc, error)
 	deadline := time.Now().Add(e.opt.LoadTimeout)
 	for {
 		if !p.running() {
+			select { // the last of its output, which says why
+			case <-p.logDone:
+			case <-time.After(time.Second):
+			}
+			p.mu.Lock()
+			oom := p.oom
+			p.mu.Unlock()
+			if oom != "" {
+				return nil, fmt.Errorf("%w loading %s. Fewer GPU layers or a smaller context would fit (GPU layers: Auto does this for you). llama-server said: %s", errGPUMemory, m.Name, oom)
+			}
 			return nil, fmt.Errorf("llama-server stopped while loading %s: %s", m.Name, p.lastLines())
 		}
 		hctx, cancel := context.WithTimeout(ctx, 2*time.Second)
@@ -440,6 +475,7 @@ func gfxOverride(v string) string {
 // readLog keeps the last lines for error messages and picks out how the
 // model was placed: layers on the GPU, buffer sizes, context.
 func (p *proc) readLog(r io.Reader, log *slog.Logger) {
+	defer close(p.logDone)
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64<<10), 1<<20)
 	for sc.Scan() {
@@ -458,6 +494,9 @@ func (p *proc) readLog(r io.Reader, log *slog.Logger) {
 			} else {
 				p.ram += b
 			}
+		}
+		if p.oom == "" && oomRe.MatchString(line) {
+			p.oom = strings.TrimSpace(line)
 		}
 		if m := offloadRe.FindStringSubmatch(line); m != nil {
 			p.layers, _ = strconv.Atoi(m[1])
