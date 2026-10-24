@@ -152,6 +152,7 @@ func run() error {
 	llama.Eng = eng
 	eng.OllamaDir = *ollamaModels
 	eng.Folder = folder
+	eng.Finder = engine.NewFinder(filepath.Join(*configDir, "sources.json"))
 	eng.HF = hfClient
 	srv, err := server.New(server.Options{
 		Ollama:        eng,

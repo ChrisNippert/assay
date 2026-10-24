@@ -25,7 +25,7 @@
           {{with $g.PrimaryOwner}}<span class="lib-owner muted">{{.}}</span>{{end}}
           <span class="status">{{if $g.Loaded}}<button type="button" class="status-btn tag good" data-eject="{{$g.EjectName}}" title="Loaded. Click to eject">● Loaded</button>{{end}}</span>
         </div>
-        <div class="row-sub">{{with .Details.Family}}{{.}}{{end}}{{with .Details.ParameterSize}} · {{.}}{{end}}{{with .Details.QuantizationLevel}} · <span class="mono">{{.}}</span>{{end}} · {{bytes .Size}} · {{ago .ModifiedAt}}{{with $g.Others}} · also: {{range $i, $o := .}}{{if $i}}, {{end}}{{$o}}{{end}}{{end}}</div>
+        <div class="row-sub">{{with .Details.Family}}{{.}}{{end}}{{with .Details.ParameterSize}} · {{.}}{{end}}{{with .Details.QuantizationLevel}} · <span class="mono">{{.}}</span>{{end}} · {{bytes .Size}} · {{ago .ModifiedAt}}{{with $g.Others}} · also: {{range $i, $o := .}}{{if $i}}, {{end}}{{$o}}{{end}}{{end}}{{with $g.Link}} · <span class="{{if .Missing}}lib-missing{{else}}muted{{end}}" title="{{.Title}}">{{.Text}}</span>{{end}}</div>
       </div>
       {{with $g.Fit}}<div class="lib-fit" title="{{if $g.Bench}}Measured in a speed test{{else}}Estimated: weights + 8k context, {{bytes .Need}} of your GPU's memory{{end}}">
         <span class="fit-label fit-{{.Level}}">{{.Label}}</span>
@@ -87,5 +87,16 @@
     <a class="btn primary" href="/discover">Browse Discover</a>
   </div>
   {{end}}
+
+  <section class="found" id="found" hidden>
+    <div class="found-top">
+      <h2 class="found-title">Found on this computer</h2>
+      <span class="muted small" id="found-count"></span>
+      <button type="button" class="btn subtle" id="found-refresh" title="Look again">Refresh</button>
+    </div>
+    <p class="muted small found-intro">Models other apps already downloaded. Importing links them in without copying, and never changes the other app’s files.</p>
+    <p class="found-msg small" id="found-msg" hidden></p>
+    <div id="found-body"></div>
+  </section>
 </div>
 {{end}}

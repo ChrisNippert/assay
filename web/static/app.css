@@ -806,3 +806,20 @@ a.tag-link:hover { border-color: var(--accent-line); color: var(--accent-text); 
 .lc-row .row-ctrl { flex-wrap: wrap; justify-content: flex-end; }
 .lc-bar { margin-top: var(--s2); height: 6px; border-radius: 3px; background: var(--soft); overflow: hidden; }
 .lc-bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; }
+
+/* Library: found on this computer */
+.found { margin-top: var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
+.found-top { display: flex; align-items: baseline; gap: var(--s3); }
+.found-top .btn { margin-left: auto; }
+.found-title { margin: 0; font-size: 15px; font-weight: 600; }
+.found-intro, .found-msg { margin: 0; }
+.found-msg.bad { color: var(--bad); }
+#found-body { display: flex; flex-direction: column; gap: var(--s4); }
+.found-row { cursor: pointer; }
+.found-row:hover { background: var(--soft); }
+.found-name { overflow-wrap: anywhere; }
+.found-head .row-sub { overflow-wrap: anywhere; }
+.found.busy { opacity: .7; pointer-events: none; }
+.found-addrow input { padding: var(--s2) var(--s3); border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; max-width: 100%; }
+.lib-missing { color: var(--bad); }
+@media (max-width: 720px) { .found-addrow { flex-wrap: wrap; } }

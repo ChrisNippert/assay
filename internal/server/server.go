@@ -197,6 +197,10 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("POST /api/models/folder", s.handleFolderMove)
 	mux.HandleFunc("DELETE /api/models/folder", s.handleFolderCancel)
 	mux.HandleFunc("POST /api/models/folder/check", s.handleFolderCheck)
+	mux.HandleFunc("GET /api/models/sources", s.handleSources)
+	mux.HandleFunc("POST /api/models/sources/import", s.handleSourcesImport)
+	mux.HandleFunc("POST /api/models/sources/folder", s.handleSourcesFolder)
+	mux.HandleFunc("DELETE /api/models/sources/folder", s.handleSourcesFolder)
 	mux.HandleFunc("POST /api/models/load", s.handleLoad)
 	mux.HandleFunc("POST /api/models/eject", s.handleEject)
 	mux.HandleFunc("POST /api/models/delete", s.handleDeleteModel)
@@ -292,6 +296,8 @@ type page struct {
 	memory hw.Memory
 	bench  *bench.Store
 	groups []modelGroup
+	// linkNote says where a linked model comes from (the Library); may be nil.
+	linkNote func(name string) *linkNote
 }
 
 // LoadedNames lists the models currently in memory.

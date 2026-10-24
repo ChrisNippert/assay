@@ -118,6 +118,7 @@ func recentPresets(list []chats.Summary, all []*presets.Preset, n int) []*preset
 
 func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 	p := s.basePage(r.Context(), "library", "Library")
+	p.linkNote = s.linkNoteOf
 	s.render(w, "library", p)
 }
 

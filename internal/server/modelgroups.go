@@ -23,6 +23,8 @@ type modelGroup struct {
 	// Fit is how it fits in memory; Bench its last speed test, if any.
 	Fit   hw.Fit
 	Bench *bench.Result
+	// Link says the model is linked from another app's files.
+	Link *linkNote
 }
 
 // Speed is the measured writing speed for the UI, or "".
@@ -129,6 +131,9 @@ func (p *page) ModelGroups() []modelGroup {
 			}
 		}
 		g.Fit = fitOf(g.Primary, g.Bench, p.memory)
+		if p.linkNote != nil {
+			g.Link = p.linkNote(g.Primary.Name)
+		}
 	}
 	p.groups = groups
 	return groups
