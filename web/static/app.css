@@ -859,3 +859,22 @@ a.tag-link:hover { border-color: var(--accent-line); color: var(--accent-text); 
 .found-addrow input { padding: var(--s2) var(--s3); border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; max-width: 100%; }
 .lib-missing { color: var(--bad); }
 @media (max-width: 720px) { .found-addrow { flex-wrap: wrap; } .found-addrow .row-ctrl { flex-wrap: wrap; width: 100%; } .found-addrow input { flex: 1 1 9rem; min-width: 0; } }
+
+/* ---- layout pass: chat and compare ---- */
+.tool summary { overflow-wrap: anywhere; }
+.tool-body { min-width: 0; }
+@media (max-width: 760px) {
+  /* Row 1: menu, model, Load. Row 2: Tune and Delete chat. */
+  .content-chat .switcher { flex: 1 1 0; min-width: 0; }
+  .content-chat .appbar-start { flex: 1 1 60%; }
+  .content-chat .mem-empty { display: none; }
+  .content-chat .tune-btn, .content-chat #delete-chat { min-height: 40px; }
+  .content-chat .mem-list { flex: 1 1 100%; order: 5; }
+  .content-chat .mem-list:has(.mem-empty) { display: none; }
+  .content-chat .tune-btn { margin-right: auto; }
+  .content-chat { height: 100dvh; }
+  .content-chat .chat { height: auto; flex: 1 1 0; min-height: 0; }
+}
+@media (max-width: 760px) { .msg.user { max-width: 90%; } }
+.cmp-chip { max-width: 100%; min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 760px) { .cmp-grid > .cmp-label { position: sticky; left: 0; background: var(--surface); z-index: 1; } }
