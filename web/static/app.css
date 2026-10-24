@@ -859,3 +859,36 @@ a.tag-link:hover { border-color: var(--accent-line); color: var(--accent-text); 
 .found-addrow input { padding: var(--s2) var(--s3); border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; max-width: 100%; }
 .lib-missing { color: var(--bad); }
 @media (max-width: 720px) { .found-addrow { flex-wrap: wrap; } .found-addrow .row-ctrl { flex-wrap: wrap; width: 100%; } .found-addrow input { flex: 1 1 9rem; min-width: 0; } }
+
+/* ---- layout pass: settings, presets, projects ---- */
+/* The sticky jump bar sits below the app bar, and anchors land clear of both. */
+.settings-nav { top: var(--appbar-h); }
+.settings .group-title[id] { scroll-margin-top: calc(var(--appbar-h) + 56px); }
+/* A page's boxed content can't push the page sideways. */
+.content-presets .page { min-width: 0; max-width: 1100px; width: 100%; margin: 0 auto; box-sizing: border-box; }
+@media (max-width: 1100px) {
+  /* Presets as cards whenever the table would scroll sideways. */
+  .presets-table, .presets-table tbody, .presets-table tr, .presets-table td { display: block; }
+  .presets-table thead { display: none; }
+  .presets-table tr { padding: var(--s3) var(--s4); }
+  .presets-table tr + tr { border-top: 1px solid var(--border); }
+  .presets-table td { padding: 2px 0; border: none !important; white-space: normal; overflow-wrap: anywhere; min-width: 0; }
+  .presets-table td.name { min-width: 0; }
+  .presets-table td:nth-child(4) { display: none; }
+  .presets-table .actions { justify-content: flex-start; margin-top: var(--s2); }
+  .presets-table .settings-cell { max-width: none; }
+}
+@media (max-width: 760px) {
+  /* Buttons in a settings row go under the description, like selects do. */
+  .settings .row:has(.row-ctrl .btn, input[type="url"]) { flex-wrap: wrap; }
+  .settings .row:has(input[type="url"]) .row-ctrl { flex: 1 1 100%; justify-content: flex-end; }
+  .settings .row-ctrl input[type="url"] { max-width: 100%; flex: 1; min-width: 0; }
+  .settings .row:has(.row-ctrl .btn) .row-ctrl { flex: 1 1 100%; justify-content: flex-end; }
+  /* The jump bar is one scrolling line instead of a block of wrapped chips. */
+  .settings-nav { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; position: static; }
+  .settings-nav a { flex: none; padding: 10px 16px; }
+  .settings .group-title[id] { scroll-margin-top: 70px; }
+  /* App bar: menu button and title share a row; the status drops below. */
+  .content-settings .appbar-start, .content-presets .appbar-start, .content-project .appbar-start { flex: 1 1 0; }
+  .content-presets .appbar-start { flex-wrap: wrap; row-gap: 0; gap: var(--s1) var(--s3); }
+}
