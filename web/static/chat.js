@@ -693,14 +693,70 @@
     return box;
   }
 
+  // ---- queue ----
+  // While a reply streams, what's typed waits here and goes out, in order,
+  // as each reply finishes. Stopping or an error pauses it.
+  const queueBox = document.getElementById('queue');
+  let queue = [];
+  const hasDraft = () => !!input.value.trim() || window.ollamuiAttach.count() > 0;
+  function syncSendBtn() {
+    sendBtn.textContent = !controller ? 'Send' : hasDraft() ? 'Queue' : 'Stop';
+    sendBtn.title = controller && hasDraft() ? 'Send this after the reply finishes (Esc stops the reply)' : '';
+  }
+  input.addEventListener('input', syncSendBtn);
+  // Attaching a file also makes a draft.
+  new MutationObserver(syncSendBtn).observe(document.getElementById('att-row'), { childList: true, subtree: true });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && controller) { e.preventDefault(); controller.abort(); }
+  });
+  function paintQueue(paused) {
+    queueBox.hidden = !queue.length;
+    queueBox.replaceChildren();
+    if (!queue.length) return;
+    const head = el('div', 'queue-head');
+    head.append(el('span', null, paused ? `Queued · paused` : `Queued · sends after this reply`));
+    if (paused && !controller) {
+      const go = el('button', 'btn', 'Send next');
+      go.type = 'button';
+      go.addEventListener('click', nextQueued);
+      head.append(go);
+    }
+    queueBox.append(head);
+    queue.forEach((q, i) => {
+      const row = el('div', 'queue-row');
+      let label = q.text || '';
+      if (q.files.length) label += (label ? ' · ' : '') + q.files.map((f) => f.name).join(', ');
+      row.append(el('span', 'queue-text', label));
+      const rm = el('button', 'icon-btn', '×');
+      rm.type = 'button';
+      rm.title = 'Remove from the queue';
+      rm.setAttribute('aria-label', 'Remove from the queue');
+      rm.addEventListener('click', () => { queue.splice(i, 1); paintQueue(paused); });
+      row.append(rm);
+      queueBox.append(row);
+    });
+  }
+  function nextQueued() {
+    if (controller || !queue.length) return;
+    const q = queue.shift();
+    paintQueue();
+    send(q.text, undefined, q.files);
+  }
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (controller) { controller.abort(); return; } // the button is "Stop" while streaming
-    const text = input.value.trim();
     const att = window.ollamuiAttach;
+    if (controller && !hasDraft()) { controller.abort(); return; } // the button is "Stop" while streaming
+    const text = input.value.trim();
     if ((!text && !att.count()) || !select.value || att.busy()) return;
     if (await att.blockedImage()) return; // the chip says the model can't see it
     input.value = '';
+    if (controller) {
+      queue.push({ text, files: att.take() });
+      paintQueue();
+      syncSendBtn();
+      return;
+    }
     send(text, undefined, att.take());
   });
 
@@ -742,8 +798,9 @@
     list.append(reply);
     scrollDown();
 
-    sendBtn.textContent = 'Stop';
     controller = new AbortController();
+    syncSendBtn();
+    let outcome = 'done';
     // If the reply has to load the model first, the memory list shows it.
     const loadCheck = isLoaded(selectedOption()) ? null : setTimeout(() => refreshLoaded(true), 500);
     let content = '';
@@ -837,6 +894,7 @@
         if (stick) scrollDown();
       });
     } catch (err) {
+      outcome = err.name === 'AbortError' ? 'stopped' : 'error';
       if (err.name === 'AbortError') {
         stats.textContent = 'Stopped';
       } else {
@@ -852,7 +910,11 @@
       if (!content && !thinking && reply.querySelector('.tool')) md.remove(); // nothing after the last call
       clearTimeout(loadCheck);
       controller = null;
-      sendBtn.textContent = 'Send';
+      syncSendBtn();
+      if (queue.length) {
+        if (outcome === 'done') setTimeout(nextQueued, 300);
+        else paintQueue(true);
+      }
       voice.end?.();
       addActions(reply);
       input.focus();
