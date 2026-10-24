@@ -463,6 +463,12 @@ func (f *File) IsProjector() bool {
 	return false
 }
 
+// IsLoRA reports whether this is a LoRA adapter (general.type "adapter", adapter.type
+// "lora"): a small file llama.cpp applies on top of a base model of the same architecture.
+func (f *File) IsLoRA() bool {
+	return f.String("general.type") == "adapter" && f.String("adapter.type") == "lora"
+}
+
 // ModelInfo is Meta without tokenizer.* keys and without skipped arrays: the shape
 // Ollama's /api/show model_info had.
 func (f *File) ModelInfo() map[string]any {

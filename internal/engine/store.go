@@ -48,6 +48,16 @@ type Model struct {
 	Link   string `json:"link,omitempty"`
 	Origin string `json:"origin,omitempty"`
 	Source string `json:"source"`
+	// Adapter is set on a LoRA adapter: a file llama.cpp applies on top of
+	// a model of its architecture. Adapters live beside the models, but
+	// List leaves them out, so they never show as models.
+	Adapter *AdapterInfo `json:"adapter,omitempty"`
+}
+
+// AdapterInfo describes a LoRA adapter.
+type AdapterInfo struct {
+	// Arch is the base architecture it was trained for (general.architecture).
+	Arch string `json:"arch"`
 }
 
 // options layers the model's Params, its Settings and a request's options.
@@ -136,14 +146,41 @@ func (s *Store) reload() error {
 	return nil
 }
 
-// List returns the installed models, by name.
+// List returns the installed models, by name. LoRA adapters are left out.
 func (s *Store) List() []*Model {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []*Model
+	for _, m := range s.models {
+		if m.Adapter == nil {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// everything returns the models and the adapters, for what files are in use.
+func (s *Store) everything() []*Model {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]*Model(nil), s.models...)
 }
 
-// Get finds a model by its name or an alias. "x" and "x:latest" match.
+// Adapters returns the installed LoRA adapters, by name.
+func (s *Store) Adapters() []*Model {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []*Model
+	for _, m := range s.models {
+		if m.Adapter != nil {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// Get finds a model or adapter by its name or an alias. "x" and "x:latest"
+// match. Callers that load a model refuse adapters.
 func (s *Store) Get(name string) (*Model, error) {
 	want := normName(name)
 	s.mu.Lock()
@@ -217,7 +254,7 @@ func (s *Store) Delete(name string) error {
 		return err
 	}
 	used := map[string]bool{}
-	for _, o := range s.List() {
+	for _, o := range s.everything() {
 		for _, f := range append(o.Files, o.Projector) {
 			used[f] = true
 		}

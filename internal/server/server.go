@@ -199,6 +199,7 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("POST /api/models/folder/check", s.handleFolderCheck)
 	mux.HandleFunc("GET /api/models/sources", s.handleSources)
 	mux.HandleFunc("POST /api/models/sources/import", s.handleSourcesImport)
+	mux.HandleFunc("POST /api/models/adapters", s.handleAdapterAdd)
 	mux.HandleFunc("POST /api/models/sources/folder", s.handleSourcesFolder)
 	mux.HandleFunc("DELETE /api/models/sources/folder", s.handleSourcesFolder)
 	mux.HandleFunc("POST /api/models/load", s.handleLoad)
@@ -298,6 +299,8 @@ type page struct {
 	groups []modelGroup
 	// linkNote says where a linked model comes from (the Library); may be nil.
 	linkNote func(name string) *linkNote
+	// Adapters are the LoRA adapters in the library (the Library page).
+	Adapters []adapterRow
 }
 
 // LoadedNames lists the models currently in memory.

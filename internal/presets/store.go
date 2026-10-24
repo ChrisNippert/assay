@@ -199,6 +199,14 @@ func CleanOptions(in map[string]any) (map[string]any, error) {
 				return nil, fmt.Errorf("option stop must be a list of strings")
 			}
 			out[k] = list
+		case k == "lora":
+			list, err := cleanLoRA(v)
+			if err != nil {
+				return nil, err
+			}
+			if len(list) > 0 {
+				out[k] = list
+			}
 		default:
 			return nil, fmt.Errorf("unknown option %q", k)
 		}
