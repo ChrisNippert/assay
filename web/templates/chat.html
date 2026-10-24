@@ -127,22 +127,32 @@
         </button>
       </div>
       <div class="tune-body">
-        <section class="tune-section">
-          <div class="tune-section-head"><h2 class="tune-section-title">This chat</h2><span class="tune-section-sub">How the model answers here.</span></div>
-          <div class="boxed-list" id="tune-chat"></div>
-          <div class="pref-group">
-            <label class="pref-title" for="tune-system">System prompt</label>
-            <textarea id="tune-system" class="boxed-text" rows="3"></textarea>
+        <details class="tsec" id="tsec-reply" open data-default="1">
+          <summary><span class="tsec-title">Reply style</span><span class="tsec-sub" id="tsec-reply-sub"></span><span class="chevron" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+          <div class="tsec-body">
+            <textarea id="tune-system" class="boxed-text" rows="2" aria-label="System prompt" placeholder="System prompt"></textarea>
+            <div class="boxed-list" id="tune-reply"></div>
           </div>
-          <div class="boxed-list" id="tune-sampling-box"></div>
-          <div class="boxed-list" id="tune-format-box"></div>
-        </section>
-        <section class="tune-section">
-          <div class="tune-section-head"><h2 class="tune-section-title" id="tune-model-title">Model</h2><span class="tune-section-sub" id="tune-model-sub"></span></div>
-          <div class="boxed-list" id="tune-model"></div>
-          <div class="boxed-list" id="tune-memory-box"></div>
-          <p class="small muted tune-saved" id="tune-model-status" role="status"></p>
-        </section>
+        </details>
+        <details class="tsec" id="tsec-sampling" open data-default="1">
+          <summary><span class="tsec-title">Sampling</span><span class="tsec-sub" id="tsec-sampling-sub"></span><span class="chevron" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+          <div class="tsec-body">
+            <div class="boxed-list" id="tune-sampling-box"></div>
+          </div>
+        </details>
+        <details class="tsec" id="tsec-context" open data-default="1">
+          <summary><span class="tsec-title">Context &amp; memory</span><span class="tsec-sub" id="tsec-context-sub"></span><span class="chevron" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+          <div class="tsec-body">
+            <div class="boxed-list" id="tune-context"></div>
+          </div>
+        </details>
+        <details class="tsec" id="tsec-perf" data-default="0">
+          <summary><span class="tsec-title">Performance &amp; loading</span><span class="tsec-sub" id="tsec-perf-sub"></span><span class="chevron" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+          <div class="tsec-body">
+            <div class="boxed-list" id="tune-perf"></div>
+            <p class="small muted tune-saved" id="tune-model-status" role="status"></p>
+          </div>
+        </details>
       </div>
       <div class="tune-foot">
         <div class="tune-actions">

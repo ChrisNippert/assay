@@ -16,6 +16,7 @@
 <script>if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('/sw.js').catch(() => {});</script>
 <script src="/static/theme.js"></script>
 <link rel="stylesheet" href="/static/app.css">
+<script src="/static/resize.js"></script>
 <script src="/static/app.js" defer></script>
 {{if eq .Active "chat"}}<link rel="stylesheet" href="/static/katex/katex.min.css"><script src="/static/katex/katex.min.js" defer></script><script src="/static/hljs/highlight.min.js" defer></script><script src="/static/hljs/lang-dockerfile.min.js" defer></script><link rel="stylesheet" href="/static/hljs/theme.css"><script src="/static/tune.js" defer></script><script src="/static/attach.js" defer></script><script src="/static/chat.js" defer></script><script src="/static/voice.js" defer></script>{{end}}
 {{if eq .Active "discover"}}<script src="/static/discover.js" defer></script>{{end}}
