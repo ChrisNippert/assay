@@ -48,7 +48,11 @@ type Message struct {
 	Model string     `json:"model,omitempty"`
 	Stats *Stats     `json:"stats,omitempty"`
 	// Sources are the project-file excerpts the reply was given (RAG).
-	Sources []Source  `json:"sources,omitempty"`
+	Sources []Source `json:"sources,omitempty"`
+	// Attachments are the files sent with a user message (see attach.go).
+	Attachments []Attachment `json:"attachments,omitempty"`
+	// Images are the attached images, base64, loaded for one request only.
+	Images  []string  `json:"-"`
 	Created time.Time `json:"created"`
 }
 
@@ -318,7 +322,7 @@ func (s *Store) Delete(id string) error {
 	if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	return nil
+	return os.RemoveAll(filepath.Join(s.dir, id+filesSuffix))
 }
 
 // List returns all chats, most recently updated first. Files that fail to

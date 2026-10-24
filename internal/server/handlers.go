@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -236,6 +237,9 @@ type sendRequest struct {
 	Spoken bool `json:"spoken"`
 	// Project puts a new chat in a project.
 	Project string `json:"project"`
+	// Attachments are tokens from the upload endpoint for the new message.
+	// An edit or regenerate keeps the attachments the message already had.
+	Attachments []string `json:"attachments"`
 }
 
 // event is one line of the NDJSON stream sent back to the browser.
@@ -250,6 +254,8 @@ type event struct {
 	Compression *chats.Compression `json:"compression,omitempty"`
 	// Call is a tool call: "tool" when it starts, "toolresult" when done.
 	Call *chats.ToolCall `json:"call,omitempty"`
+	// Attachments: the new message's files, with Cut set on those shortened.
+	Attachments []chats.Attachment `json:"attachments,omitempty"`
 }
 
 func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
@@ -267,6 +273,9 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 	}
 	emit := streamEvents(w)
 	if emit(event{Type: "chat", ID: t.chat.ID}) != nil {
+		return
+	}
+	if len(t.cutFiles) > 0 && emit(event{Type: "attachments", Attachments: t.cutFiles}) != nil {
 		return
 	}
 	if len(t.sources) > 0 && emit(event{Type: "sources", Sources: t.sources}) != nil {
@@ -313,6 +322,17 @@ type turn struct {
 	compress bool
 	// dropped: an edit cut the summary away before this send.
 	dropped bool
+	// vision: the model can see images; docChars is the room documents have.
+	vision   bool
+	docChars int
+	// cutFiles are the new message's attachments when some were shortened.
+	cutFiles []chats.Attachment
+}
+
+// hist is the chat's messages with their attachments put in (see withFiles).
+func (t *turn) hist(s *Server) []chats.Message {
+	msgs, _ := s.withFiles(t.chat.ID, t.chat.Messages, t.vision, t.docChars)
+	return msgs
 }
 
 // stats turns Ollama's final chunk into the stats saved with the reply.
@@ -348,7 +368,7 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 		}
 		req.Model = preset.Base
 	}
-	if req.Content == "" || req.Model == "" {
+	if (req.Content == "" && len(req.Attachments) == 0) || req.Model == "" {
 		writeError(w, http.StatusBadRequest, "model and content are required")
 		return nil, false
 	}
@@ -379,6 +399,9 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 	} else {
 		c = chats.New(req.Model)
 		c.Title = titleFrom(req.Content)
+		if c.Title == "" {
+			c.Title = "Attached files"
+		}
 		if req.Project != "" {
 			if _, err := s.projects.Get(req.Project); err == nil {
 				c.Project = req.Project
@@ -386,8 +409,12 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 		}
 	}
 	var dropped bool
+	var files []chats.Attachment
 	if req.FromUser != nil {
 		at := c.UserIndex(*req.FromUser)
+		if at >= 0 {
+			files = slices.Clone(c.Messages[at].Attachments)
+		}
 		if !c.TruncateAtUser(*req.FromUser) {
 			writeError(w, http.StatusBadRequest, "no such message")
 			return nil, false
@@ -399,7 +426,24 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 	}
 	c.Model = req.Model // switching models mid-chat is allowed
 	c.Preset, c.Options, c.System, c.Think, c.Compress, c.Tools = req.Preset, overrides, req.System, req.Think, req.Compress, req.Tools
-	c.Messages = append(c.Messages, chats.Message{Role: "user", Content: req.Content, Created: time.Now()})
+	if len(req.Attachments) > 0 {
+		added, err := s.chats.Adopt(c.ID, req.Attachments)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return nil, false
+		}
+		files = append(files, added...)
+	}
+	vision := s.hasVision(r.Context(), c.Model)
+	if !vision {
+		for _, a := range files {
+			if a.Kind == "image" {
+				writeError(w, http.StatusBadRequest, c.Model+" can't see images. Pick a model with vision, or remove "+a.Name+".")
+				return nil, false
+			}
+		}
+	}
+	c.Messages = append(c.Messages, chats.Message{Role: "user", Content: req.Content, Attachments: files, Created: time.Now()})
 	if err := s.chats.Save(c); err != nil {
 		s.log.Error("save chat", "err", err)
 		writeError(w, http.StatusInternalServerError, "could not save chat")
@@ -432,7 +476,6 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 		system = strings.TrimSpace(system + "\n\n" + toolsSystem)
 	}
 	t.system, t.dropped, t.compress = system, dropped, s.compressOn(c, preset)
-	msgs := buildMessages(system, c.Compression, c.Messages)
 	// Without a context length from the chat or preset, Ollama would use its
 	// small default (4k on most GPUs), which thinking models fill quickly.
 	// Pick the largest that fits on the GPU instead.
@@ -459,6 +502,28 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 		}
 	}
 	_, t.ctxSaved = saved["num_ctx"]
+	// Attached documents may fill part of the context; what doesn't fit is
+	// cut, and the chat remembers which of the new files were.
+	t.vision = vision
+	ctxLen := intOf(options["num_ctx"])
+	if ctxLen == 0 {
+		ctxLen = intOf(saved["num_ctx"])
+	}
+	t.docChars = docBudget(ctxLen)
+	hist, cut := s.withFiles(c.ID, c.Messages, vision, t.docChars)
+	if last := &c.Messages[len(c.Messages)-1]; len(last.Attachments) > 0 {
+		changed := false
+		for i := range last.Attachments {
+			if cut[last.Attachments[i].File] && !last.Attachments[i].Cut {
+				last.Attachments[i].Cut, changed = true, true
+			}
+		}
+		if changed {
+			t.cutFiles = last.Attachments
+			s.chats.Save(c)
+		}
+	}
+	msgs := buildMessages(system, c.Compression, hist)
 	t.req = ollama.ChatRequest{Model: c.Model, Messages: msgs, Options: options, ChatID: c.ID, Tools: toolDefs(t.tools)}
 	if think != nil {
 		t.req.Think = *think
@@ -544,7 +609,7 @@ func toOllama(msgs []chats.Message) []ollama.Message {
 	for _, m := range msgs {
 		// Tool calls the reply made come first, as the model saw them.
 		out = append(out, toolMessages(m)...)
-		out = append(out, ollama.Message{Role: m.Role, Content: m.Content})
+		out = append(out, ollama.Message{Role: m.Role, Content: m.Content, Images: m.Images})
 	}
 	return out
 }
