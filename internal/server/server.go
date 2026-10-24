@@ -91,6 +91,7 @@ type Server struct {
 	presets *presets.Store
 	hf      *hf.Client
 	pulls   *pulls.Manager
+	move    moveJob // the models folder move, if any
 	scores  *scores.Store
 	bench   *bench.Store
 	// projects, their RAG settings, and files waiting to be indexed.
@@ -195,6 +196,10 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("GET /api/loaded", s.handleLoaded)
 	mux.HandleFunc("GET /api/models/defaults", s.handleModelDefaults)
 	mux.HandleFunc("PUT /api/models/settings", s.handleModelSettings)
+	mux.HandleFunc("GET /api/models/folder", s.handleFolder)
+	mux.HandleFunc("POST /api/models/folder", s.handleFolderMove)
+	mux.HandleFunc("DELETE /api/models/folder", s.handleFolderCancel)
+	mux.HandleFunc("POST /api/models/folder/check", s.handleFolderCheck)
 	mux.HandleFunc("POST /api/models/load", s.handleLoad)
 	mux.HandleFunc("POST /api/models/eject", s.handleEject)
 	mux.HandleFunc("POST /api/models/delete", s.handleDeleteModel)

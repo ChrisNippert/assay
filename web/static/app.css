@@ -378,6 +378,13 @@ table.models { width: 100%; border-collapse: collapse; }
 .publish { display: inline-flex; gap: 6px; align-items: center; }
 
 .settings-warn { color: var(--warn); }
+.mf-path { word-break: break-all; }
+.mf-click { cursor: pointer; }
+.mf-mount .row-title { font-weight: 400; word-break: break-all; }
+.mf-bar { width: 100%; height: 6px; margin-top: var(--s2); accent-color: var(--accent); }
+#mf-edit { border-top: 1px solid var(--border); }
+#mf-edit[hidden], #mf-mounts:empty { display: none; }
+#mf-edit .row + .row, #mf-edit > * + *, #mf-mounts > .row { border-top: 1px solid var(--border); }
 .settings .row-ctrl select { max-width: 280px; }
 @media (max-width: 760px) {
   /* The control goes under its label, so the description gets the width. */

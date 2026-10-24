@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"ollamui/internal/gguf"
@@ -54,8 +55,12 @@ type Engine struct {
 	HF HF
 
 	store *Store
-	opt   Options
-	http  *http.Client
+	// Folder says where the models folder is remembered.
+	Folder FolderSetting
+	// moving is set while the models folder moves: nothing starts.
+	moving atomic.Bool
+	opt    Options
+	http   *http.Client
 
 	mu    sync.Mutex
 	procs map[string]*proc // by model name
@@ -226,6 +231,9 @@ func (e *Engine) args(m *Model, o loadOpts, port int) []string {
 // (over the model's own), starting or restarting one when needed. It
 // reports whether it loaded the model.
 func (e *Engine) ensure(ctx context.Context, name string, options map[string]any) (*proc, bool, error) {
+	if e.moving.Load() {
+		return nil, false, errMovingModels
+	}
 	m, err := e.store.Get(name)
 	if err != nil {
 		return nil, false, err

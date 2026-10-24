@@ -66,6 +66,14 @@ type Store struct {
 
 	mu     sync.Mutex
 	models []*Model
+	// moving is set while MoveTo copies the files; changes wait.
+	moving bool
+}
+
+func (s *Store) isMoving() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.moving
 }
 
 // OpenStore loads the store in dir, creating it if needed.
@@ -80,10 +88,18 @@ func OpenStore(dir string) (*Store, error) {
 }
 
 // Blob is a file's full path.
-func (s *Store) Blob(name string) string { return filepath.Join(s.dir, "blobs", name) }
+func (s *Store) Blob(name string) string { return filepath.Join(s.Dir(), "blobs", name) }
+
+// Dir is the store's folder. It changes when the store is moved.
+func (s *Store) Dir() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.dir
+}
 
 func (s *Store) reload() error {
-	entries, err := os.ReadDir(filepath.Join(s.dir, "manifests"))
+	dir := s.Dir()
+	entries, err := os.ReadDir(filepath.Join(dir, "manifests"))
 	if err != nil {
 		return err
 	}
@@ -92,7 +108,7 @@ func (s *Store) reload() error {
 		if !strings.HasSuffix(e.Name(), ".json") {
 			continue
 		}
-		b, err := os.ReadFile(filepath.Join(s.dir, "manifests", e.Name()))
+		b, err := os.ReadFile(filepath.Join(dir, "manifests", e.Name()))
 		if err != nil {
 			continue
 		}
@@ -145,11 +161,14 @@ func manifestFile(name string) string {
 
 // Put saves a model's manifest (adding or replacing it).
 func (s *Store) Put(m *Model) error {
+	if s.isMoving() {
+		return ErrMoving
+	}
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(s.dir, "manifests", manifestFile(m.Name))
+	path := filepath.Join(s.Dir(), "manifests", manifestFile(m.Name))
 	if err := os.WriteFile(path+".tmp", append(b, '\n'), 0o644); err != nil {
 		return err
 	}
@@ -162,6 +181,9 @@ func (s *Store) Put(m *Model) error {
 // Delete removes a model and any files no other model uses. With an
 // alias it only drops that alias.
 func (s *Store) Delete(name string) error {
+	if s.isMoving() {
+		return ErrMoving
+	}
 	m, err := s.Get(name)
 	if err != nil {
 		return err
@@ -176,7 +198,7 @@ func (s *Store) Delete(name string) error {
 		}
 		return s.Put(&cp)
 	}
-	if err := os.Remove(filepath.Join(s.dir, "manifests", manifestFile(m.Name))); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := os.Remove(filepath.Join(s.Dir(), "manifests", manifestFile(m.Name))); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	if err := s.reload(); err != nil {
