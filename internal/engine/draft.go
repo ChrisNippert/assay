@@ -3,12 +3,16 @@ package engine
 import (
 	"fmt"
 	"sort"
+	"strings"
 )
 
-// Draft is an installed model that can draft for another.
+// Draft is an installed model that can draft for another. Kind is "" for an
+// ordinary small model, else what the downloaded draft is ("dspark",
+// "dflash", "eagle3").
 type Draft struct {
 	Name string `json:"name"`
 	Size int64  `json:"size"`
+	Kind string `json:"kind,omitempty"`
 }
 
 // Drafts lists the installed models that can speed up model by speculative
@@ -22,7 +26,7 @@ func (e *Engine) Drafts(name string) ([]Draft, error) {
 	var out []Draft
 	for _, d := range e.store.List() {
 		if e.draftOK(m, d) == nil {
-			out = append(out, Draft{Name: d.Name, Size: d.Size})
+			out = append(out, Draft{Name: d.Name, Size: d.Size, Kind: d.Draft})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -44,6 +48,18 @@ func (e *Engine) draftOK(m, d *Model) error {
 	if d.Name == m.Name {
 		return fmt.Errorf("a model can't draft for itself")
 	}
+	if m.Draft != "" {
+		return fmt.Errorf("%s only drafts for other models", m.Name)
+	}
+	if d.Draft != "" {
+		// Made for one model, with its own vocabulary tricks (EAGLE3 and
+		// DFlash drafts read the target's hidden state), so the size and
+		// vocabulary rules for ordinary drafts don't apply.
+		if d.DraftFor != "" && modelCore(d.DraftFor) != modelCore(m.Repo) {
+			return fmt.Errorf("draft model %s was made for %s, not %s", d.Name, d.DraftFor, m.Name)
+		}
+		return nil
+	}
 	if d.Size >= m.Size {
 		return fmt.Errorf("draft model %s isn't smaller than %s", d.Name, m.Name)
 	}
@@ -62,4 +78,14 @@ func (e *Engine) draftOK(m, d *Model) error {
 		return fmt.Errorf("draft model %s has a different vocabulary than %s", d.Name, m.Name)
 	}
 	return nil
+}
+
+// modelCore reduces a repo id to its model name, so a draft made for
+// "Qwen/Qwen3.5-9B" matches the quants in "unsloth/Qwen3.5-9B-GGUF".
+func modelCore(repo string) string {
+	_, name, ok := strings.Cut(repo, "/")
+	if !ok {
+		name = repo
+	}
+	return strings.TrimSuffix(strings.ToLower(name), "-gguf")
 }

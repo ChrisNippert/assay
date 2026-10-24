@@ -158,6 +158,16 @@ var (
 		"flash_attn": func(v string) bool { return v == "on" || v == "off" || v == "auto" },
 		// A model's name; the engine checks it's installed and compatible.
 		"draft_model": func(v string) bool { return v != "" && len(v) < 300 },
+		// What drafts for the model (auto: its MTP head if it has one), and
+		// whether to guess from the conversation ("on" is ngram-mod).
+		"speedup": func(v string) bool { return v == "auto" || v == "off" || v == "mtp" },
+		"spec_ngram": func(v string) bool {
+			switch v {
+			case "on", "off", "ngram-mod", "ngram-cache", "ngram-simple", "ngram-map-k", "ngram-map-k4v":
+				return true
+			}
+			return false
+		},
 		"keep_alive": func(v string) bool {
 			d, err := time.ParseDuration(v)
 			return v == "-1" || (err == nil && d > 0)

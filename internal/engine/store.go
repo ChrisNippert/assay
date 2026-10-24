@@ -29,7 +29,15 @@ type Model struct {
 	// blobs folder; Projector likewise ("" if none).
 	Files     []string `json:"files"`
 	Projector string   `json:"projector,omitempty"`
-	Size      int64    `json:"size"` // all files, projector included
+	// MTP is the model's multi-token-prediction head, a small file shipped
+	// beside the quants that lets it draft for itself ("" if none).
+	MTP  string `json:"mtp,omitempty"`
+	Size int64  `json:"size"` // all files, projector and MTP head included
+	// Draft marks a model that only drafts for others and can't chat:
+	// "dspark", "dflash", "eagle3" or "draft". DraftFor is the Hugging Face
+	// repo of the model it was made for, when known.
+	Draft    string `json:"draft,omitempty"`
+	DraftFor string `json:"draft_for,omitempty"`
 	// Digest identifies the weights: the first file's sha256 when known.
 	Digest   string    `json:"digest"`
 	Modified time.Time `json:"modified"`
@@ -48,6 +56,18 @@ type Model struct {
 	Link   string `json:"link,omitempty"`
 	Origin string `json:"origin,omitempty"`
 	Source string `json:"source"`
+}
+
+// AllFiles lists every file the model uses: its weights, projector and
+// MTP head.
+func (m *Model) AllFiles() []string {
+	out := append([]string(nil), m.Files...)
+	for _, f := range []string{m.Projector, m.MTP} {
+		if f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // options layers the model's Params, its Settings and a request's options.
@@ -218,11 +238,11 @@ func (s *Store) Delete(name string) error {
 	}
 	used := map[string]bool{}
 	for _, o := range s.List() {
-		for _, f := range append(o.Files, o.Projector) {
+		for _, f := range o.AllFiles() {
 			used[f] = true
 		}
 	}
-	for _, f := range append(m.Files, m.Projector) {
+	for _, f := range m.AllFiles() {
 		// A file used in place belongs to another app: only forget it.
 		if f != "" && !used[f] && !filepath.IsAbs(f) {
 			os.Remove(s.Blob(f))

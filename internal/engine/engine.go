@@ -112,6 +112,12 @@ type loadOpts struct {
 	Embedding bool
 	Draft     string // the draft model's name for speculative decoding, "": none
 	DraftMax  int    // tokens drafted at a time; 0: llama.cpp's default
+	// Speed and NGram are the speed-up settings as asked; planSpeed turns
+	// them into MTP, Draft and NGram (the n-gram type, "": none) before a
+	// server starts, so what runs is what compares.
+	Speed string
+	NGram string
+	MTP   bool // draft with the model's own MTP head
 }
 
 func loadOptsFrom(o map[string]any) loadOpts {
@@ -131,6 +137,8 @@ func loadOptsFrom(o map[string]any) loadOpts {
 	if v, ok := num(o["draft_max"]); ok && v > 0 {
 		lo.DraftMax = int(v)
 	}
+	lo.Speed, _ = o["speedup"].(string)
+	lo.NGram, _ = o["spec_ngram"].(string)
 	if v, _ := o["cache_type"].(string); CacheTypes[v] {
 		lo.CacheType = v
 	}
@@ -222,13 +230,7 @@ func (e *Engine) args(m *Model, o loadOpts, port int) []string {
 	if o.Threads > 0 {
 		a = append(a, "-t", strconv.Itoa(o.Threads))
 	}
-	if d, err := e.store.Get(o.Draft); err == nil && o.Draft != "" && !o.Embedding {
-		// Its GPU layers follow --fit, like the target's.
-		a = append(a, "-md", e.store.Blob(d.Files[0]))
-		if o.DraftMax > 0 {
-			a = append(a, "--spec-draft-n-max", strconv.Itoa(o.DraftMax))
-		}
-	}
+	a = append(a, e.specArgs(m, o)...)
 	if o.Embedding {
 		a = append(a, "--embedding", "-b", "2048", "-ub", "2048")
 	} else {
@@ -265,7 +267,8 @@ func (e *Engine) ensure(ctx context.Context, name string, options map[string]any
 	if f, err := e.gguf(m); err == nil && f.IsEmbedding() {
 		o.Embedding = true
 	}
-	if o.Draft != "" && !o.Embedding {
+	o = planSpeed(m, o)
+	if o.Draft != "" {
 		if err := e.checkDraft(m, o.Draft); err != nil {
 			return nil, false, err
 		}
@@ -657,6 +660,9 @@ func (e *Engine) List(ctx context.Context) ([]ollama.Model, error) {
 	}
 	var out []ollama.Model
 	for _, m := range e.store.List() {
+		if m.Draft != "" {
+			continue // drafts can't chat, so they're not models to pick
+		}
 		d := e.details(m)
 		for _, n := range m.Names() {
 			out = append(out, ollama.Model{Name: n, Model: n, ModifiedAt: m.Modified, Size: m.Size, Digest: m.Digest, Details: d})

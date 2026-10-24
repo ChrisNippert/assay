@@ -68,6 +68,14 @@ func TestCleanOptions(t *testing.T) {
 	if _, err := CleanOptions(map[string]any{"temperature": "hot"}); err == nil {
 		t.Error("accepted a string temperature")
 	}
+	for _, bad := range []map[string]any{{"speedup": "fast"}, {"spec_ngram": "ngram-bogus"}, {"spec_ngram": 1.0}} {
+		if _, err := CleanOptions(bad); err == nil {
+			t.Errorf("accepted %v", bad)
+		}
+	}
+	if _, err := CleanOptions(map[string]any{"speedup": "mtp", "spec_ngram": "ngram-mod"}); err != nil {
+		t.Error(err)
+	}
 	got, err := CleanOptions(map[string]any{"top_k": float64(40), "temperature": int64(1)})
 	if err != nil || got["top_k"] != int64(40) || got["temperature"] != 1.0 {
 		t.Errorf("got %#v, %v", got, err)
