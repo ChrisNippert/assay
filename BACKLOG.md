@@ -5,45 +5,11 @@ big it is (S = an hour or two, M = a session, L = several sessions).
 
 ## Next up
 
-### Tool use (M–L)
+### 1. Finish the llama.cpp switch (L, several sessions)
 
-Asked for 2026-10-23. llama-server already runs with `--jinja` and models
-whose template mentions tools get a "tools" capability, but chat never
-sends `tools` or handles `tool_calls`.
-
-- **`/v1` OpenAI-compatible API first** (stage 3 below): passes `tools`
-  straight through, so Zed's agent tools work with local models and show
-  how well they call tools before we build our own. (M)
-- **Built-in tools in chat**: web search (needs SearXNG or an API key:
-  decide), fetch a URL, calculator, search chats / project files. Loop:
-  model asks → ollamui runs → result goes back → model continues. Each call
-  shows as a foldable row in the reply, like thinking; saved with the chat. (M–L)
-- Off per chat or model when the template has no tools; a step limit so a
-  model can't loop forever. Qwen3.5 calls tools decently, Gemma less so.
-
-### Automatic context compression (M)
-
-Asked for 2026-10-23. Long chats hit the context length and the oldest
-turns silently fall off (or the reply is cut at `length`). Instead, when a
-chat nears ~80% of `num_ctx`, summarize the older turns with the same model
-and send summary + recent turns. Keep the full history on disk and in the
-page; show a quiet "earlier messages summarized" marker where the cut is,
-clickable to see the summary. Cache the summary in the chat file so it's
-made once, redone only when edits touch summarized turns. Thinking text
-from old turns is dropped first, before any summarizing. A setting to
-turn it off.
-
-### Choose where models are stored (S–M)
-
-Asked for 2026-10-23. Models live in `<data>/models` (hard links from
-`~/.ollama/models` on import), fixed by `-data`. Add a "Models folder"
-row in Settings → Models: pick a path, ollamui moves `blobs/` and the
-manifests there (with progress; stop loaded models first) and remembers
-it in its config, with `-models DIR` as a flag. Gotcha: hard links can't
-cross filesystems, so on another disk Ollama imports become copies (show
-the space needed) or symlinks. Check free space before moving.
-
-### Engine: llama.cpp replaces Ollama (L, several sessions)
+Top priority (2026-10-23): get all the way off Ollama, stages 3–5 below.
+Speculative decoding (stage 4, and section "Runtime settings" further
+down) is wanted in the first release.
 
 Decided 2026-10-20: full replacement, Vulkan build. Measured here with
 the same GGUF files and settings (all layers on GPU, flash attention,
@@ -116,33 +82,74 @@ Also pending: keyword search (BM25) for RAG so project files work without
 an embedding model (a user asked a project chat about a PDF and got
 nothing because no embedding model had been picked).
 
-### 0. Voice mode follow-ups (S–M)
+### 2. Choose where models are stored (S–M)
 
-Voice mode shipped 2026-10-20 (see Done) and became dictation + read aloud
-on 2026-10-21. Open:
+Asked for 2026-10-23. Models live in `<data>/models` (hard links from
+`~/.ollama/models` on import), fixed by `-data`. Add a "Models folder"
+row in Settings → Models: pick a path, ollamui moves `blobs/` and the
+manifests there (with progress; stop loaded models first) and remembers
+it in its config, with `-models DIR` as a flag. Gotcha: hard links can't
+cross filesystems, so on another disk Ollama imports become copies (show
+the space needed) or symlinks. Check free space before moving.
 
-- **Dead talker code.** `voiceTurn`, the talker and its warm-up
-  (`/api/voice?model=`) are unused since the switch to dictation. Delete
-  them, or bring live mode back as an option if it's missed. The talker and
-  overthinking items below only matter for live mode. (S)
+### Runtime settings: speculative decoding (M) — wanted for the first release
 
-- **Phone over HTTPS.** The mic needs a secure context. Document or automate
-  `tailscale serve --bg 8484` (and `-allow-host <machine>.<tailnet>.ts.net`). (S)
-- **Gemma 4 hears audio natively.** Ollama lists `audio` in its capabilities,
-  so whisper could be skipped for it. Keep whisper for the live transcript;
-  try sending the WAV as the message for better understanding of names. (M)
-- **Talker quality.** Qwen3.5-2B sometimes states a wrong fact in the
-  lead-in ("water scatters blue light"). Try a 4B, or tighter few-shot
-  prompts. The filters in `goodLine` catch numbers and conclusions only. (S)
-- **Overthinking.** Qwen3.5-9B still thinks 20–90 s on easy questions.
-  Small talk is now routed to the talker; simple factual questions could be
-  too ("answer without thinking"), or a think budget. Watch whether the
-  one-line prose prompt slows Qwen down. (M)
-- **Better speech detection.** Typing no longer triggers it (click filter,
-  sustained-voice window, duck-then-confirm interrupts). Silero VAD
-  (onnxruntime-web, ~2 MB) if other noise still causes false starts. (M)
+Requested 2026-10-20. Each one depends on what Ollama exposes, so check the
+installed version (0.40.x) before building UI for it.
 
-### 1. Intelligence score and benchmarks (L)
+- **GPU layers:** done (Tune → GPU layers, see Done).
+- **Server settings page.** Show Ollama's server-wide settings (read from
+  `systemctl show ollama -p Environment`, no root needed): KV cache type,
+  flash attention, default context, network binding. Offer a ready-to-run
+  `sudo systemctl edit ollama` snippet rather than running sudo ourselves.
+  Feed the KV type into auto-context (`kvBytesPerValue` in `hw/kv.go`):
+  q8_0 halves the cache, q4_0 quarters it.
+- **KV cache dtype (f16 / q8_0 / q4_0).** Historically server-wide only
+  (`OLLAMA_KV_CACHE_TYPE`, needs `OLLAMA_FLASH_ATTENTION=1`), not per model.
+  Research whether 0.40 allows it per request or per model. If not, show the
+  current server setting read-only with instructions, and factor it into
+  the memory/fit estimates (q8_0 halves KV size, so bigger contexts fit).
+- **Speculative decoding: not on this setup (checked 2026-10-20).** Ollama
+  0.40.6 accepts `draft` on `/api/create` and returns success, but for GGUF
+  models it stores no draft layer and nothing changes (Qwen3.5-9B Q4 with a
+  2B draft: 35.2 tok/s both ways). `ollama create --draft-quantize` is
+  safetensors-only, which suggests the MLX runner. `draft_num_predict` is a
+  documented option (default 4, 0 = off). Revisit on a newer Ollama; if it
+  lands, check `/api/show` lists the draft before showing any UI.
+
+## Lower priority
+
+Set 2026-10-23: after the llama.cpp switch and the models folder.
+
+### Tool use (M–L)
+
+Asked for 2026-10-23. llama-server already runs with `--jinja` and models
+whose template mentions tools get a "tools" capability, but chat never
+sends `tools` or handles `tool_calls`.
+
+- **`/v1` OpenAI-compatible API first** (stage 3 below): passes `tools`
+  straight through, so Zed's agent tools work with local models and show
+  how well they call tools before we build our own. (M)
+- **Built-in tools in chat**: web search (needs SearXNG or an API key:
+  decide), fetch a URL, calculator, search chats / project files. Loop:
+  model asks → ollamui runs → result goes back → model continues. Each call
+  shows as a foldable row in the reply, like thinking; saved with the chat. (M–L)
+- Off per chat or model when the template has no tools; a step limit so a
+  model can't loop forever. Qwen3.5 calls tools decently, Gemma less so.
+
+### Automatic context compression (M)
+
+Asked for 2026-10-23. Long chats hit the context length and the oldest
+turns silently fall off (or the reply is cut at `length`). Instead, when a
+chat nears ~80% of `num_ctx`, summarize the older turns with the same model
+and send summary + recent turns. Keep the full history on disk and in the
+page; show a quiet "earlier messages summarized" marker where the cut is,
+clickable to see the summary. Cache the summary in the chat file so it's
+made once, redone only when edits touch summarized turns. Thinking text
+from old turns is dropped first, before any summarizing. A setting to
+turn it off.
+
+### Intelligence score and benchmarks (L)
 
 The M4 feature from the design (Compare page, score on Discover rows and
 model pages).
@@ -179,32 +186,33 @@ model pages).
   Library and Discover rows; comparing a not-yet-downloaded quant (fit and
   score only).
 
-### 2. More runtime settings: KV cache type, GPU layers, speculative decoding (M)
+### Voice follow-ups (S–M) — parked, not needed for now
 
-Requested 2026-10-20. Each one depends on what Ollama exposes, so check the
-installed version (0.40.x) before building UI for it.
+Voice mode shipped 2026-10-20 (see Done) and became dictation + read aloud
+on 2026-10-21. Open:
 
-- **GPU layers:** done (Tune → GPU layers, see Done).
-- **Server settings page.** Show Ollama's server-wide settings (read from
-  `systemctl show ollama -p Environment`, no root needed): KV cache type,
-  flash attention, default context, network binding. Offer a ready-to-run
-  `sudo systemctl edit ollama` snippet rather than running sudo ourselves.
-  Feed the KV type into auto-context (`kvBytesPerValue` in `hw/kv.go`):
-  q8_0 halves the cache, q4_0 quarters it.
-- **KV cache dtype (f16 / q8_0 / q4_0).** Historically server-wide only
-  (`OLLAMA_KV_CACHE_TYPE`, needs `OLLAMA_FLASH_ATTENTION=1`), not per model.
-  Research whether 0.40 allows it per request or per model. If not, show the
-  current server setting read-only with instructions, and factor it into
-  the memory/fit estimates (q8_0 halves KV size, so bigger contexts fit).
-- **Speculative decoding: not on this setup (checked 2026-10-20).** Ollama
-  0.40.6 accepts `draft` on `/api/create` and returns success, but for GGUF
-  models it stores no draft layer and nothing changes (Qwen3.5-9B Q4 with a
-  2B draft: 35.2 tok/s both ways). `ollama create --draft-quantize` is
-  safetensors-only, which suggests the MLX runner. `draft_num_predict` is a
-  documented option (default 4, 0 = off). Revisit on a newer Ollama; if it
-  lands, check `/api/show` lists the draft before showing any UI.
+- **Dead talker code.** `voiceTurn`, the talker and its warm-up
+  (`/api/voice?model=`) are unused since the switch to dictation. Delete
+  them, or bring live mode back as an option if it's missed. The talker and
+  overthinking items below only matter for live mode. (S)
 
-### 3. Design ideas (remaining)
+- **Phone over HTTPS.** The mic needs a secure context. Document or automate
+  `tailscale serve --bg 8484` (and `-allow-host <machine>.<tailnet>.ts.net`). (S)
+- **Gemma 4 hears audio natively.** Ollama lists `audio` in its capabilities,
+  so whisper could be skipped for it. Keep whisper for the live transcript;
+  try sending the WAV as the message for better understanding of names. (M)
+- **Talker quality.** Qwen3.5-2B sometimes states a wrong fact in the
+  lead-in ("water scatters blue light"). Try a 4B, or tighter few-shot
+  prompts. The filters in `goodLine` catch numbers and conclusions only. (S)
+- **Overthinking.** Qwen3.5-9B still thinks 20–90 s on easy questions.
+  Small talk is now routed to the talker; simple factual questions could be
+  too ("answer without thinking"), or a think budget. Watch whether the
+  one-line prose prompt slows Qwen down. (M)
+- **Better speech detection.** Typing no longer triggers it (click filter,
+  sustained-voice window, duck-then-confirm interrupts). Silero VAD
+  (onnxruntime-web, ~2 MB) if other noise still causes false starts. (M)
+
+### Design ideas (remaining)
 
 All of the 2026-10-20 polish list is done (see Done).
 
