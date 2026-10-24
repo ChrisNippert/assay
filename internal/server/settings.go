@@ -106,6 +106,14 @@ func settingsSummary(o map[string]any) string {
 			parts = append(parts, "drafts with "+v)
 		case "num_thread":
 			parts = append(parts, v+" CPU threads")
+		case "load_mode":
+			parts = append(parts, map[string]string{"none": "read into RAM", "mmap": "memory-mapped", "mlock": "locked in RAM"}[v]+" load")
+		case "n_cpu_moe":
+			if v == "-1" {
+				parts = append(parts, "all experts on the CPU")
+			} else {
+				parts = append(parts, "experts of "+v+" layers on the CPU")
+			}
 		default:
 			parts = append(parts, strings.ReplaceAll(k, "_", " ")+" "+v)
 		}

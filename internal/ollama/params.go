@@ -58,6 +58,13 @@ func (s *ShowResponse) Layers() int {
 	return 0
 }
 
+// MoE reports whether the model is mixture-of-experts (it has experts).
+func (s *ShowResponse) MoE() bool {
+	arch, _ := s.ModelInfo["general.architecture"].(string)
+	n, ok := s.ModelInfo[arch+".expert_count"].(float64)
+	return ok && arch != "" && n > 0
+}
+
 // HasCapability reports whether /api/show lists a capability such as
 // "thinking", "vision" or "tools".
 func (s *ShowResponse) HasCapability(c string) bool {

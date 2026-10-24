@@ -416,7 +416,15 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 	// GPU layers set by hand put part of the model on the CPU on purpose:
 	// auto context (which keeps it all on the GPU) stays out of it, and the
 	// spill isn't taken as a sign the context was too big.
+	var saved map[string]any
+	if ms, ok := s.ollama.(modelSettings); ok {
+		saved, _ = ms.Settings(c.Model)
+	}
+	// Experts placed by hand (n_cpu_moe, often saved for the model) count too.
 	_, manualGPU := options["num_gpu"]
+	_, cpuMoE := options["n_cpu_moe"]
+	_, savedMoE := saved["n_cpu_moe"]
+	manualGPU = manualGPU || cpuMoE || savedMoE
 	if manualGPU {
 		s.manualGPU.Store(strings.ToLower(c.Model), true)
 	} else {
@@ -427,10 +435,7 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 			options = presets.Merge(options, map[string]any{"num_ctx": t.auto.Ctx})
 		}
 	}
-	if ms, ok := s.ollama.(modelSettings); ok {
-		saved, _ := ms.Settings(c.Model)
-		_, t.ctxSaved = saved["num_ctx"]
-	}
+	_, t.ctxSaved = saved["num_ctx"]
 	t.req = ollama.ChatRequest{Model: c.Model, Messages: msgs, Options: options}
 	if think != nil {
 		t.req.Think = *think
