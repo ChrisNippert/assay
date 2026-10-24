@@ -396,6 +396,10 @@ func (f *File) ContextLength() int { return int(f.ArchUint("context_length")) }
 // BlockCount returns <arch>.block_count.
 func (f *File) BlockCount() int { return int(f.ArchUint("block_count")) }
 
+// ExpertCount returns <arch>.expert_count: how many experts a mixture-of-
+// experts model routes between. 0 for a dense model.
+func (f *File) ExpertCount() int { return int(f.ArchUint("expert_count")) }
+
 // ChatTemplate returns tokenizer.chat_template, or "" if there is none.
 func (f *File) ChatTemplate() string { return f.String("tokenizer.chat_template") }
 

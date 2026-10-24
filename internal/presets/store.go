@@ -175,6 +175,9 @@ var (
 		},
 		// text is the default; json, schema and grammar constrain the reply.
 		"reply_format": func(v string) bool { return v == "text" || v == "json" || v == "schema" || v == "grammar" },
+		// How llama.cpp reads the file into memory (--load-mode). Auto is
+		// no setting at all, so the option is absent.
+		"load_mode": func(v string) bool { return v == "mmap" || v == "none" || v == "mlock" },
 	}
 	// maxReplyText caps a reply's JSON schema or grammar text.
 	maxReplyText = 32 << 10
@@ -190,6 +193,13 @@ func CleanOptions(in map[string]any) (map[string]any, error) {
 	out := make(map[string]any, len(in))
 	for k, v := range in {
 		switch {
+		case k == "n_cpu_moe":
+			// -1 is all of them (--cpu-moe); otherwise the first N layers' experts.
+			n, ok := toFloat(v)
+			if !ok || n != float64(int64(n)) || n < -1 || n > 999 {
+				return nil, fmt.Errorf("option n_cpu_moe must be -1 (all) or a count of layers")
+			}
+			out[k] = int64(n)
 		case intOptions[k]:
 			n, ok := toFloat(v)
 			if !ok || n != float64(int64(n)) {

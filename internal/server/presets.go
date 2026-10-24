@@ -102,6 +102,7 @@ type modelDefaults struct {
 	Auto          autoContext    `json:"auto"`                    // what ollamui picks if num_ctx isn't set
 	Thinking      bool           `json:"thinking"`
 	Layers        int            `json:"layers,omitempty"` // what num_gpu counts; 0 if unknown
+	MoE           bool           `json:"moe,omitempty"`    // has experts, so load_mode and n_cpu_moe apply
 	// Saved are the user's own settings for the model, and Engine what
 	// applies when neither they nor a chat set one; both only with an
 	// engine that keeps settings per model.
@@ -207,6 +208,7 @@ func (s *Server) handleModelDefaults(w http.ResponseWriter, r *http.Request) {
 		Auto:          s.defaultsContext(r.Context(), name),
 		Thinking:      show.HasCapability("thinking"),
 		Layers:        show.Layers(),
+		MoE:           show.MoE(),
 	}
 	if ms, ok := s.ollama.(modelSettings); ok {
 		d.Saved, _ = ms.Settings(name)

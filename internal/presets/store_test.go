@@ -133,3 +133,26 @@ func TestReplyFormatOptions(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestExpertOptions(t *testing.T) {
+	got, err := CleanOptions(map[string]any{"n_cpu_moe": float64(-1), "load_mode": "mlock"})
+	if err != nil || got["n_cpu_moe"] != int64(-1) || got["load_mode"] != "mlock" {
+		t.Fatalf("clean = %v, %v", got, err)
+	}
+	if got, err := CleanOptions(map[string]any{"n_cpu_moe": 0, "load_mode": "none"}); err != nil || got["n_cpu_moe"] != int64(0) {
+		t.Fatalf("zero layers: %v, %v", got, err)
+	}
+	for _, bad := range []map[string]any{
+		{"n_cpu_moe": -2},
+		{"n_cpu_moe": 1000},
+		{"n_cpu_moe": 2.5},
+		{"n_cpu_moe": "all"},
+		{"load_mode": "auto"}, // Auto is no setting
+		{"load_mode": "dio"},
+		{"load_mode": 1},
+	} {
+		if _, err := CleanOptions(bad); err == nil {
+			t.Errorf("%v accepted", bad)
+		}
+	}
+}

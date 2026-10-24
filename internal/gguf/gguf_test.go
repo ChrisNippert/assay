@@ -355,6 +355,8 @@ const (
 	qwenBlob   = "/home/autumn/.ollama/models/blobs/sha256-6f5d30666c2d8ae16a306e616d95341dcf3cc46810df84d7e6f5a7d1e4c1b293"
 	mmprojBlob = "/home/autumn/.ollama/models/blobs/sha256-853698ce7aa6c7ba732478bad280240969ddf7b0fcbf93900046f63903a83383"
 	gemmaBlob  = "/home/autumn/.ollama/models/blobs/sha256-90fd44e29e0d7cffeb0fd00dc73cfdab9ed0b0e95306ecf7821ea634c940c370"
+	// gemma-4-26B-A4B, a mixture-of-experts model, in ollamui's store.
+	gemmaMoEBlob = "/home/autumn/.local/share/ollamui/models/blobs/sha256-eeb867f279ea5a3d52a0dc15fe8ada677b3328a328530957f3f9a5da93cb10b8.gguf"
 )
 
 func readReal(t *testing.T, path string) *File {
@@ -400,5 +402,12 @@ func TestRealGemma(t *testing.T) {
 	}
 	if p := float64(f.ParamCount()) / 1e9; p < 11 || p > 13 {
 		t.Errorf("params %.2fB", p)
+	}
+}
+
+func TestRealGemmaMoE(t *testing.T) {
+	// The 26B-A4B is mixture-of-experts; the 12B is dense.
+	if f := readReal(t, gemmaMoEBlob); f.ExpertCount() == 0 {
+		t.Error("gemma-4-26B-A4B should report experts")
 	}
 }

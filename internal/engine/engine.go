@@ -112,10 +112,19 @@ const cacheReuse = 256
 // CacheTypes are the K/V cache types a model can load with.
 var CacheTypes = map[string]bool{"f16": true, "q8_0": true, "q4_0": true}
 
+// CPUMoE values besides a layer count: unset leaves the experts to
+// llama.cpp's fitting; all puts every expert on the CPU (--cpu-moe).
+const (
+	cpuMoEUnset = -1
+	cpuMoEAll   = -2
+)
+
 // loadOpts are the request options that need a (re)start to change.
 type loadOpts struct {
 	Ctx       int    // 0: let llama.cpp fit the largest that fits
 	GPULayers int    // -1: let llama.cpp decide
+	CPUMoE    int    // cpuMoEUnset, cpuMoEAll, or how many layers keep their experts on the CPU
+	LoadMode  string // --load-mode; "": llama.cpp's default (mmap)
 	Threads   int    // 0: default
 	CacheType string // "": the engine's default
 	FlashAttn string // "": the engine's default
@@ -155,7 +164,7 @@ func (o loadOpts) sameNames(want loadOpts) bool {
 }
 
 func loadOptsFrom(o map[string]any) loadOpts {
-	lo := loadOpts{GPULayers: -1}
+	lo := loadOpts{GPULayers: -1, CPUMoE: cpuMoEUnset}
 	if l, ok := presets.LoRAs(o["lora"]); ok {
 		lo.LoRA = l
 	}
@@ -164,6 +173,14 @@ func loadOptsFrom(o map[string]any) loadOpts {
 	}
 	if v, ok := num(o["num_gpu"]); ok && v >= 0 {
 		lo.GPULayers = int(v)
+	}
+	if v, ok := num(o["n_cpu_moe"]); ok && v == -1 {
+		lo.CPUMoE = cpuMoEAll
+	} else if ok && v >= 0 {
+		lo.CPUMoE = int(v)
+	}
+	if v, _ := o["load_mode"].(string); v == "mmap" || v == "none" || v == "mlock" {
+		lo.LoadMode = v
 	}
 	if v, ok := num(o["num_thread"]); ok && v > 0 {
 		lo.Threads = int(v)
@@ -284,8 +301,21 @@ func (e *Engine) args(m *Model, o loadOpts, port int) []string {
 		ctx = DefaultCtx
 	}
 	a = append(a, "-c", strconv.Itoa(ctx))
-	if o.GPULayers >= 0 {
+	switch {
+	case o.GPULayers >= 0:
 		a = append(a, "-ngl", strconv.Itoa(o.GPULayers))
+	case o.CPUMoE != cpuMoEUnset:
+		// Experts placed by hand: everything else goes on the GPU.
+		a = append(a, "-ngl", "all")
+	}
+	switch {
+	case o.CPUMoE == cpuMoEAll:
+		a = append(a, "--cpu-moe")
+	case o.CPUMoE >= 0:
+		a = append(a, "--n-cpu-moe", strconv.Itoa(o.CPUMoE))
+	}
+	if o.LoadMode != "" {
+		a = append(a, "--load-mode", o.LoadMode)
 	}
 	if o.Threads > 0 {
 		a = append(a, "-t", strconv.Itoa(o.Threads))
@@ -346,8 +376,12 @@ func (e *Engine) ensure(ctx context.Context, name string, options map[string]any
 		return nil, false, err
 	}
 	o := loadOptsFrom(m.options(options))
-	if f, err := e.gguf(m); err == nil && f.IsEmbedding() {
-		o.Embedding = true
+	if f, err := e.gguf(m); err == nil {
+		o.Embedding = f.IsEmbedding()
+		if f.ExpertCount() == 0 {
+			// Dense models have no experts to place or load differently.
+			o.CPUMoE, o.LoadMode = cpuMoEUnset, ""
+		}
 	}
 	if o.Embedding {
 		o.LoRA = nil // embedding models take no adapters
@@ -392,15 +426,17 @@ func (e *Engine) ensure(ctx context.Context, name string, options map[string]any
 		e.makeRoom(m.Name)
 	}
 	p, err = e.start(ctx, m, o)
-	if err != nil && o.GPULayers > 0 && outOfMemory(err) && ctx.Err() == nil {
-		// A fixed layer count turns llama.cpp's --fit off, so too many
-		// layers for the GPU just crash. Load it the way Auto would: --fit
-		// keeps what fits on the GPU and, for MoE models, moves experts to
-		// RAM. The process keeps the asked-for options, so the next request
-		// with the same settings doesn't restart it.
-		e.opt.Log.Warn("too many GPU layers for free memory; loading with automatic fitting instead", "model", m.Name, "asked", o.GPULayers)
+	manual := o.GPULayers > 0 || o.CPUMoE != cpuMoEUnset
+	if err != nil && manual && outOfMemory(err) && ctx.Err() == nil {
+		// A fixed layer count (or experts placed by hand) turns llama.cpp's
+		// --fit off, so too many layers for the GPU just crash. Load it the
+		// way Auto would: --fit keeps what fits on the GPU and, for MoE
+		// models, moves experts to RAM. The process keeps the asked-for
+		// options, so the next request with the same settings doesn't
+		// restart it.
+		e.opt.Log.Warn("too many GPU layers or experts on the GPU for free memory; loading with automatic fitting instead", "model", m.Name, "asked", o.GPULayers, "n_cpu_moe", o.CPUMoE)
 		auto := o
-		auto.GPULayers = -1
+		auto.GPULayers, auto.CPUMoE = -1, cpuMoEUnset
 		if p, err = e.start(ctx, m, auto); err == nil {
 			p.opts = o
 			p.fitted = true
@@ -524,6 +560,16 @@ func (e *Engine) start(ctx context.Context, m *Model, o loadOpts) (*proc, error)
 			return nil, fmt.Errorf("%s took too long to load", m.Name)
 		}
 		time.Sleep(150 * time.Millisecond)
+	}
+	// It can answer /health after an allocation failed while it was
+	// reserving memory, and then die on the first request. Treat that as
+	// a load that ran out of memory, so the caller falls back.
+	p.mu.Lock()
+	oom := p.oom
+	p.mu.Unlock()
+	if oom != "" {
+		stopProcess(cmd)
+		return nil, fmt.Errorf("%w loading %s. Fewer GPU layers or a smaller context would fit (GPU layers: Auto does this for you). llama-server said: %s", errGPUMemory, m.Name, oom)
 	}
 	if len(o.LoRA) > 0 {
 		if err := e.setScales(ctx, p, o.LoRA); err != nil {

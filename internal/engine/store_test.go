@@ -201,3 +201,37 @@ func TestDraftAndThreadArgs(t *testing.T) {
 		t.Errorf("args = %s", a)
 	}
 }
+
+func TestExpertPlacementArgs(t *testing.T) {
+	st, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := New(st, Options{CacheType: "f16", FlashAttn: "on"})
+	m := &Model{Name: "moe:1", Files: []string{"moe.gguf"}}
+	args := func(o map[string]any) string { return strings.Join(e.args(m, loadOptsFrom(o), 1), " ") }
+
+	// Auto passes none of it: llama.cpp fits the layers and reads the file.
+	if a := args(nil); strings.Contains(a, "-ngl") || strings.Contains(a, "cpu-moe") || strings.Contains(a, "load-mode") {
+		t.Errorf("auto args = %s", a)
+	}
+	// All experts on the CPU, with everything else on the GPU.
+	if a := args(map[string]any{"n_cpu_moe": int64(-1), "load_mode": "none"}); !strings.Contains(a, "-ngl all") || !strings.Contains(a, " --cpu-moe ") || !strings.Contains(a, "--load-mode none") {
+		t.Errorf("all experts args = %s", a)
+	}
+	// The first N layers' experts; 0 keeps them all on the GPU.
+	if a := args(map[string]any{"n_cpu_moe": 14.0, "load_mode": "mlock"}); !strings.Contains(a, "-ngl all --n-cpu-moe 14 --load-mode mlock") {
+		t.Errorf("layer count args = %s", a)
+	}
+	if a := args(map[string]any{"n_cpu_moe": 0.0}); !strings.Contains(a, "--n-cpu-moe 0") {
+		t.Errorf("zero args = %s", a)
+	}
+	// A GPU layer count is still passed as it was set.
+	if a := args(map[string]any{"num_gpu": 20.0, "n_cpu_moe": 4.0}); !strings.Contains(a, "-ngl 20 --n-cpu-moe 4") {
+		t.Errorf("both args = %s", a)
+	}
+	// Values the presets don't allow are ignored.
+	if o := loadOptsFrom(map[string]any{"load_mode": "dio", "n_cpu_moe": -5.0}); o.LoadMode != "" || o.CPUMoE != cpuMoEUnset {
+		t.Errorf("bad values loaded as %+v", o)
+	}
+}

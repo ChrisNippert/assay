@@ -175,6 +175,17 @@ code doesn't care which engine runs (`server.Backend`).
   16k context). Qwen3.5-2B with a 5k-token history: reload to first token
   2.6 s → 1.4 s; after the chat page preloads it, 1.6 s → 0.3 s (one early
   preload run didn't restore, cause unknown). Bigger models should gain more.
+- **MoE expert placement.** For MoE models (GGUF `expert_count` > 0),
+  Tune → Memory has `n_cpu_moe` (Auto · All = `--cpu-moe` · 0..layers =
+  `--n-cpu-moe N`) and `load_mode` (`--load-mode` mmap/none/mlock; Auto
+  passes nothing). A hand-set `n_cpu_moe` passes `-ngl all`, which turns
+  `--fit` off; an out-of-memory load falls back to Auto, including when the
+  failure is logged before `/health` (the server would otherwise die on the
+  first request). Measured on Gemma 4 26B-A4B IQ4_NL, 32k context: Auto's
+  fit is fastest (~33 tok/s writing, ~1030 prompt); more experts in RAM
+  cost ~1 tok/s per layer (all of them ~22); no load mode beat mmap (mmap
+  is 5–10% faster on prompts), so llama.cpp's "consider --load-mode none"
+  warning is ignored. Healthy loads never log the allocation-failure text.
 - **CPU threads.** `num_thread` becomes `-t` (Tune → Memory). Only matters
   for layers on the CPU; 4 threads beat the default (all 16) on a CPU-only
   9B (3.7 vs 2.6 tok/s, one sample), so Auto may deserve a better default.

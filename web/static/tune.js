@@ -105,6 +105,18 @@
     { key: 'num_thread', label: 'CPU threads', kind: 'choice', scope: 'model', engine: true, int: true, none: 'Auto',
       help: 'Only matters for layers that run on the CPU',
       dyn: () => Array.from({ length: defaults.cpus || navigator.hardwareConcurrency || 8 }, (_, i) => [String(i + 1), String(i + 1)]) },
+    // Mixture-of-experts models only. Layers counts the output layer too.
+    { key: 'n_cpu_moe', label: 'Experts in RAM', kind: 'choice', scope: 'model', engine: true, int: true, none: 'Auto',
+      when: () => !!defaults.moe,
+      help: 'Expert weights of this many layers run in RAM, which is slower',
+      dyn: () => {
+        const blocks = defaults.layers ? defaults.layers - 1 : 30;
+        return [['-1', 'All experts'], ...Array.from({ length: blocks + 1 }, (_, n) => [String(n), n ? `${n} layers` : 'None'])];
+      } },
+    { key: 'load_mode', label: 'Load mode', kind: 'choice', scope: 'model', engine: true, none: 'Auto',
+      when: () => !!defaults.moe,
+      help: 'How the model file is read into memory; mostly changes load time',
+      choices: [['mmap', 'Memory-mapped'], ['none', 'Read into RAM'], ['mlock', 'Locked in RAM']] },
   ];
   // Fallbacks when nothing else sets a value, by engine.
   const OLLAMA_DEFAULTS = { temperature: 0.8, top_p: 0.9, top_k: 40, min_p: 0, repeat_penalty: 1.1, num_predict: -1,
@@ -633,7 +645,8 @@
     // A number set by hand turns llama.cpp's fitting off (ollamui falls
     // back to Auto if it then runs out of memory), so Auto says what it does.
     const handSet = perModel() ? ' · fixed, so not fitted to memory' : ' · auto context off';
-    if (val == null) sub.textContent = perModel()
+    if (val == null && perModel() && effective('n_cpu_moe') != null) sub.textContent = 'Auto: all layers on the GPU, since experts are set in Memory';
+    else if (val == null) sub.textContent = perModel()
       ? `Auto: fits the model to free GPU memory${defaults.layers ? ` (${max} layers in all)` : ''}; MoE experts go to RAM when needed`
       : `Auto: all that fit${defaults.layers ? ` (${max} layers)` : ''}`;
     else if (val >= max) sub.textContent = `${from}: all ${max} on the GPU${perModel() ? handSet : ''}`;
