@@ -478,6 +478,29 @@ prompt after the project's instructions, numbered for citation. They're
 streamed to the page (`sources` event) and saved on the reply, shown as a
 folded "N passages from the project's files" list.
 
+### Tool use
+
+When a chat has tools on (its Tune switch, else the preset's, else on) and
+the model's template has the "tools" capability, `prepareTurn` builds the
+tool set from `internal/tools` per `tools.json` (Settings → Tools):
+`web_search` (Off · SearXNG · DuckDuckGo scraping), `fetch_url`,
+`calculator`, `search_chats`, `search_project` (in a project with indexed
+files) and `current_time`. `chatLoop` sends the schemas, streams as usual,
+and when the model returns `tool_calls` (the engine joins streamed pieces)
+runs them, appends the assistant message and one `tool` message per result,
+and asks again, up to 8 rounds (the 9th has no tools). `fetch_url` checks
+every dialed address in the dialer's Control hook (after DNS, on each
+redirect) and refuses loopback, private, link-local, CGNAT/Tailscale,
+multicast and unspecified; 2 MB, 20 s, ~8k chars of readable text. The
+calculator is a parser, not eval. Calls are saved on the reply
+(`chats.Message.Calls`: args, truncated result, label, and what the model
+said/thought before each) and shown as foldable rows between thinking and
+text, live and when reopened; copy and read-aloud use only the final text.
+History replays them as assistant/tool messages. One short system line
+mentions tools. Compression counts the tool schemas too (estimated at 3
+characters per token). Checked with Qwen3.5 9B: calculator, fetch_url of
+example.com, search_chats and DuckDuckGo search all called correctly.
+
 ### Context compression
 
 `internal/server/compress.go`. Before a reply the prompt is counted with

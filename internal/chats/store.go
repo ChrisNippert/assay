@@ -43,11 +43,28 @@ type Message struct {
 	// Spoken is what voice mode said aloud while the model was still
 	// thinking, before Content.
 	Spoken string `json:"spoken,omitempty"`
-	Model  string `json:"model,omitempty"`
-	Stats  *Stats `json:"stats,omitempty"`
+	// Calls are the tool calls made on the way to Content, in order.
+	Calls []ToolCall `json:"calls,omitempty"`
+	Model string     `json:"model,omitempty"`
+	Stats *Stats     `json:"stats,omitempty"`
 	// Sources are the project-file excerpts the reply was given (RAG).
 	Sources []Source  `json:"sources,omitempty"`
 	Created time.Time `json:"created"`
+}
+
+// ToolCall is one tool call a reply made. Calls the model asked for in the
+// same step share Step; Said and Think (what the model wrote and thought
+// before asking) sit on the first call of a step.
+type ToolCall struct {
+	Step   int    `json:"step"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Args   string `json:"args"`   // the JSON arguments as the model wrote them
+	Result string `json:"result"` // what went back to the model (truncated)
+	Label  string `json:"label"`  // "Searched the web for “…” · 5 results"
+	Error  bool   `json:"error,omitempty"`
+	Said   string `json:"said,omitempty"`
+	Think  string `json:"think,omitempty"`
 }
 
 // Source is one excerpt from a project file that went into a reply's
@@ -78,9 +95,12 @@ type Chat struct {
 	// Compression, if set, stands for the messages before its UpTo index
 	// when the chat is sent. The messages themselves stay in Messages.
 	Compression *Compression `json:"compression,omitempty"`
-	Created     time.Time    `json:"created"`
-	Updated     time.Time    `json:"updated"`
-	Messages    []Message    `json:"messages"`
+	// Tools is whether the model may call tools: nil leaves it to the
+	// preset, then to the default (on when the model supports tools).
+	Tools    *bool     `json:"tools,omitempty"`
+	Created  time.Time `json:"created"`
+	Updated  time.Time `json:"updated"`
+	Messages []Message `json:"messages"`
 }
 
 // Compression is a summary of a chat's oldest messages, sent in their

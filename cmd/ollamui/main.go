@@ -30,6 +30,7 @@ import (
 	"ollamui/internal/pulls"
 	"ollamui/internal/scores"
 	"ollamui/internal/server"
+	"ollamui/internal/tools"
 	"ollamui/internal/voice"
 	voiceserver "ollamui/tools/voice"
 )
@@ -122,6 +123,10 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("chat settings: %w", err)
 	}
+	toolSettings, err := tools.OpenStore(filepath.Join(*configDir, "tools.json"))
+	if err != nil {
+		return fmt.Errorf("tool settings: %w", err)
+	}
 	// The engine: llama.cpp runs the models ollamui keeps; Ollama's models
 	// are imported by hard link, so nothing is downloaded twice.
 	hfClient := hf.New(hf.DefaultBaseURL, os.Getenv("HF_TOKEN"))
@@ -165,6 +170,7 @@ func run() error {
 		Presets:       presetStore,
 		Projects:      projectStore,
 		RAGSettings:   ragSettings,
+		Tools:         toolSettings,
 		HF:            hfClient,
 		Pulls:         pulls.New(enginePuller{eng}, log),
 		LlamaCpp:      llama,

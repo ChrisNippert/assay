@@ -34,6 +34,7 @@ type Preset struct {
 	// Compress is "Compress automatically" for chats with this preset; nil
 	// follows the default in Settings.
 	Compress  *bool          `toml:"compress,omitempty" json:"compress,omitempty"`
+	Tools     *bool          `toml:"tools,omitempty" json:"tools,omitempty"`
 	Published bool           `toml:"published" json:"published"`
 	Options   map[string]any `toml:"options,omitempty" json:"options,omitempty"`
 }

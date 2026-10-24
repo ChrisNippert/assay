@@ -30,6 +30,7 @@ import (
 	"ollamui/internal/projects"
 	"ollamui/internal/pulls"
 	"ollamui/internal/scores"
+	"ollamui/internal/tools"
 	"ollamui/internal/voice"
 	"ollamui/web"
 )
@@ -84,6 +85,8 @@ type Options struct {
 	// preferences. Nil keeps them in a temporary folder / in memory.
 	Projects    *projects.Store
 	RAGSettings *projects.SettingsStore
+	// Tools holds the tool settings; nil keeps them in memory.
+	Tools *tools.Store
 	// Voice is the speech service for voice mode; nil turns it off.
 	Voice *voice.Client
 	// VoiceSettings are voice mode's preferences. Required.
@@ -113,11 +116,15 @@ type Server struct {
 	projects   *projects.Store
 	ragSt      *projects.SettingsStore
 	indexQueue chan indexJob
-	voice      *voice.Client
-	voiceSt    *voice.SettingsStore
-	speech     *voice.Launcher
-	search     searchCache
-	ctxBase    sync.Map // model name → measured weight memory, for picking context
+	// toolSt holds the tool settings; fetcher and searcher run web tools.
+	toolSt   *tools.Store
+	fetcher  *tools.Fetcher
+	searcher *tools.Searcher
+	voice    *voice.Client
+	voiceSt  *voice.SettingsStore
+	speech   *voice.Launcher
+	search   searchCache
+	ctxBase  sync.Map // model name → measured weight memory, for picking context
 	// ctxCap is model name → largest context worth trying, learned when a
 	// bigger one spilled onto the CPU.
 	ctxCap sync.Map
@@ -139,7 +146,7 @@ type Server struct {
 func New(opts Options) (*Server, error) {
 	s := &Server{
 		ollama: opts.Ollama, chats: opts.Chats, chatSt: opts.ChatSettings, presets: opts.Presets,
-		hf: opts.HF, pulls: opts.Pulls, llama: opts.LlamaCpp, scores: opts.Scores, bench: opts.Bench, projects: opts.Projects, ragSt: opts.RAGSettings, indexQueue: make(chan indexJob, 256), voice: opts.Voice, voiceSt: opts.VoiceSettings, speech: opts.VoiceLauncher, memory: opts.Memory, log: opts.Logger,
+		hf: opts.HF, pulls: opts.Pulls, llama: opts.LlamaCpp, scores: opts.Scores, bench: opts.Bench, projects: opts.Projects, ragSt: opts.RAGSettings, toolSt: opts.Tools, indexQueue: make(chan indexJob, 256), voice: opts.Voice, voiceSt: opts.VoiceSettings, speech: opts.VoiceLauncher, memory: opts.Memory, log: opts.Logger,
 		vramUsed: hw.VRAMUsed,
 	}
 	if s.bench == nil {
@@ -157,6 +164,10 @@ func New(opts Options) (*Server, error) {
 	if s.ragSt == nil {
 		s.ragSt, _ = projects.OpenSettings("")
 	}
+	if s.toolSt == nil {
+		s.toolSt, _ = tools.OpenStore("")
+	}
+	s.fetcher, s.searcher = tools.NewFetcher(), tools.NewSearcher()
 	if s.voiceSt == nil {
 		s.voiceSt, _ = voice.OpenSettings("") // in memory
 	}
@@ -206,6 +217,8 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("POST /api/projects/{id}/reindex", s.handleProjectReindex)
 	mux.HandleFunc("GET /api/knowledge/settings", s.handleRAGSettings)
 	mux.HandleFunc("PUT /api/knowledge/settings", s.handleRAGSettingsSave)
+	mux.HandleFunc("GET /api/tools/settings", s.handleToolSettings)
+	mux.HandleFunc("PUT /api/tools/settings", s.handleToolSettingsSave)
 	mux.HandleFunc("POST /api/bench", s.handleBench)
 
 	mux.HandleFunc("GET /api/loaded", s.handleLoaded)
@@ -488,6 +501,15 @@ var templateFuncs = template.FuncMap{
 		return string(b), err
 	},
 	"deref": func(b *bool) bool { return b != nil && *b },
+	// pretty indents a JSON string (tool arguments); anything else stays as is.
+	"pretty": func(s string) string {
+		var v any
+		if json.Unmarshal([]byte(s), &v) != nil {
+			return s
+		}
+		b, _ := json.MarshalIndent(v, "", "  ")
+		return string(b)
+	},
 	"lower": func(s string) string {
 		if s == "" {
 			return s

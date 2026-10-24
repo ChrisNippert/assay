@@ -8,8 +8,10 @@ big it is (S = an hour or two, M = a session, L = several sessions).
 **Done 2026-10-24:** speculative decoding (MTP heads + n-gram as Auto;
 EAGLE3/DFlash/DSpark wired but untested), LoRA adapters (untested with a
 real Unsloth LoRA), chat caches across unloads, structured output, MoE
-expert placement. **Next, as asked:** tool use, and context compression
-(automatic and a manual "compress now").
+expert placement, **tool use** and **context compression** (automatic +
+manual). Open from these: real EAGLE3/DFlash drafts and a real LoRA;
+SearXNG against a real instance; terser summaries from small models;
+the dead voice-talker and Ollama-era auto-context code.
 
 ### 1. ✅ Finish the llama.cpp switch (done 2026-10-23)
 
@@ -152,7 +154,7 @@ Windows build and zip exist (2026-10-24, see ARCHITECTURE "Platforms").
 
 Set 2026-10-23: after the llama.cpp switch and the models folder.
 
-### Tool use (M–L)
+### ✅ Tool use (M–L) — done 2026-10-24, see ARCHITECTURE
 
 Asked for 2026-10-23. llama-server already runs with `--jinja` and models
 whose template mentions tools get a "tools" capability, but chat never
@@ -168,7 +170,7 @@ sends `tools` or handles `tool_calls`.
 - Off per chat or model when the template has no tools; a step limit so a
   model can't loop forever. Qwen3.5 calls tools decently, Gemma less so.
 
-### Automatic context compression (M)
+### ✅ Automatic context compression (M) — done 2026-10-24, see ARCHITECTURE
 
 Asked for 2026-10-23. Long chats hit the context length and the oldest
 turns silently fall off (or the reply is cut at `length`). Instead, when a

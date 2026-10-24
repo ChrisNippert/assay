@@ -161,6 +161,17 @@ select, textarea, input { font: inherit; color: var(--text); }
 .compress-divider > summary::-webkit-details-marker { display: none; }
 .compress-divider > summary:hover { color: var(--text); }
 .compress-text { margin: var(--s3) auto 0; max-width: 62ch; padding: var(--s3) var(--s4); border-radius: 10px; background: var(--surface); color: var(--text-2); white-space: pre-wrap; text-align: left; line-height: 1.5; }
+/* A tool call: a quiet one-line row like thinking, opening to the details. */
+.tool { margin: var(--s2) 0; }
+.tool summary { cursor: pointer; font-size: var(--fs-sm); color: var(--muted); }
+.tool.err summary { color: var(--warn); }
+.tool.pending summary { animation: tool-pulse 1.4s ease-in-out infinite; }
+@keyframes tool-pulse { 50% { opacity: .5; } }
+@media (prefers-reduced-motion: reduce) { .tool.pending summary { animation: none; } }
+.tool-body { margin-top: var(--s2); padding-left: var(--s3); border-left: 2px solid var(--border-strong); }
+.tool-k { font-size: var(--fs-xs); color: var(--muted); margin: var(--s2) 0 2px; }
+.tool-k:first-child { margin-top: 0; }
+.tool-pre { margin: 0; padding: 6px 10px; max-height: 16rem; overflow: auto; background: var(--soft); border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: var(--fs-xs); color: var(--text-2); }
 .stats { font-size: var(--fs-xs); color: var(--muted); }
 .msg-error { color: var(--bad); font-size: var(--fs-sm); }
 .msg-warn { color: var(--warn); background: var(--warn-soft); font-size: var(--fs-sm); padding: 6px 10px; border-radius: 5px; }

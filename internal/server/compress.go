@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"maps"
 	"net/http"
@@ -171,6 +172,13 @@ func (s *Server) compressTurn(ctx context.Context, t *turn, emit func(event) err
 	if err != nil {
 		s.log.Warn("could not count the prompt", "chat", t.chat.ID, "err", err)
 		return
+	}
+	// The tool schemas go with every request too (often 1k+ tokens); the
+	// template's rendering isn't countable from here, so estimate them.
+	if len(t.req.Tools) > 0 {
+		if b, err := json.Marshal(t.req.Tools); err == nil {
+			est += len(b) / 3
+		}
 	}
 	if !needsCompression(est, ctxLen, intOf(t.req.Options["num_predict"])) {
 		return

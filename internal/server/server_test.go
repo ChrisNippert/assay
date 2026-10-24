@@ -31,8 +31,10 @@ type fakeOllama struct {
 	chatReqs   []ollama.ChatRequest
 	createReqs []ollama.CreateRequest
 	deleted    []string
-	reply      string // NDJSON body for /api/chat
-	modelInfo  string // /api/show's model_info, if set
+	reply      string   // NDJSON body for /api/chat
+	replies    []string // answers used first, one per request, before reply
+	caps       string   // /api/show's capabilities, if set
+	modelInfo  string   // /api/show's model_info, if set
 }
 
 func (f *fakeOllama) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -69,11 +71,15 @@ func (f *fakeOllama) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			io.WriteString(w, `{"error":"model not found"}`)
 			return
 		}
+		caps := f.caps
+		if caps == "" {
+			caps = `"completion","thinking"`
+		}
 		info := f.modelInfo
 		if info == "" {
 			info = `{"qwen3.context_length":40960}`
 		}
-		io.WriteString(w, `{"parameters":"temperature 0.6\ntop_k 20\nstop \"<|im_end|>\"","model_info":`+info+`,"capabilities":["completion","thinking"]}`)
+		io.WriteString(w, `{"parameters":"temperature 0.6\ntop_k 20\nstop \"<|im_end|>\"","model_info":`+info+`,"capabilities":[`+caps+`]}`)
 	case "/api/create":
 		var req ollama.CreateRequest
 		json.NewDecoder(r.Body).Decode(&req)
@@ -113,6 +119,11 @@ func (f *fakeOllama) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var req ollama.ChatRequest
 		json.NewDecoder(r.Body).Decode(&req)
 		f.chatReqs = append(f.chatReqs, req)
+		if len(f.replies) > 0 {
+			io.WriteString(w, f.replies[0])
+			f.replies = f.replies[1:]
+			return
+		}
 		io.WriteString(w, f.reply)
 	default:
 		http.NotFound(w, r)

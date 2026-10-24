@@ -31,6 +31,7 @@ type settingsData struct {
 	Knowledge knowledgePage
 	// CompressAuto is the default for chats' "Compress automatically".
 	CompressAuto bool
+	Tools        toolsPage
 }
 
 // enginePage is the Models section with llama.cpp.
@@ -163,6 +164,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	d.Voice = s.voicePage(ctx)
 	d.Knowledge = s.knowledgePage(ctx, r.URL.Query().Get("pulled"))
+	d.Tools = s.toolsPage()
 	p.Data = d
 	s.render(w, "settings", p)
 }

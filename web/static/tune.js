@@ -1,5 +1,5 @@
 // Tune panel, in two parts.
-// "This chat": thinking, temperature, reply length, system prompt and (hidden
+// "This chat": thinking, tools, temperature, reply length, system prompt and (hidden
 // until opened) the rest of sampling. These are the chat's own, layered over
 // the preset (if any), the model's settings and its recommended defaults.
 // The model part: context, GPU layers, how long it stays loaded and (hidden)
@@ -29,12 +29,12 @@
   let presets = JSON.parse(chatEl.dataset.presets || 'null') || [];
   const initial = JSON.parse(chatEl.dataset.tune || '{}');
   // This chat's own changes. Anything not in here is inherited.
-  const state = { options: { ...(initial.options || {}) }, system: initial.system || '', think: initial.think ?? null, compress: initial.compress ?? null };
+  const state = { options: { ...(initial.options || {}) }, system: initial.system || '', think: initial.think ?? null, compress: initial.compress ?? null, tools: initial.tools ?? null };
   // The chat's summary of its oldest messages (see server compress.go), and
   // how many messages it has on the page.
   const chatState = { compression: initial.compression || null, messages: initial.messages || 0 };
   const KEEP_LATEST = 4; // messages a summary never covers
-  let defaults = { options: {}, system: '', contextLength: 0, thinking: false };
+  let defaults = { options: {}, system: '', contextLength: 0, thinking: false, tools: false };
   // The model's saved settings (llama.cpp only).
   let saved = {};
   const perModel = () => !!defaults.engine;
@@ -48,6 +48,7 @@
   // number). scope 'model' rows belong to the model part.
   const CHAT = [
     { key: 'think', label: 'Thinking', kind: 'think' },
+    { key: 'tools', label: 'Tools', kind: 'tools' },
     { key: 'temperature', label: 'Temperature', kind: 'scale', min: 0, max: 2, step: 0.05, short: 'temp',
       help: 'Lower stays focused, higher gets more varied' },
     { key: 'num_predict', label: 'Max reply length', kind: 'spin', min: -1, max: 262144, step: 256, int: true,
@@ -236,6 +237,7 @@
   function resetRow(def) {
     if (def.kind === 'think') { state.think = null; return render(); }
     if (def.kind === 'compress') { state.compress = null; return render(); }
+    if (def.kind === 'tools') { state.tools = null; return render(); }
     // A chat's own value over a saved one goes first.
     if (savedHere(def) && def.key in state.options) { delete state.options[def.key]; return render(); }
     setOption(def, null);
@@ -261,12 +263,15 @@
     const { row, sub, ctrl, reset } = rowShell(def);
     const r = { def, row, sub, reset };
 
-    if (def.kind === 'combo' || def.kind === 'think' || def.kind === 'choice') {
+    if (def.kind === 'combo' || def.kind === 'think' || def.kind === 'tools' || def.kind === 'choice') {
       const sel = el('select', 'combo');
       sel.id = 'tp-' + def.key;
       sel.addEventListener('change', () => {
         if (def.kind === 'think') {
           state.think = sel.value === '' ? null : sel.value === 'on';
+          render();
+        } else if (def.kind === 'tools') {
+          state.tools = sel.value === '' ? null : sel.value === 'on';
           render();
         } else {
           setOption(def, parse(def, sel.value));
@@ -549,7 +554,7 @@
 
   // ---- rendering ----
   function changedCount() {
-    return Object.keys(state.options).length + (state.system ? 1 : 0) + (state.think !== null ? 1 : 0) + (state.compress !== null ? 1 : 0);
+    return Object.keys(state.options).length + (state.system ? 1 : 0) + (state.think !== null ? 1 : 0) + (state.compress !== null ? 1 : 0) + (state.tools !== null ? 1 : 0);
   }
 
   function describe(inh) {
@@ -608,6 +613,21 @@
     sel.value = state.think === null ? '' : state.think ? 'on' : 'off';
     r.sub.textContent = defaults.thinking ? 'Reasons step by step before answering' : 'This model doesn’t say it can think';
     return state.think !== null;
+  }
+
+  function renderTools(r) {
+    const sel = r.select;
+    if (!sel.options.length) sel.append(new Option('Default', ''), new Option('On', 'on'), new Option('Off', 'off'));
+    const p = currentPreset();
+    sel.options[0].text = p?.tools != null ? `Preset (${p.tools ? 'on' : 'off'})` : 'Default (on)';
+    sel.value = state.tools === null ? '' : state.tools ? 'on' : 'off';
+    // A model whose chat template has no tool support can't call them.
+    sel.disabled = !defaults.tools;
+    r.row.title = 'Lets the model search the web, read pages, calculate and look through your chats. Choose which in Settings.';
+    r.sub.textContent = defaults.tools
+      ? (state.tools === false || (state.tools === null && p?.tools === false) ? 'Off: the model answers on its own' : 'The model can look things up and calculate')
+      : 'This model’s template has no tool support';
+    return state.tools !== null;
   }
 
   function renderChoice(r) {
@@ -737,7 +757,7 @@
     for (const r of rows) {
       r.row.hidden = (!!r.def.engine && !perModel()) || (r.def.when && !r.def.when());
       const k = r.def.kind;
-      const changed = k === 'format' ? renderFormat(r) : k === 'combo' ? renderCombo(r) : k === 'think' ? renderThink(r) : k === 'compress' ? renderCompress(r) : k === 'choice' ? renderChoice(r) : renderNumber(r);
+      const changed = k === 'format' ? renderFormat(r) : k === 'combo' ? renderCombo(r) : k === 'think' ? renderThink(r) : k === 'compress' ? renderCompress(r) : k === 'tools' ? renderTools(r) : k === 'choice' ? renderChoice(r) : renderNumber(r);
       r.row.classList.toggle('changed', changed);
       r.reset.hidden = !changed;
     }
@@ -773,7 +793,7 @@
 
   async function loadDefaults() {
     const base = baseModel();
-    defaults = { options: {}, system: '', contextLength: 0, thinking: false };
+    defaults = { options: {}, system: '', contextLength: 0, thinking: false, tools: false };
     if (base) {
       try {
         const res = await fetch('/api/models/defaults?name=' + encodeURIComponent(base));
@@ -844,6 +864,7 @@
       system: state.system || p?.system || '',
       think: state.think ?? p?.think ?? null,
       compress: state.compress ?? p?.compress ?? null,
+      tools: state.tools ?? p?.tools ?? null,
     };
   }
 
@@ -852,6 +873,7 @@
     state.system = '';
     state.think = null;
     state.compress = null;
+    state.tools = null;
   }
 
   async function run(btn, fn) {
@@ -903,7 +925,7 @@
       return p ? { preset: p.name } : { model: select.value };
     },
     settings() {
-      return { options: state.options, system: state.system, think: state.think, compress: state.compress };
+      return { options: state.options, system: state.system, think: state.think, compress: state.compress, tools: state.tools };
     },
     // chat.js reports the chat's summary and how many messages it shows.
     setChat(c) {
