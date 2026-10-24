@@ -99,6 +99,17 @@
   const LLAMA_DEFAULTS = { temperature: 0.8, top_p: 0.95, top_k: 40, min_p: 0.05, repeat_penalty: 1, num_predict: -1,
     presence_penalty: 0, frequency_penalty: 0, repeat_last_n: 64 };
 
+  // Reply format: a choice, plus the text it uses (a JSON schema or a GBNF
+  // grammar). The text has its own keys, so switching modes keeps both.
+  const FORMAT = { key: 'reply_format', label: 'Reply format', kind: 'format' };
+  const FORMAT_HELP = {
+    text: 'Plain replies',
+    json: 'Any valid JSON object, shown highlighted',
+    schema: 'Matches the JSON schema below, shown highlighted',
+    grammar: 'Matches the GBNF grammar below (for experts)',
+  };
+  const MAX_REPLY_TEXT = 32 << 10; // as the server checks it, in bytes
+
   const currentPreset = () => {
     const v = select.value;
     return v.startsWith('preset:') ? presets.find((p) => p.name === v.slice(7)) || null : null;
@@ -374,6 +385,66 @@
   }
 
   const memory = buildExpander('tune-memory', 'Memory', MEMORY, $('tune-memory-box'));
+  buildFormat($('tune-format-box'));
+
+  // The reply format row sits under Advanced. Its text box shows for a
+  // schema or a grammar.
+  function buildFormat(parent) {
+    const { row, sub, ctrl, reset } = rowShell(FORMAT);
+    const sel = el('select', 'combo');
+    sel.id = 'tp-reply_format';
+    sel.replaceChildren(...[['text', 'Text'], ['json', 'JSON'], ['schema', 'JSON schema'], ['grammar', 'Grammar']].map(([v, t]) => new Option(t, v)));
+    sel.addEventListener('change', () => {
+      // Text is the default, but it must still override a preset's format.
+      const inPreset = currentPreset()?.options?.reply_format != null;
+      setOption(FORMAT, sel.value === 'text' && !inPreset ? null : sel.value);
+    });
+    ctrl.prepend(sel);
+    const box = el('div', 'reply-box');
+    const area = el('textarea', 'boxed-text reply-code');
+    area.id = 'tp-reply_text';
+    area.rows = 6;
+    area.spellcheck = false;
+    area.addEventListener('input', () => setOption(replyDef(), area.value === '' ? null : area.value));
+    const err = el('p', 'tune-error small');
+    box.append(area, err);
+    row.classList.add('has-scale');
+    row.append(box);
+    reset.addEventListener('click', () => setOption(FORMAT, null));
+    rows.push({ def: FORMAT, row, sub, reset, select: sel, box, area, err });
+    parent.append(row);
+  }
+  const replyDef = () => (shown(FORMAT) === 'grammar' ? { key: 'reply_grammar' } : { key: 'reply_schema' });
+
+  // What's wrong with a schema or grammar, checked as the server checks it.
+  function replyProblem(mode, text) {
+    if (!text) return mode === 'schema' ? 'Add a JSON schema, or replies aren’t constrained' : 'Add a grammar, or replies aren’t constrained';
+    if (new TextEncoder().encode(text).length > MAX_REPLY_TEXT) return 'Over 32 KB';
+    if (mode !== 'schema') return '';
+    try {
+      const v = JSON.parse(text);
+      return v && typeof v === 'object' && !Array.isArray(v) ? '' : 'The schema must be a JSON object';
+    } catch (e) {
+      return `Not valid JSON: ${e.message}`;
+    }
+  }
+
+  function renderFormat(r) {
+    const mode = shown(FORMAT) ?? 'text';
+    if (document.activeElement !== r.select) r.select.value = mode;
+    const constrained = mode === 'schema' || mode === 'grammar';
+    r.box.hidden = !constrained;
+    if (constrained) {
+      const text = shown(replyDef()) ?? '';
+      if (document.activeElement !== r.area) r.area.value = text;
+      r.area.placeholder = mode === 'grammar' ? 'root ::= "yes" | "no"' : '{"type": "object", "properties": {"name": {"type": "string"}}}';
+      const problem = replyProblem(mode, text);
+      r.err.textContent = problem;
+      r.area.setAttribute('aria-invalid', String(!!problem));
+    }
+    r.sub.textContent = `${origin(FORMAT)} · ${FORMAT_HELP[mode]}`;
+    return state.options.reply_format !== undefined;
+  }
 
   // ---- rendering ----
   function changedCount() {
@@ -505,7 +576,7 @@
     for (const r of rows) {
       r.row.hidden = (!!r.def.engine && !perModel()) || (r.def.when && !r.def.when());
       const k = r.def.kind;
-      const changed = k === 'combo' ? renderCombo(r) : k === 'think' ? renderThink(r) : k === 'choice' ? renderChoice(r) : renderNumber(r);
+      const changed = k === 'format' ? renderFormat(r) : k === 'combo' ? renderCombo(r) : k === 'think' ? renderThink(r) : k === 'choice' ? renderChoice(r) : renderNumber(r);
       r.row.classList.toggle('changed', changed);
       r.reset.hidden = !changed;
     }
@@ -669,6 +740,8 @@
     settings() {
       return { options: state.options, system: state.system, think: state.think };
     },
+    // The reply format in effect (the chat's, else the preset's), for display.
+    replyFormat: () => shown(FORMAT) ?? 'text',
     baseModel,
     open() { setOpen(true); },
   };

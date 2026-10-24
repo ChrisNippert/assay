@@ -59,6 +59,15 @@ func (e *Engine) Proxy(ctx context.Context, model string, options map[string]any
 		if n, ok := num(opts["num_predict"]); ok && n > 0 && !a && !b {
 			req["max_tokens"] = int(n)
 		}
+		// A reply format from the options (a preset's) applies only when the
+		// body asks for no format of its own.
+		_, rf := req["response_format"]
+		_, gr := req["grammar"]
+		if !rf && !gr {
+			for k, v := range replyFields(opts) {
+				req[k] = v
+			}
+		}
 	case "/v1/embeddings":
 		if !p.opts.Embedding {
 			return nil, &ollama.APIError{StatusCode: http.StatusBadRequest, Message: model + " isn't an embedding model"}

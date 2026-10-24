@@ -141,6 +141,16 @@ code doesn't care which engine runs (`server.Backend`).
   MODEL group has a row per compatible one. Checked with a synthetic rank-4
   adapter on Qwen3.5-2B (loaded, scaled live, applied through a preset on
   `/v1`); not yet with a real Unsloth LoRA.
+- **Reply format.** Tune's Reply format (This chat → Advanced) sets
+  `reply_format` (text, json, schema, grammar) with `reply_schema` or
+  `reply_grammar`, saved with the chat and presets. `engine.replyFields`
+  maps them to llama-server's `response_format` (`json_object`, or
+  `json_schema` with the schema under `json_schema.schema`; this build
+  rejects other types) or `grammar`. `Engine.Proxy` applies a preset's
+  format on `/v1` only when the body has neither. A schema must be a JSON
+  object, texts are capped at 32 KB, schema/grammar mode without text is a
+  400. A reply that is JSON shows as a highlighted JSON block (display only).
+  Checked on Qwen3.5-2B: a one-value enum schema forced `{"answer":"alpha"}`.
 - **CPU threads.** `num_thread` becomes `-t` (Tune → Memory). Only matters
   for layers on the CPU; 4 threads beat the default (all 16) on a CPU-only
   9B (3.7 vs 2.6 tok/s, one sample), so Auto may deserve a better default.

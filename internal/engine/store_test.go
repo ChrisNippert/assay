@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -140,6 +141,40 @@ func TestModelSettingsLayering(t *testing.T) {
 	}
 	if s, _ := e.Settings("x:1"); s != nil {
 		t.Errorf("settings left: %v", s)
+	}
+}
+
+func TestReplyFormatFields(t *testing.T) {
+	cases := []struct {
+		opts map[string]any
+		want string
+	}{
+		{map[string]any{"reply_format": "text"}, ""},
+		{map[string]any{"reply_format": "json"}, `{"response_format":{"type":"json_object"}}`},
+		{map[string]any{"reply_format": "schema", "reply_schema": `{"type":"object"}`}, `{"response_format":{"json_schema":{"schema":{"type":"object"}},"type":"json_schema"}}`},
+		{map[string]any{"reply_format": "schema"}, ""},
+		{map[string]any{"reply_format": "grammar", "reply_grammar": `root ::= "a"`}, `{"grammar":"root ::= \"a\""}`},
+		{map[string]any{"reply_schema": `{"type":"object"}`}, ""},
+	}
+	for _, c := range cases {
+		got := replyFields(c.opts)
+		if c.want == "" {
+			if got != nil {
+				t.Errorf("%v: got %v", c.opts, got)
+			}
+			continue
+		}
+		if b, _ := json.Marshal(got); string(b) != c.want {
+			t.Errorf("%v: got %s, want %s", c.opts, b, c.want)
+		}
+	}
+	m := &Model{Name: "x:1", Files: []string{"a.gguf"}}
+	b := chatBody(m, ollama.ChatRequest{Options: map[string]any{"reply_format": "json", "temperature": 0.1}})
+	if rf, _ := b["response_format"].(map[string]any); rf["type"] != "json_object" || b["temperature"] != 0.1 {
+		t.Errorf("body = %v", b)
+	}
+	if _, ok := b["reply_format"]; ok {
+		t.Error("the setting itself leaked into the body")
 	}
 }
 

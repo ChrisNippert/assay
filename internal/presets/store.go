@@ -3,6 +3,7 @@ package presets
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -162,7 +163,11 @@ var (
 			d, err := time.ParseDuration(v)
 			return v == "-1" || (err == nil && d > 0)
 		},
+		// text is the default; json, schema and grammar constrain the reply.
+		"reply_format": func(v string) bool { return v == "text" || v == "json" || v == "schema" || v == "grammar" },
 	}
+	// maxReplyText caps a reply's JSON schema or grammar text.
+	maxReplyText = 32 << 10
 )
 
 // CleanOptions validates model options and normalizes their types (ints as
@@ -207,11 +212,52 @@ func CleanOptions(in map[string]any) (map[string]any, error) {
 			if len(list) > 0 {
 				out[k] = list
 			}
+		case k == "reply_schema":
+			str, ok := v.(string)
+			if !ok || len(str) > maxReplyText {
+				return nil, fmt.Errorf("reply schema must be text of at most 32 KB")
+			}
+			if str != "" && !isJSONObject(str) {
+				return nil, fmt.Errorf("reply schema must be a JSON object")
+			}
+			out[k] = str
+		case k == "reply_grammar":
+			str, ok := v.(string)
+			if !ok || len(str) > maxReplyText {
+				return nil, fmt.Errorf("reply grammar must be text of at most 32 KB")
+			}
+			out[k] = str
 		default:
 			return nil, fmt.Errorf("unknown option %q", k)
 		}
 	}
 	return out, nil
+}
+
+// isJSONObject reports whether s is one JSON object.
+func isJSONObject(s string) bool {
+	var v any
+	if err := json.Unmarshal([]byte(s), &v); err != nil {
+		return false
+	}
+	_, ok := v.(map[string]any)
+	return ok
+}
+
+// CheckReplyFormat reports a reply format that asks for a schema or grammar
+// with none set, once the options are merged over a preset's.
+func CheckReplyFormat(opts map[string]any) error {
+	switch mode, _ := opts["reply_format"].(string); mode {
+	case "schema":
+		if s, _ := opts["reply_schema"].(string); s == "" {
+			return fmt.Errorf("the reply format is JSON schema, but no schema is set")
+		}
+	case "grammar":
+		if g, _ := opts["reply_grammar"].(string); g == "" {
+			return fmt.Errorf("the reply format is grammar, but no grammar is set")
+		}
+	}
+	return nil
 }
 
 // Merge returns base with overrides applied on top. Neither input is modified.
