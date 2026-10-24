@@ -286,6 +286,93 @@
   CHAT.forEach((d) => buildRow(d, $('tune-chat')));
   const sampling = buildExpander('tune-sampling', 'Advanced', SAMPLING, $('tune-sampling-box'));
   MODEL.forEach((d) => buildRow(d, $('tune-model')));
+
+  // ---- LoRA adapters ----
+  // The installed adapters for this model's architecture: each on or off,
+  // with a scale from 0 to 2. Turning one on or off reloads the model; a
+  // scale change applies to the running one.
+  const lora = { box: el('div', 'lora-box'), list: el('div'), rows: new Map(), last: new Map() };
+  const loraHead = el('div', 'row');
+  const loraText = el('div', 'row-text');
+  loraText.append(el('div', 'row-title', 'Adapters'),
+    el('div', 'row-sub', 'Fine-tunes applied on top of the model. Turning one on or off reloads it; a scale change applies at once.'));
+  loraHead.append(loraText);
+  lora.box.append(loraHead, lora.list);
+  lora.box.hidden = true;
+  $('tune-model').append(lora.box);
+  const loraList = () => saved.lora || [];
+  const setLoRA = (list) => setModelOption({ key: 'lora' }, list.length ? list : null);
+
+  function loraRow(info) {
+    const row = el('div', 'row has-scale');
+    const text = el('div', 'row-text');
+    const sub = el('div', 'row-sub');
+    text.append(el('div', 'row-title', info.name), sub);
+    const ctrl = el('div', 'row-ctrl');
+    const check = el('input');
+    check.type = 'checkbox';
+    check.setAttribute('aria-label', `Use ${info.name}`);
+    const spin = el('div', 'spin');
+    const num = el('input', 'spin-input');
+    Object.assign(num, { type: 'number', min: 0, max: 2, step: 0.05 });
+    num.inputMode = 'decimal';
+    num.placeholder = '1';
+    num.setAttribute('aria-label', `Scale of ${info.name}`);
+    spin.append(num);
+    const range = el('input', 'scale');
+    Object.assign(range, { type: 'range', min: 0, max: 2, step: 0.05, tabIndex: -1 });
+    range.setAttribute('aria-hidden', 'true'); // the number box is the accessible control
+    ctrl.append(check, spin);
+    row.append(text, ctrl, range);
+    check.addEventListener('change', () => {
+      const rest = loraList().filter((u) => u.name !== info.name);
+      if (check.checked) rest.push({ name: info.name, scale: lora.last.get(info.name) ?? 1 });
+      setLoRA(rest);
+    });
+    const scaleTo = (v) => {
+      if (!Number.isFinite(v)) return;
+      const s = Math.round(Math.min(2, Math.max(0, v)) * 100) / 100;
+      lora.last.set(info.name, s);
+      setLoRA(loraList().map((u) => (u.name === info.name ? { name: u.name, scale: s } : u)));
+    };
+    num.addEventListener('change', () => scaleTo(parseFloat(num.value)));
+    range.addEventListener('input', () => scaleTo(parseFloat(range.value)));
+    return { info, row, sub, check, num, range };
+  }
+
+  // One row per compatible adapter, and one for each adapter the model
+  // is set to load that's gone since (so it can be turned off).
+  function buildLoRA() {
+    lora.list.replaceChildren();
+    lora.rows.clear();
+    const infos = new Map((defaults.adapters || []).map((a) => [a.name, a]));
+    for (const u of loraList()) if (!infos.has(u.name)) infos.set(u.name, { name: u.name, missing: true });
+    for (const info of infos.values()) {
+      const r = loraRow(info);
+      lora.rows.set(info.name, r);
+      lora.list.append(r.row);
+    }
+  }
+
+  function renderLoRA() {
+    const on = new Map(loraList().map((u) => [u.name, u.scale]));
+    lora.box.hidden = !perModel() || !lora.rows.size;
+    for (const [name, r] of lora.rows) {
+      const scale = on.get(name);
+      const active = scale !== undefined;
+      const shown = active ? scale : lora.last.get(name) ?? 1;
+      r.check.checked = active;
+      r.num.disabled = r.range.disabled = !active;
+      if (document.activeElement !== r.num) r.num.value = active ? scale : '';
+      r.range.value = shown;
+      r.range.style.setProperty('--pct', (shown / 2) * 100 + '%');
+      const info = r.info;
+      r.sub.textContent = info.missing
+        ? 'Not installed any more. Turn it off to load without it.'
+        : `LoRA for ${info.arch} models · ${info.size >= 1e6 ? gb(info.size) : Math.max(1, Math.round(info.size / 1e3)) + ' KB'}${active ? '' : ' · off'}`;
+    }
+  }
+
   const memory = buildExpander('tune-memory', 'Memory', MEMORY, $('tune-memory-box'));
 
   // ---- rendering ----
@@ -426,6 +513,7 @@
     sampling.sub.textContent = samplingChanged ? `${samplingChanged} changed` : 'Top P, top K, penalties, seed. The defaults suit most models.';
     memory.box.hidden = !perModel();
     memory.sub.textContent = MEMORY.slice(0, 2).map((d) => `${d.label.toLowerCase()} ${shown(d) ?? 'default'}`).join(' · ');
+    renderLoRA();
 
     modelTitle.textContent = baseModel() || 'Model';
     modelSub.textContent = perModel() ? 'Saved for the model, so every chat with it uses these.' : 'For this chat.';
@@ -460,6 +548,7 @@
       } catch {}
     }
     saved = { ...(defaults.saved || {}) };
+    buildLoRA();
     modelStatus.textContent = '';
     render();
   }

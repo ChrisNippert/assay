@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"ollamui/internal/gguf"
 	"ollamui/internal/hf"
 )
 
@@ -46,6 +47,10 @@ type Candidate struct {
 	ProjectorSHA string    `json:"-"`
 	Size         int64     `json:"size"`
 	Modified     time.Time `json:"modified"`
+	// Adapter is set for a LoRA adapter, which is offered as one rather
+	// than as a model; Arch is the base architecture it was trained for.
+	Adapter bool   `json:"adapter,omitempty"`
+	Arch    string `json:"arch,omitempty"`
 }
 
 // Source is one place models can be found: an app's folder.
@@ -74,6 +79,8 @@ func SourceTitle(id string) string {
 		return "Unsloth Studio"
 	case "folder":
 		return "a folder"
+	case "file":
+		return "a file"
 	}
 	return ""
 }
@@ -539,6 +546,47 @@ type Finder struct {
 	loaded  bool
 	cache   []Source
 	at      time.Time
+	// kinds remembers each file's header (is it a LoRA adapter?), so
+	// scans don't read the same headers again.
+	kinds map[string]fileKind
+}
+
+// fileKind is what a GGUF file's header says, valid while the file keeps
+// its size and time.
+type fileKind struct {
+	size int64
+	mod  time.Time
+	lora bool
+	arch string
+}
+
+// markAdapters flags the candidates that are LoRA adapters, by their GGUF
+// headers. Called with f.mu held.
+func (f *Finder) markAdapters(models []Candidate) {
+	if f.kinds == nil {
+		f.kinds = map[string]fileKind{}
+	}
+	for i := range models {
+		c := &models[i]
+		if len(c.Files) != 1 {
+			continue // adapters are single files
+		}
+		info, err := os.Stat(c.Files[0])
+		if err != nil {
+			continue
+		}
+		k, ok := f.kinds[c.Files[0]]
+		if !ok || k.size != info.Size() || !k.mod.Equal(info.ModTime()) {
+			k = fileKind{size: info.Size(), mod: info.ModTime()}
+			if g, err := gguf.Read(c.Files[0]); err == nil && g.IsLoRA() {
+				k.lora, k.arch = true, g.Arch()
+			}
+			f.kinds[c.Files[0]] = k
+		}
+		if k.lora {
+			c.Adapter, c.Arch = true, k.arch
+		}
+	}
 }
 
 // NewFinder returns a Finder that remembers added folders in file.
@@ -659,7 +707,9 @@ func (f *Finder) scanAll() []Source {
 		for _, dir := range d.dirs {
 			if info, err := os.Stat(dir); err == nil && info.IsDir() {
 				dirs = append(dirs, dir)
-				models = append(models, d.scan(dir)...)
+				found := d.scan(dir)
+				f.markAdapters(found)
+				models = append(models, found...)
 			}
 		}
 		if len(dirs) > 0 {
@@ -668,7 +718,9 @@ func (f *Finder) scanAll() []Source {
 	}
 	for _, dir := range f.folders {
 		if info, err := os.Stat(dir); err == nil && info.IsDir() {
-			out = append(out, Source{ID: "folder", Title: "Folder", Dir: dir, Models: scanFolder(dir)})
+			models := scanFolder(dir)
+			f.markAdapters(models)
+			out = append(out, Source{ID: "folder", Title: "Folder", Dir: dir, Models: models})
 		}
 	}
 	return out
@@ -719,7 +771,7 @@ func FindCandidate(sources []Source, id, dir, name string) (Candidate, bool) {
 // fileInfos stats every file the store's models use.
 func (s *Store) fileInfos() []os.FileInfo {
 	var out []os.FileInfo
-	for _, m := range s.List() {
+	for _, m := range s.everything() {
 		for _, f := range append(append([]string(nil), m.Files...), m.Projector) {
 			if f == "" {
 				continue
@@ -777,6 +829,9 @@ func (s *Store) ImportFound(source string, cs []Candidate) (int, error) {
 			continue
 		}
 		m := &Model{Name: c.Name, Repo: c.Repo, Quant: c.Quant, Size: c.Size, Modified: c.Modified, Source: source, Origin: c.Files[0], Link: "hard"}
+		if c.Adapter {
+			m.Adapter = &AdapterInfo{Arch: c.Arch}
+		}
 		if m.Modified.IsZero() {
 			m.Modified = time.Now()
 		}

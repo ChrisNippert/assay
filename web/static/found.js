@@ -73,10 +73,12 @@
     text.append(sub);
     head.append(text);
     const ctrl = el('div', 'row-ctrl');
-    if (s.models.length > 1) {
+    // Import all takes the models; LoRA adapters are imported one by one.
+    const models = s.models.filter((m) => !m.adapter);
+    if (models.length > 1) {
       const all = el('button', 'btn', 'Import all');
       all.type = 'button';
-      all.addEventListener('click', () => doImport(s, [], s.models.length));
+      all.addEventListener('click', () => doImport(s, [], models.length));
       ctrl.append(all);
     }
     if (s.id === 'folder') {
@@ -100,7 +102,7 @@
       const row = el('div', 'row found-row');
       const t = el('div', 'row-text');
       t.append(el('span', 'row-title found-name', m.name));
-      t.append(el('span', 'row-sub', [m.quant, bytes(m.size)].filter(Boolean).join(' · ')));
+      t.append(el('span', 'row-sub', [m.adapter ? 'LoRA adapter for ' + m.arch + ' models' : m.quant, bytes(m.size)].filter(Boolean).join(' · ')));
       row.append(t);
       const c = el('div', 'row-ctrl');
       const b = el('button', 'btn primary', 'Import');

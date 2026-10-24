@@ -229,6 +229,35 @@ func TestKinds(t *testing.T) {
 	}
 }
 
+func TestLoRA(t *testing.T) {
+	read := func(b []byte) *File {
+		f, err := Read(writeTemp(t, "a.gguf", b))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
+	lora := read(model("qwen35", func(b *w, n *int) {
+		b.kv("general.type", 8, func() { b.str("adapter") })
+		b.kv("adapter.type", 8, func() { b.str("lora") })
+		*n += 2
+	}))
+	if !lora.IsLoRA() || lora.Arch() != "qwen35" {
+		t.Errorf("lora adapter: IsLoRA %v arch %q", lora.IsLoRA(), lora.Arch())
+	}
+	if read(model("qwen35", nil)).IsLoRA() {
+		t.Error("a plain model is not an adapter")
+	}
+	ia3 := read(model("qwen35", func(b *w, n *int) {
+		b.kv("general.type", 8, func() { b.str("adapter") })
+		b.kv("adapter.type", 8, func() { b.str("ia3") })
+		*n += 2
+	}))
+	if ia3.IsLoRA() {
+		t.Error("only LoRA adapters count")
+	}
+}
+
 func TestFileType(t *testing.T) {
 	for id, want := range map[float64]string{0: "F32", 1: "F16", 7: "Q8_0", 32: "BF16", 19: "IQ2_XXS", 38: "MXFP4_MOE", 99: "type 99"} {
 		f := &File{Meta: map[string]any{"general.file_type": id}}

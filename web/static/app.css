@@ -838,4 +838,4 @@ a.tag-link:hover { border-color: var(--accent-line); color: var(--accent-text); 
 .found.busy { opacity: .7; pointer-events: none; }
 .found-addrow input { padding: var(--s2) var(--s3); border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; max-width: 100%; }
 .lib-missing { color: var(--bad); }
-@media (max-width: 720px) { .found-addrow { flex-wrap: wrap; } }
+@media (max-width: 720px) { .found-addrow { flex-wrap: wrap; } .found-addrow .row-ctrl { flex-wrap: wrap; width: 100%; } .found-addrow input { flex: 1 1 9rem; min-width: 0; } }

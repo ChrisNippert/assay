@@ -88,6 +88,75 @@
   </div>
   {{end}}
 
+  <section class="found" id="adapters">
+    <div class="found-top">
+      <h2 class="found-title">LoRA adapters</h2>
+      {{with .Adapters}}<span class="muted small">{{len .}} installed</span>{{end}}
+    </div>
+    <p class="muted small found-intro">Fine-tunes that change a model as it loads, like Unsloth’s LoRA exports. Each works only with models of its architecture, and Tune offers it for those.</p>
+    <p class="found-msg small" id="adapter-msg" hidden></p>
+    <div class="boxed-list">
+      {{range .Adapters}}
+      <div class="row lib-row" data-adapter="{{.Name}}">
+        <div class="row-text">
+          <div class="row-title">{{.Name}}</div>
+          <div class="row-sub">LoRA for {{.Arch}} models · {{bytes .Size}}{{with .Link}} · <span class="{{if .Missing}}lib-missing{{else}}muted{{end}}" title="{{.Title}}">{{.Text}}</span>{{end}}</div>
+        </div>
+        <div class="row-ctrl actions">
+          <button type="button" class="icon-btn lib-del" data-adapter-remove="{{.Name}}" title="Remove {{.Name}} from the library. Its file is left alone." aria-label="Remove {{.Name}}"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9h6.6L12 4M6.5 6.5v4.5M9.5 6.5v4.5"/></svg></button>
+        </div>
+      </div>
+      {{else}}
+      <div class="row"><span class="muted small">No adapters yet. Add one below, or link one from Found on this computer.</span></div>
+      {{end}}
+      <div class="row found-addrow">
+        <div class="row-text">
+          <span class="row-title">Add an adapter…</span>
+          <span class="row-sub">The full path of a LoRA .gguf file. It's linked, or used where it is, never copied.</span>
+        </div>
+        <div class="row-ctrl">
+          <input type="text" id="adapter-path" size="24" placeholder="/path/to/lora.gguf" aria-label="Adapter file" autocomplete="off" spellcheck="false">
+          <input type="text" id="adapter-name" size="12" placeholder="Name" aria-label="Adapter name" autocomplete="off">
+          <button type="button" class="btn" id="adapter-add">Add</button>
+        </div>
+      </div>
+    </div>
+  </section>
+  <script>
+  (() => {
+    const msg = document.getElementById('adapter-msg');
+    const say = (t, bad) => { msg.textContent = t || ''; msg.classList.toggle('bad', !!bad); msg.hidden = !t; };
+    const path = document.getElementById('adapter-path');
+    const name = document.getElementById('adapter-name');
+    async function post(url, data) {
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      if (!res.ok) {
+        let t = res.statusText;
+        try { t = (await res.json()).error || t; } catch {}
+        throw new Error(t);
+      }
+      return res;
+    }
+    document.getElementById('adapter-add').addEventListener('click', async () => {
+      if (!path.value.trim()) return path.focus();
+      say('Adding…');
+      try {
+        await post('/api/models/adapters', { path: path.value.trim(), name: name.value.trim() });
+        location.reload();
+      } catch (e) { say(e.message, true); }
+    });
+    document.querySelectorAll('[data-adapter-remove]').forEach((btn) => btn.addEventListener('click', async () => {
+      const n = btn.dataset.adapterRemove;
+      if (!confirm(`Remove ${n} from the library? Its file is left alone.`)) return;
+      btn.disabled = true;
+      try {
+        await post('/api/models/delete', { names: [n] });
+        btn.closest('[data-adapter]').remove();
+      } catch (e) { say(`Couldn’t remove ${n}: ${e.message}`, true); btn.disabled = false; }
+    }));
+  })();
+  </script>
+
   <section class="found" id="found" hidden>
     <div class="found-top">
       <h2 class="found-title">Found on this computer</h2>

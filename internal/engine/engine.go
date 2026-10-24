@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -28,6 +29,7 @@ import (
 
 	"ollamui/internal/gguf"
 	"ollamui/internal/ollama"
+	"ollamui/internal/presets"
 )
 
 // Options are the engine-wide settings.
@@ -112,10 +114,37 @@ type loadOpts struct {
 	Embedding bool
 	Draft     string // the draft model's name for speculative decoding, "": none
 	DraftMax  int    // tokens drafted at a time; 0: llama.cpp's default
+	LoRA      []presets.LoRA
+}
+
+// sameLoad reports whether a server started with o is exactly what want
+// asks for.
+func (o loadOpts) sameLoad(want loadOpts) bool {
+	return reflect.DeepEqual(o, want)
+}
+
+// sameNames reports whether a server started with o can take want's
+// adapter scales live: the same options, and the same adapters in the
+// same order (only their scales may differ).
+func (o loadOpts) sameNames(want loadOpts) bool {
+	if len(o.LoRA) != len(want.LoRA) {
+		return false
+	}
+	for i := range o.LoRA {
+		if o.LoRA[i].Name != want.LoRA[i].Name {
+			return false
+		}
+	}
+	a, b := o, want
+	a.LoRA, b.LoRA = nil, nil
+	return reflect.DeepEqual(a, b)
 }
 
 func loadOptsFrom(o map[string]any) loadOpts {
 	lo := loadOpts{GPULayers: -1}
+	if l, ok := presets.LoRAs(o["lora"]); ok {
+		lo.LoRA = l
+	}
 	if v, ok := num(o["num_ctx"]); ok && v > 0 {
 		lo.Ctx = int(v)
 	}
@@ -222,6 +251,19 @@ func (e *Engine) args(m *Model, o loadOpts, port int) []string {
 	if o.Threads > 0 {
 		a = append(a, "-t", strconv.Itoa(o.Threads))
 	}
+	if !o.Embedding {
+		// Each adapter is numbered in the order it's given (setScales relies on it).
+		for _, u := range o.LoRA {
+			if ad, err := e.store.Get(u.Name); err == nil && ad.Adapter != nil {
+				a = append(a, "--lora", e.store.Blob(ad.Files[0]))
+			}
+		}
+		if len(o.LoRA) > 0 {
+			// Loaded unapplied, then scaled once it answers, so a scale can
+			// change later without a restart.
+			a = append(a, "--lora-init-without-apply")
+		}
+	}
 	if d, err := e.store.Get(o.Draft); err == nil && o.Draft != "" && !o.Embedding {
 		// Its GPU layers follow --fit, like the target's.
 		a = append(a, "-md", e.store.Blob(d.Files[0]))
@@ -258,6 +300,9 @@ func (e *Engine) ensure(ctx context.Context, name string, options map[string]any
 	if err != nil {
 		return nil, false, err
 	}
+	if m.Adapter != nil {
+		return nil, false, fmt.Errorf("%s is a LoRA adapter, not a model", m.Name)
+	}
 	if err := e.missingError(m); err != nil {
 		return nil, false, err
 	}
@@ -265,10 +310,16 @@ func (e *Engine) ensure(ctx context.Context, name string, options map[string]any
 	if f, err := e.gguf(m); err == nil && f.IsEmbedding() {
 		o.Embedding = true
 	}
+	if o.Embedding {
+		o.LoRA = nil // embedding models take no adapters
+	}
 	if o.Draft != "" && !o.Embedding {
 		if err := e.checkDraft(m, o.Draft); err != nil {
 			return nil, false, err
 		}
+	}
+	if err := e.checkLoRA(m, o.LoRA); err != nil {
+		return nil, false, err
 	}
 	e.loading.Lock()
 	defer e.loading.Unlock()
@@ -276,11 +327,23 @@ func (e *Engine) ensure(ctx context.Context, name string, options map[string]any
 	e.mu.Lock()
 	p := e.procs[m.Name]
 	e.mu.Unlock()
-	if p != nil && p.running() && p.opts == o {
+	if p != nil && p.running() && p.opts.sameLoad(o) {
 		p.mu.Lock()
 		p.asked = name
 		p.mu.Unlock()
 		return p, false, nil
+	}
+	if p != nil && p.running() && p.opts.sameNames(o) {
+		// Only the adapter scales changed: set them on the running server.
+		err := e.setScales(ctx, p, o.LoRA)
+		if err == nil {
+			p.mu.Lock()
+			p.asked = name
+			p.mu.Unlock()
+			p.opts = o
+			return p, false, nil
+		}
+		e.opt.Log.Warn("couldn't set adapter scales live; loading again", "model", m.Name, "err", err)
 	}
 	if p != nil {
 		e.stop(p)
@@ -414,6 +477,12 @@ func (e *Engine) start(ctx context.Context, m *Model, o loadOpts) (*proc, error)
 			return nil, fmt.Errorf("%s took too long to load", m.Name)
 		}
 		time.Sleep(150 * time.Millisecond)
+	}
+	if len(o.LoRA) > 0 {
+		if err := e.setScales(ctx, p, o.LoRA); err != nil {
+			stopProcess(cmd)
+			return nil, fmt.Errorf("loading the adapters for %s: %w", m.Name, err)
+		}
 	}
 	p.touch(0, e.opt.KeepAlive)
 	e.mu.Lock()
@@ -701,6 +770,9 @@ func (e *Engine) Show(ctx context.Context, name string) (*ollama.ShowResponse, e
 	m, err := e.store.Get(name)
 	if err != nil {
 		return nil, &ollama.APIError{StatusCode: http.StatusNotFound, Message: err.Error()}
+	}
+	if m.Adapter != nil {
+		return nil, &ollama.APIError{StatusCode: http.StatusNotFound, Message: m.Name + " is a LoRA adapter, not a model"}
 	}
 	f, err := e.gguf(m)
 	if err != nil {

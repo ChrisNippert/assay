@@ -31,27 +31,42 @@ func (e *Engine) ImportFound(id, dir string, names []string) (int, error) {
 	if e.moving.Load() {
 		return 0, errMovingModels
 	}
-	sources := e.Found(false)
-	var picked []Candidate
-	if len(names) == 0 {
-		for _, s := range sources {
-			if s.ID == id && s.Dir == dir {
-				picked = s.Models
-			}
-		}
-	}
-	for _, n := range names {
-		c, ok := FindCandidate(sources, id, dir, n)
-		if !ok {
-			return 0, fmt.Errorf("%s isn't there any more; refresh the list", n)
-		}
-		picked = append(picked, c)
+	picked, err := pickFound(e.Found(false), id, dir, names)
+	if err != nil {
+		return 0, err
 	}
 	n, err := e.store.ImportFound(id, picked)
 	if n > 0 {
 		e.opt.Log.Info("linked models", "source", id, "count", n)
 	}
 	return n, err
+}
+
+// pickFound returns the candidates an import asks for: the named ones, or
+// with no names every model the source lists. Adapters are left out of
+// that, so they're only imported by name.
+func pickFound(sources []Source, id, dir string, names []string) ([]Candidate, error) {
+	var picked []Candidate
+	if len(names) == 0 {
+		for _, s := range sources {
+			if s.ID == id && s.Dir == dir {
+				for _, c := range s.Models {
+					if !c.Adapter {
+						picked = append(picked, c)
+					}
+				}
+			}
+		}
+		return picked, nil
+	}
+	for _, n := range names {
+		c, ok := FindCandidate(sources, id, dir, n)
+		if !ok {
+			return nil, fmt.Errorf("%s isn't there any more; refresh the list", n)
+		}
+		picked = append(picked, c)
+	}
+	return picked, nil
 }
 
 // missingError explains a model whose files are gone.

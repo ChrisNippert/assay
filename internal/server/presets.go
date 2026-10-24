@@ -105,7 +105,9 @@ type modelDefaults struct {
 	Engine *engineDefaults `json:"engine,omitempty"`
 	// Drafts are the installed models that could draft for this one.
 	Drafts []engine.Draft `json:"drafts,omitempty"`
-	CPUs   int            `json:"cpus,omitempty"`
+	// Adapters are the installed LoRA adapters this model can load with.
+	Adapters []engine.Adapter `json:"adapters,omitempty"`
+	CPUs     int              `json:"cpus,omitempty"`
 }
 
 type engineDefaults struct {
@@ -207,6 +209,9 @@ func (s *Server) handleModelDefaults(w http.ResponseWriter, r *http.Request) {
 			Drafts(string) ([]engine.Draft, error)
 		}); ok {
 			d.Drafts, _ = dr.Drafts(name)
+		}
+		if ab, ok := s.ollama.(adapterBackend); ok {
+			d.Adapters, _ = ab.AdaptersFor(name)
 		}
 		d.Engine = &engineDefaults{CacheType: ms.CacheType(), FlashAttn: ms.FlashAttn(), KeepAlive: ms.KeepAlive().String()}
 	}
