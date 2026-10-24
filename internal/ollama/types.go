@@ -63,6 +63,9 @@ type ChatRequest struct {
 	Options  map[string]any `json:"options,omitempty"`
 	// KeepAlive is how long the model stays loaded after the request.
 	KeepAlive any `json:"keep_alive,omitempty"`
+	// ChatID names the ollamui chat the request belongs to, so the engine can
+	// keep its prompt cache across a reload. Not part of the API.
+	ChatID string `json:"-"`
 }
 
 // ChatResponse is one streamed chunk from /api/chat. The last chunk has

@@ -44,7 +44,11 @@ type Options struct {
 	KeepAlive time.Duration
 	// LoadTimeout bounds how long a model may take to load.
 	LoadTimeout time.Duration
-	Log         *slog.Logger
+	// KVDir holds the saved caches of chats (see kvcache.go); "" turns that off.
+	KVDir string
+	// KVLimit caps KVDir in bytes; 0 is 2 GB.
+	KVLimit int64
+	Log     *slog.Logger
 }
 
 // Engine runs the models in a Store.
@@ -100,6 +104,10 @@ func (e *Engine) Store() *Store { return e.store }
 
 // DefaultCtx is the context a model loads with when nothing sets one.
 const DefaultCtx = 32768
+
+// cacheReuse is the shortest prompt chunk (tokens) llama-server tries to
+// move into place from the cache when it isn't at the same position.
+const cacheReuse = 256
 
 // CacheTypes are the K/V cache types a model can load with.
 var CacheTypes = map[string]bool{"f16": true, "q8_0": true, "q4_0": true}
@@ -187,12 +195,35 @@ type proc struct {
 	lastUsed time.Time
 	expires  time.Time // zero while pinned
 	pinned   bool
-	busy     int // requests in flight
-	tail     []string
-	err      error
-	oom      string        // the first out-of-memory line it printed, if any
-	logDone  chan struct{} // closed once its output has all been read
-	fitted   bool          // asked for a layer count that didn't fit; --fit chose
+	busy     int    // requests in flight
+	kvDir    string // where its saved chat caches go, "" if none
+	chat     string // the chat its slot holds (see kvcache.go), "" if none
+	// chatTokens is how many tokens that chat fills the slot with.
+	chatTokens int
+	// fresh is set until the first chat request, which may restore a saved cache.
+	fresh   bool
+	tail    []string
+	err     error
+	oom     string        // the first out-of-memory line it printed, if any
+	logDone chan struct{} // closed once its output has all been read
+	fitted  bool          // asked for a layer count that didn't fit; --fit chose
+}
+
+// beginChat says which chat the slot now serves and how many tokens it
+// holds ("" for requests that aren't a chat's).
+func (p *proc) beginChat(chat string, tokens int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.chat, p.chatTokens = chat, tokens
+}
+
+// takeFresh reports whether no chat has used the server yet, and marks it used.
+func (p *proc) takeFresh() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	fresh := p.fresh
+	p.fresh = false
+	return fresh
 }
 
 func (p *proc) running() bool {
@@ -284,6 +315,12 @@ func (e *Engine) args(m *Model, o loadOpts, port int) []string {
 		a = append(a, "-fa", fa)
 		if ct != "f16" {
 			a = append(a, "-ctk", ct, "-ctv", ct)
+		}
+		// Reuse cached prompt chunks found after a changed part (an edited
+		// system prompt, a message that moved), not just the common prefix.
+		a = append(a, "--cache-reuse", strconv.Itoa(cacheReuse))
+		if d := e.kvDir(m, o); d != "" {
+			a = append(a, "--slot-save-path", d)
 		}
 	}
 	return a
@@ -417,6 +454,13 @@ func (e *Engine) start(ctx context.Context, m *Model, o loadOpts) (*proc, error)
 	if err != nil {
 		return nil, err
 	}
+	kvDir := e.kvDir(m, o)
+	if kvDir != "" {
+		if err := os.MkdirAll(kvDir, 0o755); err != nil {
+			e.opt.Log.Warn("chat caches folder", "err", err)
+			kvDir = ""
+		}
+	}
 	cmd := exec.Command(bin, e.args(m, o, port)...)
 	// Its shared libraries sit beside it, wherever that is.
 	cmd.Env = append(os.Environ(), "LD_LIBRARY_PATH="+strings.TrimSuffix(filepath.Dir(bin)+":"+os.Getenv("LD_LIBRARY_PATH"), ":"))
@@ -429,7 +473,7 @@ func (e *Engine) start(ctx context.Context, m *Model, o loadOpts) (*proc, error)
 		return nil, err
 	}
 	cmd.Stdout = cmd.Stderr
-	p := &proc{model: m, opts: o, cmd: cmd, base: fmt.Sprintf("http://127.0.0.1:%d", port), done: make(chan struct{}), logDone: make(chan struct{})}
+	p := &proc{model: m, opts: o, cmd: cmd, base: fmt.Sprintf("http://127.0.0.1:%d", port), kvDir: kvDir, fresh: true, done: make(chan struct{}), logDone: make(chan struct{})}
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start llama-server: %w", err)
 	}
@@ -607,6 +651,7 @@ func (e *Engine) stop(p *proc) {
 	if !p.running() {
 		return
 	}
+	e.saveSlot(p)
 	stopProcess(p.cmd)
 	select {
 	case <-p.done:

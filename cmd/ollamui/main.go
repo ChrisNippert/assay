@@ -148,7 +148,7 @@ func run() error {
 	if bin == "" {
 		log.Warn("llama-server not found: models can't run until llama.cpp is installed (see Settings)")
 	}
-	eng := engine.New(modelStore, engine.Options{Server: bin, CacheType: *cacheType, FlashAttn: "on", Log: log})
+	eng := engine.New(modelStore, engine.Options{Server: bin, CacheType: *cacheType, FlashAttn: "on", KVDir: filepath.Join(*dataDir, "kvcache"), Log: log})
 	llama.Eng = eng
 	eng.OllamaDir = *ollamaModels
 	eng.Folder = folder

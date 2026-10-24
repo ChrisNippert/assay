@@ -49,6 +49,17 @@ type backend interface {
 	Embed(ctx context.Context, model string, input []string) ([][]float32, error)
 }
 
+// chatForgetter is a backend that keeps per-chat state (saved caches) to
+// drop when a chat is deleted or edited.
+type chatForgetter interface{ ForgetChat(chat string) }
+
+// forgetChat drops the backend's state for a chat, if it keeps any.
+func (s *Server) forgetChat(id string) {
+	if f, ok := s.ollama.(chatForgetter); ok {
+		f.ForgetChat(id)
+	}
+}
+
 // fitter is a backend that sizes the context itself (llama.cpp's --fit):
 // ollamui's own auto context then stays out of the way.
 type fitter interface{ CacheType() string }

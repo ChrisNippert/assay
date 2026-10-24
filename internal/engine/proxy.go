@@ -41,6 +41,8 @@ func (e *Engine) Proxy(ctx context.Context, model string, options map[string]any
 	if err != nil {
 		return nil, err
 	}
+	// Whatever this request leaves in the slot isn't a chat's.
+	p.beginChat("", 0)
 	switch path {
 	case "/v1/chat/completions":
 		if p.opts.Embedding {
