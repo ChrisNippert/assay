@@ -47,6 +47,7 @@ func run() error {
 	cacheType := flag.String("cache-type", "q8_0", "K/V cache type for llama.cpp: f16, q8_0 or q4_0")
 	ollamaModels := flag.String("ollama-models", filepath.Join(os.Getenv("HOME"), ".ollama", "models"), "Ollama's models folder, imported (by hard link) into ollamui's own")
 	dataDir := flag.String("data", defaultDir("XDG_DATA_HOME", ".local/share"), "where chats are stored")
+	modelsFlag := flag.String("models", "", "where models are stored (default: the folder chosen in Settings, else <data>/models); overrides the saved choice")
 	configDir := flag.String("config", defaultDir("XDG_CONFIG_HOME", ".config"), "where presets and settings are stored")
 	voiceURL := flag.String("voice", envOr("OLLAMUI_VOICE", "http://127.0.0.1:8485"), "speech service for voice mode (OpenAI audio API); empty turns voice off")
 	sttModel := flag.String("stt-model", "", "speech-to-text model name to ask the speech service for")
@@ -113,7 +114,20 @@ func run() error {
 	var puller pulls.Puller = client
 	var eng *engine.Engine
 	if *engineName == "llama.cpp" {
-		store, err := engine.OpenStore(filepath.Join(*dataDir, "models"))
+		folder := engine.FolderSetting{File: filepath.Join(*configDir, "models.json"), Pinned: *modelsFlag != ""}
+		modelsDir := *modelsFlag
+		if modelsDir == "" {
+			modelsDir = engine.LoadFolder(folder.File)
+			// A disk that isn't mounted must not get a fresh empty store.
+			if _, err := os.Stat(modelsDir); modelsDir != "" && err != nil {
+				log.Warn("the saved models folder isn't there (is its disk mounted?); using the default", "dir", modelsDir, "err", err)
+				modelsDir = ""
+			}
+		}
+		if modelsDir == "" {
+			modelsDir = filepath.Join(*dataDir, "models")
+		}
+		store, err := engine.OpenStore(modelsDir)
 		if err != nil {
 			return fmt.Errorf("model store: %w", err)
 		}
@@ -128,6 +142,7 @@ func run() error {
 		}
 		eng = engine.New(store, engine.Options{Server: bin, CacheType: *cacheType, FlashAttn: "on", Log: log})
 		eng.OllamaDir = *ollamaModels
+		eng.Folder = folder
 		eng.HF = hfClient
 		models = eng
 		puller = enginePuller{eng, client}

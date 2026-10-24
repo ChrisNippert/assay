@@ -49,6 +49,30 @@
       <div class="row-text"><span class="row-title">Defaults</span><span class="row-sub">A model without its own settings uses a {{if eq .CacheType "q8_0"}}half-size (q8_0){{else if eq .CacheType "q4_0"}}quarter-size (q4_0){{else}}full-size (f16){{end}} context cache, flash attention {{.FlashAttn}}, and stays loaded {{.KeepAlive}} after the last message.</span></div>
     </div>
   </div>
+  <h3 class="group-title settings-sub">Models folder</h3>
+  <div class="boxed-list" id="mf">
+    <div class="row mf-click" id="mf-cur">
+      <div class="row-text"><span class="row-title">Models folder</span><span class="row-sub mf-path" id="mf-path">…</span></div>
+      <div class="row-ctrl"><button type="button" class="btn" id="mf-change">Change…</button></div>
+    </div>
+    <div class="row"><div class="row-text"><span class="row-title">Space</span><span class="row-sub" id="mf-space">…</span></div></div>
+    <div id="mf-edit" hidden>
+      <div class="row">
+        <div class="row-text"><span class="row-title">Move the models to</span><span class="row-sub">A full path, like /mnt/games/models. Models are stopped first, then their files move; a new or empty folder works, and so does a folder that already holds ollamui’s models.</span></div>
+        <div class="row-ctrl"><input type="text" id="mf-input" placeholder="/mnt/disk/models" aria-label="New models folder" size="28" autocomplete="off" spellcheck="false"><button type="button" class="btn" id="mf-check">Check</button></div>
+      </div>
+      <div id="mf-mounts"></div>
+      <div class="row" id="mf-plan" hidden>
+        <div class="row-text"><span class="row-title" id="mf-plan-title"></span><span class="row-sub" id="mf-plan-sub"></span></div>
+        <div class="row-ctrl"><button type="button" class="btn primary" id="mf-go">Move models</button></div>
+      </div>
+    </div>
+    <div class="row" id="mf-run" hidden>
+      <div class="row-text"><span class="row-title" id="mf-run-title">Moving…</span><span class="row-sub" id="mf-run-sub"></span><progress id="mf-bar" max="100" value="0" class="mf-bar"></progress></div>
+      <div class="row-ctrl"><button type="button" class="btn danger" id="mf-cancel">Cancel</button></div>
+    </div>
+  </div>
+  <p class="small muted" id="mf-note" role="status"></p>
   <h3 class="group-title settings-sub">Models with their own settings</h3>
   <div class="boxed-list" id="saved-list">
     {{range .Saved}}
@@ -154,6 +178,111 @@
   </div>
 </div>
 <script>
+(() => {
+  // ---- models folder ----
+  const box = document.getElementById('mf');
+  if (!box) return;
+  const f = (id) => document.getElementById(id);
+  const note = f('mf-note');
+  const gb = (n) => n >= 1e9 ? (n / 1e9).toFixed(1) + ' GB' : n >= 1e6 ? Math.round(n / 1e6) + ' MB' : Math.round(n / 1e3) + ' KB';
+  const say = (t, bad) => { note.textContent = t; note.classList.toggle('settings-warn', !!bad); };
+  const post = async (url, body) => {
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    return data;
+  };
+  let info = null, plan = null, timer = null;
+
+  function paintRun(m) {
+    f('mf-run').hidden = m.state !== 'running';
+    if (m.state !== 'running') return;
+    const copy = m.total > 0 && m.kind === 'move' && m.done > 0;
+    f('mf-run-title').textContent = m.kind === 'switch' ? 'Switching…' : 'Moving the models…';
+    f('mf-run-sub').textContent = copy ? `Copied ${gb(m.done)} of ${gb(m.total)}${m.file ? ' · ' + m.file : ''}` : 'Stopping models and moving files…';
+    f('mf-bar').value = copy ? Math.floor(100 * m.done / m.total) : 0;
+    f('mf-bar').hidden = !copy;
+  }
+
+  async function load() {
+    try { info = await (await fetch('/api/models/folder')).json(); } catch { return; }
+    f('mf-path').textContent = info.dir;
+    f('mf-space').textContent = `${gb(info.used)} used by models · ${gb(info.free)} free of ${gb(info.total)} on this disk`;
+    const mounts = f('mf-mounts');
+    mounts.replaceChildren();
+    for (const m of info.mounts || []) {
+      if (info.dir === m.path || (m.path !== '/' && info.dir.startsWith(m.path + '/'))) continue; // where it is already
+      const row = document.createElement('div');
+      row.className = 'row mf-mount';
+      row.innerHTML = '<div class="row-text"><span class="row-title"></span><span class="row-sub"></span></div><div class="row-ctrl"><button type="button" class="btn subtle">Use</button></div>';
+      row.querySelector('.row-title').textContent = m.suggest;
+      row.querySelector('.row-sub').textContent = `${gb(m.free)} free of ${gb(m.total)} · on ${m.path}`;
+      row.dataset.path = m.suggest;
+      mounts.append(row);
+    }
+    paintRun(info.move);
+    if (info.move.state === 'running') { if (!timer) timer = setInterval(load, 700); return; }
+    if (timer) {
+      clearInterval(timer); timer = null;
+      if (info.move.state === 'done') { say(`Done. Models are now in ${info.dir}.`); f('mf-edit').hidden = true; }
+      else if (info.move.state === 'failed') say(info.move.error, true);
+    }
+    f('mf-change').disabled = false;
+    if (info.pinned && !note.textContent) say('The -models flag sets this folder when ollamui starts, so it wins over a change made here after a restart.');
+  }
+
+  async function check() {
+    const path = f('mf-input').value.trim();
+    plan = null; f('mf-plan').hidden = true;
+    if (!path) return say('Enter a folder.', true);
+    say('Checking…');
+    try {
+      plan = await post('/api/models/folder/check', { path });
+    } catch (err) { return say(err.message, true); }
+    say('');
+    const sw = plan.kind === 'switch';
+    f('mf-plan-title').textContent = sw ? `Use the ${plan.models} model${plan.models === 1 ? '' : 's'} already in ${plan.to}` : `Move the models to ${plan.to}`;
+    let sub;
+    if (sw) sub = 'Nothing is moved or deleted. The current folder is left as it is. Models stop while ollamui switches.';
+    else if (plan.sameDisk) sub = 'Same disk, so this is instant: nothing is copied. Models stop first.';
+    else if (!plan.enough) sub = `Not enough space on that disk: the models need ${gb(plan.bytes)} and ${gb(plan.free)} is free.`;
+    else {
+      sub = `Copies ${gb(plan.bytes)} to the other disk (${gb(plan.free)} free there), checks every file, then deletes the originals. Models stop first.`;
+      if (plan.linkedCount) sub += ` ${gb(plan.linked)} of it (${plan.linkedCount} file${plan.linkedCount === 1 ? '' : 's'}) is shared with Ollama by hard link; that becomes real copies on the new disk, so Ollama’s own copy stays and the space counts twice.`;
+    }
+    f('mf-plan-sub').textContent = sub;
+    f('mf-go').textContent = sw ? 'Use this folder' : 'Move models';
+    f('mf-go').disabled = !plan.enough;
+    f('mf-plan').hidden = false;
+  }
+
+  function toggle() { f('mf-edit').hidden = !f('mf-edit').hidden; if (!f('mf-edit').hidden) f('mf-input').focus(); }
+  f('mf-change').addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
+  f('mf-cur').addEventListener('click', toggle);
+  f('mf-check').addEventListener('click', check);
+  f('mf-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') check(); });
+  f('mf-input').addEventListener('input', () => { f('mf-plan').hidden = true; plan = null; });
+  f('mf-mounts').addEventListener('click', (e) => {
+    const row = e.target.closest('.mf-mount');
+    if (!row) return;
+    f('mf-input').value = row.dataset.path;
+    check();
+  });
+  f('mf-go').addEventListener('click', async () => {
+    if (!plan) return;
+    f('mf-go').disabled = true;
+    try {
+      await post('/api/models/folder', { path: plan.to });
+      say('');
+      f('mf-plan').hidden = true;
+      f('mf-change').disabled = true;
+      if (!timer) timer = setInterval(load, 700);
+      load();
+    } catch (err) { say(err.message, true); f('mf-go').disabled = false; }
+  });
+  f('mf-cancel').addEventListener('click', () => fetch('/api/models/folder', { method: 'DELETE' }));
+  load();
+})();
 (() => {
   // ---- models with their own settings ----
   document.getElementById('saved-list')?.addEventListener('click', async (e) => {

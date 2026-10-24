@@ -55,6 +55,9 @@ type FolderSetting struct {
 // errMovingModels is returned for starting a model while the store moves.
 var errMovingModels = errors.New("the models folder is being moved; try again when it's done")
 
+// FolderPinned reports whether the -models flag chose the folder.
+func (e *Engine) FolderPinned() bool { return e.Folder.Pinned }
+
 // PlanFolder checks a new models folder.
 func (e *Engine) PlanFolder(dst string) (*MovePlan, error) { return e.store.Plan(dst) }
 
