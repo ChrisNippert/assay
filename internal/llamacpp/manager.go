@@ -1,0 +1,439 @@
+package llamacpp
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"sync"
+	"time"
+)
+
+// Where the binary in use comes from.
+const (
+	SourceFlag    = "flag"    // -llama-server
+	SourceOwn     = "own"     // <data>/llama.cpp, the user's own build
+	SourceRelease = "release" // installed here from GitHub
+	SourcePath    = "path"    // found on PATH
+	SourceNone    = "none"
+)
+
+// Runner is the engine the manager keeps pointed at the right binary.
+type Runner interface {
+	ServerPath() string
+	SetServer(path string)
+	StopAll()
+	LoadedNames() []string
+}
+
+// Job is an install or update, for the page to show.
+type Job struct {
+	State       string  `json:"state"` // running, done, failed, canceled
+	Tag         string  `json:"tag"`
+	Phase       string  `json:"phase"` // Downloading, Unpacking, Installing
+	Completed   int64   `json:"completed"`
+	Total       int64   `json:"total"`
+	BytesPerSec float64 `json:"bytesPerSec"`
+	Error       string  `json:"error,omitempty"`
+}
+
+// Job states.
+const (
+	Running  = "running"
+	Done     = "done"
+	Failed   = "failed"
+	Canceled = "canceled"
+)
+
+// Probe is what a llama-server says about itself.
+type Probe struct {
+	Version string   `json:"version,omitempty"`
+	Devices []string `json:"devices,omitempty"`
+	// Listed is whether the binary could list devices at all (older builds
+	// can't, and then an empty Devices means nothing).
+	Listed bool   `json:"listed"`
+	Error  string `json:"error,omitempty"`
+}
+
+// Status is everything the settings page needs about llama.cpp.
+type Status struct {
+	Path      string `json:"path"`
+	Source    string `json:"source"`
+	OwnPath   string `json:"ownPath,omitempty"`   // the user's own build, if there is one
+	Installed string `json:"installed,omitempty"` // tag of the installed release
+	// PreferRelease: use the installed release even though there is an own build.
+	PreferRelease bool   `json:"preferRelease"`
+	Supported     bool   `json:"supported"`
+	Label         string `json:"label,omitempty"` // Vulkan, Metal…
+	Probe         *Probe `json:"probe,omitempty"` // only for the installed release in use
+	Job           *Job   `json:"job,omitempty"`
+}
+
+// Check is what GitHub has, compared with what is installed.
+type Check struct {
+	Supported bool   `json:"supported"`
+	Label     string `json:"label,omitempty"`
+	Tag       string `json:"tag,omitempty"`
+	Size      int64  `json:"size,omitempty"`
+	Installed string `json:"installed,omitempty"`
+	UpToDate  bool   `json:"upToDate"`
+}
+
+// RunningError says models are loaded from the binary about to be replaced.
+type RunningError struct{ Models []string }
+
+func (e *RunningError) Error() string {
+	return "models are running from the llama.cpp being updated: " + strings.Join(e.Models, ", ")
+}
+
+// Manager installs llama.cpp releases and keeps the engine on the right
+// binary.
+type Manager struct {
+	Inst *Installer
+	// Flag is the -llama-server path; it beats everything else.
+	Flag string
+	// Data is ollamui's data folder: <Data>/llama.cpp is the user's own build.
+	Data string
+	Eng  Runner
+	Log  *slog.Logger
+
+	mu      sync.Mutex
+	job     *Job
+	cancel  context.CancelFunc
+	check   *Check
+	checkAt time.Time
+	rel     *Release
+	probes  map[string]*Probe
+}
+
+// NewManager manages data/llama.cpp-release. Call Resolve to pick the
+// binary for the engine's first start.
+func NewManager(data, flagPath string, eng Runner, log *slog.Logger) *Manager {
+	if log == nil {
+		log = slog.Default()
+	}
+	m := &Manager{Flag: flagPath, Data: data, Eng: eng, Log: log, probes: map[string]*Probe{}}
+	m.Inst = &Installer{Dir: filepath.Join(data, "llama.cpp-release")}
+	m.Inst.BeforeSwap = m.beforeSwap
+	return m
+}
+
+func (m *Manager) ownBinary() string {
+	name := "llama-server"
+	if m.Inst.exe() != name {
+		name = m.Inst.exe()
+	}
+	p := filepath.Join(m.Data, "llama.cpp", name)
+	if info, err := os.Stat(p); err == nil && !info.IsDir() {
+		return p
+	}
+	return ""
+}
+
+func (m *Manager) prefsPath() string { return filepath.Join(m.Data, "llamacpp.json") }
+
+func (m *Manager) preferRelease() bool {
+	b, err := os.ReadFile(m.prefsPath())
+	if err != nil {
+		return false
+	}
+	var p struct {
+		PreferRelease bool `json:"preferRelease"`
+	}
+	return json.Unmarshal(b, &p) == nil && p.PreferRelease
+}
+
+// SetPreferRelease chooses the installed release over the user's own build
+// (or back), and points the engine at it.
+func (m *Manager) SetPreferRelease(v bool) error {
+	b, _ := json.Marshal(map[string]bool{"preferRelease": v})
+	if err := os.MkdirAll(m.Data, 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(m.prefsPath(), b, 0o644); err != nil {
+		return err
+	}
+	m.apply()
+	return nil
+}
+
+// Resolve finds the llama-server to use: the flag, then the user's own
+// build in <data>/llama.cpp, then the installed release, then PATH. (A
+// saved preference puts the installed release before the user's build.)
+func (m *Manager) Resolve() (path, source string) {
+	if p := m.Flag; p != "" {
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			return p, SourceFlag
+		}
+	}
+	own, rel := m.ownBinary(), m.Inst.Binary()
+	if rel != "" && m.preferRelease() {
+		return rel, SourceRelease
+	}
+	if own != "" {
+		return own, SourceOwn
+	}
+	if rel != "" {
+		return rel, SourceRelease
+	}
+	if p, err := exec.LookPath("llama-server"); err == nil {
+		return p, SourcePath
+	}
+	return "", SourceNone
+}
+
+// apply points the engine at whatever Resolve finds now.
+func (m *Manager) apply() {
+	if m.Eng == nil {
+		return
+	}
+	p, _ := m.Resolve()
+	if p != m.Eng.ServerPath() {
+		m.Eng.SetServer(p)
+	}
+}
+
+// usingRelease says whether the engine's binary is inside the install.
+func (m *Manager) usingRelease() bool {
+	if m.Eng == nil {
+		return false
+	}
+	p := m.Eng.ServerPath()
+	return p != "" && filepath.Dir(p) == m.Inst.Dir
+}
+
+// beforeSwap stops the models running from the install being replaced.
+func (m *Manager) beforeSwap() error {
+	if m.usingRelease() && m.Eng != nil {
+		m.Eng.StopAll()
+	}
+	return nil
+}
+
+// Status describes the current setup. It runs the binary in use once when
+// that is the installed release (to see its GPU devices).
+func (m *Manager) Status(ctx context.Context) Status {
+	path, source := m.Resolve()
+	goos, goarch := m.Inst.platform()
+	label := Label(goos, goarch)
+	st := Status{Path: path, Source: source, OwnPath: m.ownBinary(), Installed: m.Inst.Installed(), PreferRelease: m.preferRelease(), Supported: label != "", Label: label}
+	if m.Eng != nil {
+		st.Path = m.Eng.ServerPath()
+		if st.Path != path {
+			// The engine hasn't switched (can't happen after apply); trust it.
+			st.Source = SourcePath
+		}
+	}
+	if source == SourceRelease && st.Path == path {
+		st.Probe = m.probe(ctx, path)
+	}
+	m.mu.Lock()
+	if m.job != nil {
+		j := *m.job
+		st.Job = &j
+	}
+	m.mu.Unlock()
+	return st
+}
+
+var (
+	versionRe = regexp.MustCompile(`(?m)^version:\s*(.+)$`)
+	deviceRe  = regexp.MustCompile(`(?m)^\s+(\S+): (.+)$`)
+)
+
+// probe asks the binary for its version and devices, remembering the answer.
+func (m *Manager) probe(ctx context.Context, bin string) *Probe {
+	m.mu.Lock()
+	info, _ := os.Stat(bin)
+	key := bin
+	if info != nil {
+		key += "@" + info.ModTime().String()
+	}
+	if p, ok := m.probes[key]; ok {
+		m.mu.Unlock()
+		return p
+	}
+	m.mu.Unlock()
+	p := ProbeBinary(ctx, bin)
+	m.mu.Lock()
+	m.probes[key] = p
+	m.mu.Unlock()
+	return p
+}
+
+// ProbeBinary runs llama-server --version and --list-devices. The shared
+// libraries sit beside the binary.
+func ProbeBinary(ctx context.Context, bin string) *Probe {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	run := func(arg string) (string, error) {
+		cmd := exec.CommandContext(ctx, bin, arg)
+		cmd.Env = append(os.Environ(), "LD_LIBRARY_PATH="+strings.TrimSuffix(filepath.Dir(bin)+":"+os.Getenv("LD_LIBRARY_PATH"), ":"))
+		var out bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &out, &out
+		err := cmd.Run()
+		return out.String(), err
+	}
+	p := &Probe{}
+	out, err := run("--version")
+	if err != nil {
+		msg := strings.TrimSpace(out)
+		if i := strings.LastIndex(msg, "\n"); i >= 0 {
+			msg = msg[i+1:]
+		}
+		if msg == "" {
+			msg = err.Error()
+		}
+		p.Error = msg
+		return p
+	}
+	if mm := versionRe.FindStringSubmatch(out); mm != nil {
+		p.Version = strings.TrimSpace(mm[1])
+	}
+	if out, err = run("--list-devices"); err == nil {
+		p.Listed = true
+		if _, rest, ok := strings.Cut(out, "Available devices:"); ok {
+			for _, mm := range deviceRe.FindAllStringSubmatch(rest, -1) {
+				p.Devices = append(p.Devices, strings.TrimSpace(mm[1]+": "+mm[2]))
+			}
+		}
+	}
+	return p
+}
+
+// Check looks for the newest release (at most every ten minutes unless
+// fresh) and compares it with the install.
+func (m *Manager) Check(ctx context.Context, fresh bool) (*Check, error) {
+	m.mu.Lock()
+	if !fresh && m.check != nil && time.Since(m.checkAt) < 10*time.Minute {
+		c := *m.check
+		c.Installed = m.Inst.Installed()
+		c.UpToDate = c.Installed != "" && TagNumber(c.Installed) >= TagNumber(c.Tag)
+		m.mu.Unlock()
+		return &c, nil
+	}
+	m.mu.Unlock()
+	goos, goarch := m.Inst.platform()
+	label := Label(goos, goarch)
+	rel, err := m.Inst.Latest(ctx)
+	if errors.Is(err, ErrUnsupported) {
+		return &Check{Supported: false}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	c := &Check{Supported: true, Label: label, Tag: rel.Tag, Size: rel.Asset.Size, Installed: m.Inst.Installed()}
+	c.UpToDate = c.Installed != "" && TagNumber(c.Installed) >= TagNumber(c.Tag)
+	m.mu.Lock()
+	m.check, m.checkAt, m.rel = c, time.Now(), rel
+	m.mu.Unlock()
+	return c, nil
+}
+
+// Install starts installing (or updating to) the newest release in the
+// background. If models are running from the install it would replace, it
+// fails with a *RunningError unless force is set, in which case they are
+// stopped just before the swap.
+func (m *Manager) Install(force bool) (*Job, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.job != nil && m.job.State == Running {
+		j := *m.job
+		return &j, nil
+	}
+	if !force && m.usingRelease() && m.Inst.Binary() != "" {
+		if names := m.Eng.LoadedNames(); len(names) > 0 {
+			return nil, &RunningError{Models: names}
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancel = cancel
+	m.job = &Job{State: Running, Phase: "Looking for the latest release"}
+	go m.run(ctx)
+	j := *m.job
+	return &j, nil
+}
+
+// Cancel stops an install under way.
+func (m *Manager) Cancel() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.job == nil || m.job.State != Running || m.cancel == nil {
+		return false
+	}
+	m.cancel()
+	return true
+}
+
+func (m *Manager) run(ctx context.Context) {
+	var lastAt time.Time
+	var lastDone int64
+	update := func(f func(j *Job)) {
+		m.mu.Lock()
+		f(m.job)
+		m.mu.Unlock()
+	}
+	rel := func() (*Release, error) {
+		m.mu.Lock()
+		r := m.rel
+		fresh := r != nil && time.Since(m.checkAt) < 10*time.Minute
+		m.mu.Unlock()
+		if fresh {
+			return r, nil
+		}
+		if _, err := m.Check(ctx, true); err != nil {
+			return nil, err
+		}
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		return m.rel, nil
+	}
+	r, err := rel()
+	if err == nil && r == nil {
+		err = ErrUnsupported
+	}
+	if err == nil {
+		update(func(j *Job) { j.Tag, j.Phase = r.Tag, "Downloading" })
+		err = m.Inst.Install(ctx, r, func(p Progress) {
+			update(func(j *Job) {
+				j.Phase, j.Completed, j.Total = p.Phase, p.Done, p.Total
+				if p.Phase != "Downloading" {
+					j.BytesPerSec = 0
+					return
+				}
+				if now := time.Now(); lastAt.IsZero() {
+					lastAt, lastDone = now, p.Done
+				} else if dt := now.Sub(lastAt); dt >= time.Second {
+					j.BytesPerSec = float64(p.Done-lastDone) / dt.Seconds()
+					lastAt, lastDone = now, p.Done
+				}
+			})
+		})
+	}
+	if err == nil {
+		m.apply()
+		if bin := m.Inst.Binary(); bin != "" {
+			m.probe(context.Background(), bin) // warm the cache: the page asks next
+		}
+	}
+	update(func(j *Job) {
+		j.BytesPerSec = 0
+		switch {
+		case errors.Is(err, context.Canceled):
+			j.State, j.Phase = Canceled, "Canceled"
+		case err != nil:
+			j.State, j.Phase, j.Error = Failed, "Failed", err.Error()
+			m.Log.Warn("llama.cpp install failed", "err", err)
+		default:
+			j.State, j.Phase = Done, "Installed"
+			j.Completed = j.Total
+			m.Log.Info("llama.cpp installed", "tag", j.Tag, "dir", m.Inst.Dir)
+		}
+	})
+}
