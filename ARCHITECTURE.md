@@ -713,3 +713,15 @@ when there is one (100% on the GPU → fits; less → spills).
 - **Chat templates.** Some HF quants may need a template override in the
   preset.
 - **Vision models.** How `mmproj` files are handled by the `hf.co` pull.
+
+## Attachments
+
+`POST /api/attachments` (multipart `file`, 25 MB each) classifies a file: png/jpg/webp/gif are `image`; anything `rag.Supported` is `doc`, its text extracted once with `rag.Extract`. Uploads wait in `<chats>/.pending/` (swept after 24 h) and return a token; sending with `attachments:[tokens]` moves them into `<chats>/<chatid>.files/` (`Store.Adopt`), a document's text beside it as `<file>.txt`. `chats.Message.Attachments` records name, kind, mime, size, stored file and `Cut`; deleting the chat deletes the folder. `GET /api/chats/{id}/files/{file}` serves them (strict name pattern, nosniff, sandbox CSP). `Server.withFiles` fills stored messages in for each request: document text into the content (documents share 60% of the context, newest first, cut with a note), images into `Message.Images` for models with the "vision" capability, a note otherwise. Compression and `promptSize` count it. Edit and regenerate keep attachments. Not yet: compare mode and `/v1`, and files of edited-away messages stay until the chat is deleted.
+
+## Loading, memory chip and live GPU view
+
+A load is detached from the request that asked for it (`context.WithoutCancel`), so leaving the page doesn't kill it; `Engine.Unload` cancels a load in progress (`pending`, `errEjected`). `Engine.Loading()` names it, and `/api/loaded` adds it with `loading:true`. The app bar shows one memory chip (`#mem-btn`, VRAM meter + label) that opens `#mem-pop`: live bars from `GET /api/gpu` (`hw.ReadLive`: AMD sysfs `mem_info_vram_*`/`gpu_busy_percent`, else `nvidia-smi`; RAM from `/proc/meminfo`; unknown → 0/-1 and the section hides) and a row per model with eject, a shimmer while loading and "Ejecting…". Sampled every 1 s while open, 5 s otherwise, paused while the tab is hidden.
+
+## Stopped replies and the queue
+
+A reply the user stops is saved with `Stopped`; `toOllama` tells the model where it was cut off and, if it was still thinking, what it had thought. Text said before a tool call that was stopped mid-run is kept. In the chat page, a message sent while a reply streams goes into a queue (button reads "Queue", Esc stops the reply) and is sent when the reply finishes; stopping or an error pauses the queue ("Send next").
