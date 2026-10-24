@@ -51,6 +51,8 @@ type Engine struct {
 	// imported now and then (models pulled through Ollama show up here).
 	OllamaDir  string
 	lastImport time.Time
+	// Finder looks for models in other apps; nil gets a default.
+	Finder *Finder
 	// HF downloads models (Pull); nil turns downloads off.
 	HF HF
 
@@ -251,6 +253,9 @@ func (e *Engine) ensure(ctx context.Context, name string, options map[string]any
 	}
 	m, err := e.store.Get(name)
 	if err != nil {
+		return nil, false, err
+	}
+	if err := e.missingError(m); err != nil {
 		return nil, false, err
 	}
 	o := loadOptsFrom(m.options(options))

@@ -41,7 +41,12 @@ type Model struct {
 	// Settings are the user's own for this model (context, cache type,
 	// sampling...), applied over Params and under each request's options.
 	Settings map[string]any `json:"settings,omitempty"`
-	// Source is "ollama" (imported) or "hf" (downloaded here).
+	// Link is "hard" or "symlink" for a model linked from another app's
+	// files, and Origin the first file's path there. Source is "hf"
+	// (downloaded here) or where it is linked from: "ollama", "hf-cache",
+	// "llama.cpp", "lmstudio" or "folder".
+	Link   string `json:"link,omitempty"`
+	Origin string `json:"origin,omitempty"`
 	Source string `json:"source"`
 }
 
@@ -321,7 +326,7 @@ func (s *Store) ImportOllama(ollamaDir string) (int, error) {
 		if err != nil {
 			return added, err
 		}
-		m := &Model{Files: []string{file}, Size: f.size, Digest: strings.TrimPrefix(f.model, "sha256:"), Modified: f.modified, Params: f.params, Source: "ollama"}
+		m := &Model{Files: []string{file}, Size: f.size, Digest: strings.TrimPrefix(f.model, "sha256:"), Modified: f.modified, Params: f.params, Source: "ollama", Link: linkKind(s.Blob(file)), Origin: ollamaBlob(ollamaDir, f.model)}
 		if f.projector != "" {
 			if m.Projector, err = s.linkBlob(ollamaDir, f.projector); err != nil {
 				return added, err
