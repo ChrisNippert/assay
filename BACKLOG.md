@@ -5,9 +5,9 @@ big it is (S = an hour or two, M = a session, L = several sessions).
 
 ## Next up
 
-### 1. Finish the llama.cpp switch (L, several sessions)
+### 1. ✅ Finish the llama.cpp switch (done 2026-10-23)
 
-Top priority (2026-10-23): get all the way off Ollama, stages 3–5 below.
+Done 2026-10-23: Ollama is no longer needed (stages 1–5 below).
 Speculative decoding (stage 4, and section "Runtime settings" further
 down) is wanted in the first release.
 
