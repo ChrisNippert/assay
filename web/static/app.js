@@ -47,43 +47,231 @@
 
   const ejectIcon = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5l7 9H5z"/><path d="M5 19h14"/></svg>';
 
-  // ---- loaded models ----
-  // The app bar's "in memory" pills, one per loaded model.
-  function renderLoaded(models) {
-    const box = document.getElementById('loaded-list');
-    if (!box) return;
-    box.replaceChildren();
-    if (!models.length) {
-      box.append(el('span', 'mem-empty', 'No model loaded'));
-      return;
+  // ---- loaded models + live GPU view ----
+  // One chip in the app bar (VRAM meter + summary); clicking it opens a
+  // popover with the memory bars, a GPU sparkline and one row per model.
+  const memWrap = document.getElementById('mem-wrap');
+  const memBtn = document.getElementById('mem-btn');
+  const memPop = document.getElementById('mem-pop');
+  const memRows = document.getElementById('loaded-list');
+  let memAll = [];        // last /api/loaded result
+  let gpu = null;         // last /api/gpu result (null = unknown)
+  const busyHist = [];    // GPU busy %, one per sample, newest last
+  const segColors = ['var(--accent)', '#e5a50a', '#33b27a', '#c061cb', '#e66100', '#2ec7c9'];
+
+  const shortName = (n) => n.replace(/^hf\.co\//, '').split('/').pop().replace(/:.*$/, '');
+  function fmtIdle(ms) {
+    const s = Math.max(0, Math.round(ms / 1000));
+    return s >= 3600 ? Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm'
+      : s >= 60 ? Math.floor(s / 60) + 'm' : s + 's';
+  }
+  function modelSub(m) {
+    if (m.loading) return 'Loading…';
+    const cpu = m.size > 0 && m.sizeVram === 0;
+    const pct = m.size ? Math.floor((m.sizeVram * 100) / m.size) : 100;
+    const parts = [fmtBytes(cpu ? m.size : m.sizeVram)];
+    parts.push(cpu ? 'CPU only' : pct < 100 ? pct + '% on GPU' : '100% on GPU');
+    if (m.context) parts.push(Math.round(m.context / 1024) + 'k context');
+    if (m.pinned) parts.push('Stays loaded');
+    else if (m.expiresAt) parts.push('Unloads in ' + fmtIdle(new Date(m.expiresAt) - Date.now()));
+    return parts.join(' · ');
+  }
+
+  function renderChip() {
+    if (!memBtn) return;
+    const loading = memAll.find((m) => m.loading);
+    const label = memBtn.querySelector('.mem-label');
+    label.textContent = loading ? 'Loading ' + shortName(loading.name) + '…'
+      : !memAll.length ? 'No model loaded'
+      : memAll.length === 1 ? shortName(memAll[0].name) : memAll.length + ' models';
+    memBtn.classList.toggle('loading', !!loading);
+    memBtn.classList.toggle('empty', !memAll.length);
+    const meter = memBtn.querySelector('.mem-meter');
+    const fill = meter.firstElementChild;
+    meter.hidden = !(gpu && gpu.vramTotal > 0);
+    if (!meter.hidden) {
+      const p = Math.min(100, (gpu.vramUsed * 100) / gpu.vramTotal);
+      fill.style.width = p + '%';
+      meter.classList.toggle('hot', p >= 90);
     }
-    for (const m of models) {
-      const pct = m.size ? Math.floor((m.sizeVram * 100) / m.size) : 100;
-      // A model with nothing on the GPU was put on the CPU on purpose (voice
-      // mode's talker), so it isn't flagged as spilling.
+    memBtn.title = gpu && gpu.vramTotal > 0 ? `VRAM ${fmtBytes(gpu.vramUsed)} of ${fmtBytes(gpu.vramTotal)}` : 'Models in memory';
+  }
+
+  function renderRows() {
+    if (!memRows) return;
+    const have = new Map();
+    for (const r of memRows.querySelectorAll('.mem-row:not(.leaving)')) have.set(r.dataset.name, r);
+    memRows.querySelector('.mem-none')?.remove();
+    for (const m of memAll) {
+      let row = have.get(m.name);
+      if (!row) {
+        row = el('div', 'mem-row enter');
+        row.dataset.name = m.name;
+        const main = el('div', 'mem-row-main');
+        const link = el('a', 'row-link mem-name', m.name);
+        link.href = '/chat?model=' + encodeURIComponent(m.name);
+        link.title = 'Chat with ' + m.name;
+        main.append(link, el('div', 'mem-sub'));
+        const btn = el('button', 'icon-btn mem-eject');
+        btn.type = 'button';
+        btn.dataset.eject = m.name;
+        btn.setAttribute('aria-label', 'Eject ' + m.name);
+        btn.innerHTML = ejectIcon;
+        const dot = el('span', 'mem-dot');
+        dot.setAttribute('aria-hidden', 'true');
+        row.append(dot, main, btn);
+        memRows.append(row);
+        requestAnimationFrame(() => requestAnimationFrame(() => row.classList.remove('enter')));
+      }
       const cpu = m.size > 0 && m.sizeVram === 0;
-      const pill = el('div', 'mem-pill' + (m.loading ? ' loading' : cpu ? ' cpu' : pct < 100 ? ' partial' : ''));
-      pill.title = m.loading ? 'Loading. Eject to stop it'
-        : m.pinned ? 'Stays loaded until ejected' : 'Unloads after a few idle minutes';
-      const dot = el('span', 'mem-dot');
-      dot.setAttribute('aria-hidden', 'true');
-      const link = el('a', 'row-link mem-name', m.name);
-      link.href = '/chat?model=' + encodeURIComponent(m.name);
-      link.title = 'Chat with ' + m.name;
-      let detail = m.loading ? 'Loading…' : fmtBytes(cpu ? m.size : m.sizeVram);
-      if (m.context) detail += ` · ${Math.round(m.context / 1024)}k`;
-      if (m.loading) { /* nothing measured yet */ }
-      else if (cpu) detail += ' · CPU';
-      else if (pct < 100) detail += ` · ${pct}% GPU`;
-      const btn = el('button', 'icon-btn mem-eject');
-      btn.type = 'button';
-      btn.dataset.eject = m.name;
-      btn.title = 'Eject ' + m.name;
-      btn.setAttribute('aria-label', 'Eject ' + m.name);
-      btn.innerHTML = ejectIcon;
-      pill.append(dot, link, el('span', 'mem-detail', detail), btn);
-      box.append(pill);
+      const pct = m.size ? Math.floor((m.sizeVram * 100) / m.size) : 100;
+      row.classList.toggle('loading', !!m.loading);
+      row.classList.toggle('partial', !m.loading && !cpu && pct < 100);
+      row.classList.toggle('cpu', !m.loading && cpu);
+      const ejecting = row.classList.contains('ejecting');
+      row.querySelector('.mem-eject').title = (m.loading ? 'Stop loading ' : 'Eject ') + m.name;
+      if (!ejecting) row.querySelector('.mem-sub').textContent = modelSub(m);
+      let bar = row.querySelector('.mem-load');
+      if (m.loading && !bar) {
+        bar = el('div', 'mem-load bar');
+        bar.append(el('span'));
+        row.querySelector('.mem-row-main').append(bar);
+      } else if (!m.loading && bar) bar.remove();
+      have.delete(m.name);
     }
+    for (const row of have.values()) {
+      row.classList.add('leaving');
+      setTimeout(() => row.remove(), 220);
+    }
+    if (!memAll.length && !memRows.querySelector('.mem-row')) memRows.append(el('div', 'mem-none', 'No model loaded'));
+    else if (!memAll.length) setTimeout(() => {
+      if (!memAll.length && !memRows.querySelector('.mem-row') && !memRows.querySelector('.mem-none')) memRows.append(el('div', 'mem-none', 'No model loaded'));
+    }, 240);
+  }
+
+  const svgNS = 'http://www.w3.org/2000/svg';
+  function renderGpu() {
+    const box = document.getElementById('mem-gpu');
+    if (!box) return;
+    const hasV = gpu && gpu.vramTotal > 0;
+    const hasR = gpu && gpu.ramTotal > 0;
+    const hasB = gpu && gpu.gpuBusy >= 0 && hasV;
+    box.hidden = !(hasV || hasR);
+    if (box.hidden) return;
+    const set = (id, fn) => { const n = document.getElementById(id); if (n) fn(n); };
+    set('mem-vram', (n) => { n.hidden = !hasV; });
+    set('mem-gpubusy', (n) => { n.hidden = !hasB; });
+    set('mem-ram', (n) => { n.hidden = !hasR; });
+    if (hasV) {
+      set('mem-vram-text', (n) => { n.textContent = `${fmtBytes(gpu.vramUsed)} / ${fmtBytes(gpu.vramTotal)}`; });
+      // Each loaded model's share of VRAM gets its own colour; what's left
+      // of the used amount belongs to something else.
+      const bar = document.getElementById('mem-vram-bar');
+      const segs = memAll.filter((m) => m.sizeVram > 0).map((m) => ({ key: m.name, v: m.sizeVram }));
+      const known = segs.reduce((a, s) => a + s.v, 0);
+      const other = Math.max(0, gpu.vramUsed - known);
+      const scale = known > gpu.vramUsed ? gpu.vramTotal * known / gpu.vramUsed : gpu.vramTotal;
+      if (other > 0) segs.push({ key: '', v: other });
+      const have = new Map([...bar.children].map((c) => [c.dataset.key, c]));
+      segs.forEach((s, i) => {
+        let c = have.get(s.key);
+        if (!c) { c = el('span', 'seg'); c.dataset.key = s.key; bar.append(c); }
+        have.delete(s.key);
+        c.style.width = Math.min(100, (s.v * 100) / scale) + '%';
+        c.style.background = s.key ? segColors[i % segColors.length] : 'var(--muted)';
+        c.title = (s.key || 'Other apps') + ' · ' + fmtBytes(s.v);
+      });
+      for (const c of have.values()) c.remove();
+    }
+    if (hasB) {
+      set('mem-gpu-text', (n) => { n.textContent = gpu.gpuBusy + '%'; });
+      const svg = document.getElementById('mem-spark');
+      const pts = busyHist.map((v, i) => `${((60 - busyHist.length + i) * 120) / 59},${26 - (v * 24) / 100}`);
+      svg.replaceChildren();
+      if (pts.length > 1) {
+        const area = document.createElementNS(svgNS, 'polygon');
+        area.setAttribute('points', `${pts[0].split(',')[0]},27 ${pts.join(' ')} ${pts[pts.length - 1].split(',')[0]},27`);
+        area.setAttribute('class', 'spark-area');
+        const line = document.createElementNS(svgNS, 'polyline');
+        line.setAttribute('points', pts.join(' '));
+        line.setAttribute('class', 'spark-line');
+        svg.append(area, line);
+      }
+    }
+    if (hasR) {
+      set('mem-ram-text', (n) => { n.textContent = `${fmtBytes(gpu.ramUsed)} / ${fmtBytes(gpu.ramTotal)}`; });
+      document.getElementById('mem-ram-bar').firstElementChild.style.width = Math.min(100, (gpu.ramUsed * 100) / gpu.ramTotal) + '%';
+    }
+  }
+
+  function renderLoaded(models) {
+    memAll = models;
+    renderChip();
+    renderRows();
+    renderGpu();
+  }
+
+  // Opening and closing fade and slide; [hidden] is set once the exit ends.
+  let memCloseT = null;
+  function setMemOpen(open) {
+    if (!memPop) return;
+    clearTimeout(memCloseT);
+    memBtn.setAttribute('aria-expanded', String(open));
+    if (open) {
+      memPop.hidden = false;
+      void memPop.offsetWidth;
+      memPop.classList.add('open');
+      sampleGpu();
+      scheduleSample();
+    } else {
+      memPop.classList.remove('open');
+      memCloseT = setTimeout(() => { memPop.hidden = true; }, 180);
+      scheduleSample();
+    }
+  }
+  if (memBtn) {
+    memBtn.addEventListener('click', () => setMemOpen(!memPop.classList.contains('open')));
+    document.addEventListener('pointerdown', (e) => {
+      if (memPop.classList.contains('open') && !memWrap.contains(e.target)) setMemOpen(false);
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && memPop.classList.contains('open')) { setMemOpen(false); memBtn.focus(); }
+    });
+  }
+
+  // GPU sampling: every second while the popover is open, every 5s
+  // otherwise, never while the tab is hidden.
+  let sampleT = null;
+  async function sampleGpu() {
+    try {
+      const res = await fetch('/api/gpu');
+      if (res.ok) {
+        gpu = await res.json();
+        if (gpu.gpuBusy >= 0) { busyHist.push(gpu.gpuBusy); if (busyHist.length > 60) busyHist.shift(); }
+        if (!(gpu.vramTotal > 0) && !(gpu.ramTotal > 0)) gpu = null;
+      }
+    } catch { /* keep the last reading */ }
+    renderChip();
+    renderGpu();
+    if (memPop && memPop.classList.contains('open')) renderRows(); // idle countdowns
+  }
+  function scheduleSample() {
+    clearTimeout(sampleT);
+    if (document.hidden) return;
+    const open = memPop && memPop.classList.contains('open');
+    sampleT = setTimeout(async () => {
+      await sampleGpu();
+      refreshLoaded(true); // models can come and go on their own
+      scheduleSample();
+    }, open ? 1000 : 5000);
+  }
+  if (memBtn) {
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) clearTimeout(sampleT);
+      else { sampleGpu(); refreshLoaded(true); scheduleSample(); }
+    });
+    sampleGpu();
+    scheduleSample();
   }
 
   // While a model loads, the list is polled until it's done; listeners
@@ -151,11 +339,11 @@
     btn.disabled = true;
     if (isText) btn.textContent = loading ? 'Loading…' : 'Ejecting…';
     // Ejecting can take a few seconds (the chat's cache is saved first).
-    const pill = btn.closest('.mem-pill');
+    const pill = btn.closest('.mem-row');
     if (pill && !loading) {
       pill.classList.add('ejecting');
       pill.title = 'Ejecting…';
-      const detail = pill.querySelector('.mem-detail');
+      const detail = pill.querySelector('.mem-sub');
       if (detail) detail.textContent = 'Ejecting…';
     }
     // Loads show in the memory list while they run.

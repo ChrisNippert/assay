@@ -560,3 +560,15 @@ func TestProjectRAG(t *testing.T) {
 		t.Errorf("chat should survive its project, out of it: %+v", c)
 	}
 }
+
+func TestGPUEndpoint(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	old := readLiveGPU
+	defer func() { readLiveGPU = old }()
+	readLiveGPU = func() hw.Live { return hw.Live{VRAMUsed: 5, VRAMTotal: 10, GPUBusy: 7, RAMUsed: 1, RAMTotal: 2} }
+	rec := do(s, "GET", "/api/gpu", "")
+	var l hw.Live
+	if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &l) != nil || l.VRAMTotal != 10 || l.GPUBusy != 7 {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+}
