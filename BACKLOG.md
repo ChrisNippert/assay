@@ -123,6 +123,14 @@ installed version (0.40.x) before building UI for it.
   documented option (default 4, 0 = off). Revisit on a newer Ollama; if it
   lands, check `/api/show` lists the draft before showing any UI.
 
+### ✅ Link models other apps downloaded (done 2026-10-24)
+
+Library → "Found on this computer": Hugging Face cache (Unsloth, llama.cpp
+`-hf`), Unsloth Studio's own caches, LM Studio, added folders; linked, never
+copied (see ARCHITECTURE). Open: verify on Windows (hard links need the
+same NTFS volume; symlinks need Developer Mode, else a clear error), and
+maybe read GGUF headers to catch mislabelled quants.
+
 ### 3. Windows release follow-ups (S–M)
 
 Windows build and zip exist (2026-10-24, see ARCHITECTURE "Platforms").

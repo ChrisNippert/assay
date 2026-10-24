@@ -377,3 +377,21 @@ func TestScanIsQuick(t *testing.T) {
 		t.Errorf("slow: %v", d)
 	}
 }
+
+func TestUnslothHubCaches(t *testing.T) {
+	dir := t.TempDir()
+	big := filepath.Join(dir, "big", "hub")
+	os.MkdirAll(big, 0o755)
+	m := filepath.Join(dir, "manifests", "cache-1")
+	os.MkdirAll(m, 0o755)
+	write := func(name, cache string) {
+		os.WriteFile(filepath.Join(m, name), []byte(`{"repo_id":"unsloth/x","hub_cache":"`+cache+`"}`), 0o644)
+	}
+	write("a.json", big)
+	write("b.json", big)
+	write("c.json", filepath.Join(dir, "gone")) // not there any more
+	got := unslothHubCaches(filepath.Join(dir, "manifests"))
+	if len(got) != 1 || got[0] != big {
+		t.Errorf("got %v", got)
+	}
+}

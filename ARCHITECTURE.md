@@ -147,6 +147,29 @@ code doesn't care which engine runs (`server.Backend`).
   keep their process. Updating the release in use with models loaded asks
   first, then stops them. A probe (`--version`, `--list-devices`) warns when
   Vulkan sees no GPU; it isn't run on your own ROCm build.
+- **Found on this computer** (`internal/engine/sources.go`). Library
+  offers, never imports by itself, the models other apps already
+  downloaded, linked like the Ollama import: hard link on the store's disk,
+  symlink across disks, never a copy, the other app's folder only read.
+  Sources: the Hugging Face hub cache (`HF_HUB_CACHE`, `HF_HOME/hub`,
+  `~/.cache/huggingface/hub`; also where current llama.cpp `-hf` puts
+  downloads, per its `common/hf-cache.cpp`), **Unsloth Studio**'s own caches
+  (read from its download records, `~/.unsloth/studio/cache/hub-state/
+  manifests/*/*.json` → `hub_cache`, since Studio can use a cache on another
+  disk that no environment variable names), older llama.cpp's flat cache
+  (`owner_repo_file.gguf` + `.json` sidecar), LM Studio
+  (`~/.lmstudio/models/<owner>/<repo>`), and folders you add
+  (`<config>/sources.json`, 4 levels deep). Names follow the downloader
+  (`hf.co/<owner>/<repo>:<QUANT>` via `hf.Quants`: splits grouped, mmproj
+  attached, drafts, `.incomplete` and dangling snapshot links skipped).
+  Already in the library = same name, `sha256-<hash>.gguf` in the store
+  (the HF blob name is the hash), or the same file (`os.SameFile`). The
+  manifest records `source`, `link` and `origin`; Library says "linked
+  from …", and a model whose file has gone shows as missing and fails to
+  load with a message naming where it was. Scans are stat-and-name only,
+  cached 30 s; `GET /api/models/sources`, `POST …/sources/import`,
+  `POST`/`DELETE …/sources/folder`. Checked against this machine: Unsloth
+  Studio's cache on a second disk offered 11 models (~83 GB).
 
 ### internal/ollama
 

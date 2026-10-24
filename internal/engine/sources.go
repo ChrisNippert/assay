@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -64,6 +65,8 @@ func SourceTitle(id string) string {
 		return "llama.cpp's cache"
 	case "lmstudio":
 		return "LM Studio"
+	case "unsloth":
+		return "Unsloth Studio"
 	case "folder":
 		return "a folder"
 	}
@@ -121,11 +124,44 @@ func sourceDefs(env sourceEnv) []sourceDef {
 	if env.GOOS != "windows" {
 		lm = append(lm, home(".cache", "lm-studio", "models"))
 	}
+	var unslothDirs []string
+	for _, d := range unslothHubCaches(home(".unsloth", "studio", "cache", "hub-state", "manifests")) {
+		if !slices.Contains(hfDirs, d) {
+			unslothDirs = append(unslothDirs, d)
+		}
+	}
 	return []sourceDef{
 		{"hf-cache", hfDirs, scanHFCache},
+		{"unsloth", unslothDirs, scanHFCache},
 		{"llama.cpp", llamaDirs, scanLlamaCache},
 		{"lmstudio", lm, scanLMStudio},
 	}
+}
+
+// unslothHubCaches lists the Hugging Face caches Unsloth Studio downloaded
+// into. Studio can be pointed at a cache of its own (say on a big disk)
+// that no environment variable here names; its download records
+// (hub-state/manifests/<cache>/<model>.json) say where, as "hub_cache".
+func unslothHubCaches(manifests string) []string {
+	paths, _ := filepath.Glob(filepath.Join(manifests, "*", "*.json"))
+	var out []string
+	for _, p := range paths {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		var m struct {
+			HubCache string `json:"hub_cache"`
+		}
+		if json.Unmarshal(b, &m) != nil || m.HubCache == "" || slices.Contains(out, m.HubCache) {
+			continue
+		}
+		if info, err := os.Stat(m.HubCache); err == nil && info.IsDir() {
+			out = append(out, m.HubCache)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // ---- scanning ----

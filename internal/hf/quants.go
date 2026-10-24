@@ -61,7 +61,7 @@ func (q Quant) Quality() string {
 
 var (
 	splitSuffix = regexp.MustCompile(`-\d{5}-of-\d{5}$`)
-	quantSuffix = regexp.MustCompile(`(?i)[-._]((?:UD-)?(?:I?Q\d(?:_[A-Z0-9]+)*|BF16|F16|F32|MXFP4(?:_[A-Z0-9]+)*))$`)
+	quantSuffix = regexp.MustCompile(`(?i)[-._]((?:UD-)?(?:[IPT]?Q\d(?:_[A-Z0-9]+)*|BF16|F16|F32|MXFP4(?:_[A-Z0-9]+)*))$`)
 )
 
 // draftPattern matches the names speculative-decoding draft models go by.
