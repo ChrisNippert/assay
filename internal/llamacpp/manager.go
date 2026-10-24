@@ -41,6 +41,8 @@ type Job struct {
 	Total       int64   `json:"total"`
 	BytesPerSec float64 `json:"bytesPerSec"`
 	Error       string  `json:"error,omitempty"`
+	// Finished is when it ended (zero while running).
+	Finished time.Time `json:"finished,omitzero"`
 }
 
 // Job states.
@@ -424,6 +426,7 @@ func (m *Manager) run(ctx context.Context) {
 	}
 	update(func(j *Job) {
 		j.BytesPerSec = 0
+		j.Finished = time.Now()
 		switch {
 		case errors.Is(err, context.Canceled):
 			j.State, j.Phase = Canceled, "Canceled"
