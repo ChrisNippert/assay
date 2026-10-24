@@ -28,44 +28,139 @@
   // ---- markdown (small and safe: everything is escaped first) ----
   const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+  // Inline marks. Code spans first (their insides stay as typed), then
+  // links, then emphasis; everything is escaped before any tag is added.
+  // Links only go to http(s) and mailto addresses.
   function inline(text) {
     return text
       .split('`')
-      .map((part, i) => (i % 2 ? `<code>${esc(part)}</code>` : esc(part).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')))
+      .map((part, i) => (i % 2 ? `<code>${esc(part)}</code>` : marks(part)))
       .join('');
   }
 
+  const SAFE_URL = /^(https?:\/\/|mailto:)/i;
+  function marks(raw) {
+    const links = [];
+    const keep = (html) => { links.push(html); return `\u0001${links.length - 1}\u0001`; };
+    let t = raw
+      .replace(/\[([^\]\n]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, (m, label, url) =>
+        SAFE_URL.test(url) ? keep(`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${emphasis(esc(label))}</a>`) : m)
+      .replace(/<(https?:\/\/[^\s>]+)>/g, (m, url) => keep(link(url)))
+      .replace(/\bhttps?:\/\/[^\s<>()]+[^\s<>().,;:!?'"*_]/g, (url) => keep(link(url)));
+    t = emphasis(esc(t));
+    return t.replace(/\u0001(\d+)\u0001/g, (_, i) => links[i]);
+  }
+  const link = (url) => `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>`;
+
+  function emphasis(t) {
+    return t
+      .replace(/\*\*(?=\S)([\s\S]*?\S)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[^\w])__(?=\S)([\s\S]*?\S)__(?!\w)/g, '$1<strong>$2</strong>')
+      .replace(/~~(?=\S)([\s\S]*?\S)~~/g, '<del>$1</del>')
+      .replace(/(^|[^*\w])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?!\*)/g, '$1<em>$2</em>')
+      .replace(/(^|[^\w])_(?=[^\s_])([^_\n]*?[^\s_])_(?!\w)/g, '$1<em>$2</em>');
+  }
+
+  // ---- tables (GitHub style): a header row, a |---|:--:| row, then rows ----
+  const TABLE_SEP = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
+  // Splits a row on | outside code spans and \| escapes.
+  function cells(line) {
+    let s = line.trim();
+    if (s.startsWith('|')) s = s.slice(1);
+    if (s.endsWith('|') && !s.endsWith('\\|')) s = s.slice(0, -1);
+    const out = [];
+    let cur = '';
+    let code = false;
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i];
+      if (c === '\\' && s[i + 1] === '|') { cur += '|'; i++; continue; }
+      if (c === '`') code = !code;
+      if (c === '|' && !code) { out.push(cur.trim()); cur = ''; continue; }
+      cur += c;
+    }
+    out.push(cur.trim());
+    return out;
+  }
+  function table(head, sep, rows) {
+    const align = cells(sep).map((c) => (c.startsWith(':') && c.endsWith(':') ? 'center' : c.endsWith(':') ? 'right' : ''));
+    const cols = Math.max(head.length, align.length);
+    const cell = (tag, text, i) => `<${tag}${align[i] ? ` style="text-align:${align[i]}"` : ''}>${inline(text ?? '')}</${tag}>`;
+    const row = (tag, cs) => `<tr>${Array.from({ length: cols }, (_, i) => cell(tag, cs[i], i)).join('')}</tr>`;
+    return `<div class="table-wrap"><table><thead>${row('th', head)}</thead>` +
+      `<tbody>${rows.map((r) => row('td', cells(r))).join('')}</tbody></table></div>`;
+  }
+
+  // Block structure: headings, paragraphs, nested lists (task lists too),
+  // quotes, rules and tables.
   function blocks(text) {
+    const lines = text.split('\n');
     let html = '';
     let para = [];
-    let list = null;
+    let stack = []; // open lists: { tag, indent, items: [html], open: bool }
     const flushPara = () => {
       if (para.length) html += `<p>${para.map(inline).join('<br>')}</p>`;
       para = [];
     };
-    const flushList = () => {
-      if (list) html += `<${list.tag}>${list.items.map((i) => `<li>${inline(i)}</li>`).join('')}</${list.tag}>`;
-      list = null;
-    };
-    const addItem = (tag, item) => {
-      flushPara();
-      if (!list || list.tag !== tag) { flushList(); list = { tag, items: [] }; }
-      list.items.push(item);
-    };
-    for (const line of text.split('\n')) {
-      let m;
-      if (!line.trim()) { flushPara(); flushList(); }
-      else if ((m = line.match(/^(#{1,4})\s+(.*)$/))) {
-        flushPara(); flushList();
-        const level = m[1].length + 2;
-        html += `<h${level}>${inline(m[2])}</h${level}>`;
+    const closeList = (to = 0) => {
+      while (stack.length > to) {
+        const l = stack.pop();
+        const out = `<${l.tag}>${l.items.map((i) => `<li${i.task ? ' class="task"' : ''}>${i.html}</li>`).join('')}</${l.tag}>`;
+        if (stack.length) stack[stack.length - 1].items.at(-1).html += out;
+        else html += out;
       }
-      else if ((m = line.match(/^\s*[-*]\s+(.*)$/))) addItem('ul', m[1]);
-      else if ((m = line.match(/^\s*\d+[.)]\s+(.*)$/))) addItem('ol', m[1]);
-      else { flushList(); para.push(line); }
+    };
+    const item = (indent, tag, body) => {
+      flushPara();
+      while (stack.length && indent < stack.at(-1).indent) closeList(stack.length - 1);
+      const top = stack.at(-1);
+      if (!top || indent > top.indent) stack.push({ tag, indent, items: [] });
+      else if (top.tag !== tag) { closeList(stack.length - 1); stack.push({ tag, indent, items: [] }); }
+      const task = body.match(/^\[([ xX])\]\s+(.*)$/);
+      stack.at(-1).items.push(task
+        ? { task: true, html: `<input type="checkbox" disabled${task[1] !== ' ' ? ' checked' : ''}> ${inline(task[2])}` }
+        : { html: inline(body) });
+    };
+    for (let n = 0; n < lines.length; n++) {
+      const line = lines[n];
+      let m;
+      if (!line.trim()) { flushPara(); closeList(); continue; }
+      if ((m = line.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/)) && !/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) {
+        item(m[1].replace(/\t/g, '    ').length, /\d/.test(m[2]) ? 'ol' : 'ul', m[3]);
+        continue;
+      }
+      if (stack.length && /^\s{2,}\S/.test(line)) { // a list item's next line
+        stack.at(-1).items.at(-1).html += '<br>' + inline(line.trim());
+        continue;
+      }
+      closeList();
+      if ((m = line.match(/^(#{1,6})\s+(.*?)\s*#*\s*$/))) {
+        flushPara();
+        const level = Math.min(m[1].length + 2, 6);
+        html += `<h${level}>${inline(m[2])}</h${level}>`;
+      } else if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) {
+        flushPara();
+        html += '<hr>';
+      } else if (/^\s*>/.test(line)) {
+        flushPara();
+        const quote = [];
+        while (n < lines.length && /^\s*>/.test(lines[n])) quote.push(lines[n++].replace(/^\s*>\s?/, ''));
+        n--;
+        html += `<blockquote>${blocks(quote.join('\n'))}</blockquote>`;
+      } else if (line.includes('|') && n + 1 < lines.length && TABLE_SEP.test(lines[n + 1]) && lines[n + 1].includes('-')) {
+        flushPara();
+        const head = cells(line);
+        const sep = lines[n + 1];
+        const rows = [];
+        n += 2;
+        while (n < lines.length && lines[n].includes('|') && lines[n].trim()) rows.push(lines[n++]);
+        n--;
+        html += table(head, sep, rows);
+      } else {
+        para.push(line);
+      }
     }
     flushPara();
-    flushList();
+    closeList();
     return html;
   }
 

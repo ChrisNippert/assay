@@ -130,6 +130,21 @@ select, textarea, input { font: inherit; color: var(--text); }
 .md pre { margin: 0 0 .7em; padding: 12px 14px; background: var(--code-bg); color: var(--code-text); border-radius: 6px; overflow-x: auto; font-size: var(--fs-sm); line-height: 1.55; }
 .md pre code { background: none; padding: 0; color: inherit; }
 .md .code { margin: 0 0 .8em; border-radius: 8px; overflow: hidden; background: var(--code-bg); }
+.md a { color: var(--accent-text); text-decoration: underline; text-underline-offset: 2px; }
+.md del { color: var(--muted); }
+.md h3 { font-size: 16px; } .md h4 { font-size: 15px; }
+.md blockquote { margin: 0 0 .8em; padding: 2px 0 2px 12px; border-left: 3px solid var(--border-strong); color: var(--text-2); }
+.md hr { border: none; border-top: 1px solid var(--border); margin: 1em 0; }
+.md li > ul, .md li > ol { margin: .2em 0 0; }
+.md li.task { list-style: none; margin-left: -1.3em; }
+.md li.task input { margin: 0 4px 0 0; vertical-align: -1px; }
+/* Tables scroll sideways inside the reply rather than widening the page. */
+.md .table-wrap { margin: 0 0 .8em; overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+.md table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: var(--fs-sm); overflow-wrap: normal; }
+.md th, .md td { padding: 6px 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.md th { background: var(--soft); font-weight: 600; white-space: nowrap; }
+.md tbody tr:last-child td { border-bottom: none; }
+.md tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--soft) 45%, transparent); }
 .md .code pre { margin: 0; border-radius: 0; }
 .code-head {
   display: flex; align-items: center; justify-content: space-between; gap: var(--s2);

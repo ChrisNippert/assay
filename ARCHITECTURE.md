@@ -420,6 +420,14 @@ against a strict pattern before they touch the filesystem.
 
 - Server-rendered pages (`html/template`) plus a small vanilla JS file for
   streaming chat and markdown.
+- Markdown (chat.js, no library): everything is escaped before any tag is
+  added. Blocks: headings, paragraphs, nested and task lists, quotes,
+  rules, GitHub tables (alignment from `:--:`, `\|` and code spans keep
+  pipes, wrapped so wide tables scroll inside the reply), fenced code (hljs,
+  Copy/Download) and KaTeX math. Inline: code, bold, italic, strikethrough,
+  links (only http(s) and mailto become links; bare URLs too). The whole
+  reply is re-rendered on each streamed chunk, so a table appears once its
+  `|---|` row arrives.
 - Chat streaming: the browser `POST`s to `/api/chat` and reads an NDJSON
   response (`chat`, `thinking`, `content`, `done`, `error` events) with
   `fetch` + `ReadableStream`. Stopping is just aborting the fetch. The same
