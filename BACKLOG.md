@@ -68,13 +68,16 @@ Stages (the app keeps working after each):
 3. ✅ (2026-10-23) **API for editors:** ollamui serves `/v1/chat/completions`, `/v1/models`,
    `/v1/embeddings` (OpenAI-compatible, loads models on demand); presets
    show up as models there (replacing "publish to Ollama").
-4. **Settings and tuning:** ✅ an engine section (llama.cpp version,
+4. ✅ **Settings and tuning:** an engine section (llama.cpp version,
    backend, defaults, models with their own settings) replaces the Ollama
    server page, and cache type / flash attention / keep loaded are per
    model in Tune. ✅ (2026-10-23) threads and speculative decoding (draft
    model per model; measure it on the GPU when it's free: CPU-only it gave
    1.55×). Compare's speed test and RAG embeddings already go through the
-   engine. Left: auto context from real memory numbers (`--fit`).
+   engine, and auto context is llama.cpp's `--fit` (32k asked, lowered
+   when memory is short). Cleanup left: autoctx.go's Ollama-era estimator
+   (`pickContext` past the `fitter` check, `kvFactor` users) is dead code
+   now; delete it with the voice talker code. (S)
 5. ✅ **Install and clean up** (2026-10-23): one-click llama.cpp (Vulkan)
    install and update from GitHub releases, beside your own build; the
    Ollama client, `-engine ollama`, `-ollama`, the Ollama server settings
