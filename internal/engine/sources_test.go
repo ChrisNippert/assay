@@ -259,7 +259,7 @@ func TestImportFoundHardLink(t *testing.T) {
 	}
 }
 
-func TestImportFoundSymlinkAcrossDisks(t *testing.T) {
+func TestImportFoundInPlaceAcrossDisks(t *testing.T) {
 	hardLink = func(string, string) error { return errors.New("invalid cross-device link") }
 	defer func() { hardLink = os.Link }()
 	root := fakeHFCache(t, true)
@@ -268,17 +268,36 @@ func TestImportFoundSymlinkAcrossDisks(t *testing.T) {
 		t.Fatalf("import = %d, %v", n, err)
 	}
 	m, _ := st.Get("hf.co/unsloth/Qwen3-8B-GGUF:Q4_K_M")
-	if m.Link != "symlink" {
-		t.Errorf("link = %q", m.Link)
+	if m.Link != "in place" || !filepath.IsAbs(m.Files[0]) || !strings.HasPrefix(m.Files[0], root) {
+		t.Errorf("link = %q, files = %v", m.Link, m.Files)
+	}
+	// Used as found: the snapshot's name, not the hash-named blob, so a
+	// split model's parts keep the names llama.cpp looks for.
+	if filepath.Base(m.Files[0]) == sha('a') {
+		t.Errorf("used the resolved blob %s, not the snapshot path", m.Files[0])
 	}
 	if b, err := os.ReadFile(st.Blob(m.Files[0])); err != nil || string(b) != "q4 weights" {
-		t.Errorf("read through the symlink: %q %v", b, err)
+		t.Errorf("read in place: %q %v", b, err)
+	}
+	// No symlinks (they need admin rights on Windows), nothing in blobs/.
+	if entries, _ := os.ReadDir(filepath.Join(st.Dir(), "blobs")); len(entries) != 0 {
+		t.Errorf("blobs/ has %d entries", len(entries))
 	}
 	if len(st.Missing(m)) != 0 {
 		t.Error("nothing is missing yet")
 	}
-	// The other app deletes its file: the model shows as missing.
-	os.Remove(filepath.Join(root, "models--unsloth--Qwen3-8B-GGUF", "blobs", sha('a')))
+	// Deleting it here forgets it and leaves the other app's file alone.
+	src := filepath.Join(root, "models--unsloth--Qwen3-8B-GGUF", "blobs", sha('a'))
+	if err := st.Delete(m.Name); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(src); err != nil {
+		t.Fatalf("deleting the model removed the other app's file: %v", err)
+	}
+	// The other app deletes its file: a model still using it shows as missing.
+	st.ImportFound("hf-cache", scanHFCache(root))
+	m, _ = st.Get("hf.co/unsloth/Qwen3-8B-GGUF:Q4_K_M")
+	os.Remove(src)
 	if got := st.Missing(m); len(got) != 1 {
 		t.Errorf("missing = %v", got)
 	}

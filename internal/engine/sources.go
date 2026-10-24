@@ -31,6 +31,10 @@ type Candidate struct {
 	Quant string `json:"quant,omitempty"`
 	// Files are the GGUF files' real paths (symlinks resolved), in order.
 	Files []string `json:"-"`
+	// Paths are the files as found, before resolving symlinks. Used in
+	// place, they keep the names llama.cpp needs to find a split model's
+	// other parts (the Hugging Face cache's blobs are named by hash).
+	Paths []string `json:"-"`
 	// Rels are the files' names as the other app knows them; split models
 	// keep them, because llama.cpp finds the other parts by name.
 	Rels []string `json:"-"`
@@ -38,6 +42,7 @@ type Candidate struct {
 	// (the Hugging Face cache names blobs by hash), else "".
 	SHAs         []string  `json:"-"`
 	Projector    string    `json:"-"`
+	ProjectorAt  string    `json:"-"` // the projector as found
 	ProjectorSHA string    `json:"-"`
 	Size         int64     `json:"size"`
 	Modified     time.Time `json:"modified"`
@@ -176,6 +181,7 @@ var (
 // gfile is a GGUF file found on disk.
 type gfile struct {
 	rel  string // slash path inside its unit (repo snapshot, folder...)
+	path string // where it was found (maybe a symlink)
 	abs  string // real path
 	size int64
 	sha  string
@@ -218,7 +224,7 @@ func ggufFiles(root string, depth int) []gfile {
 		if !ok {
 			return nil
 		}
-		f := gfile{rel: filepath.ToSlash(rel), abs: real, size: info.Size(), mod: info.ModTime()}
+		f := gfile{rel: filepath.ToSlash(rel), path: p, abs: real, size: info.Size(), mod: info.ModTime()}
 		if b := filepath.Base(real); hex64.MatchString(b) {
 			f.sha = b
 		}
@@ -266,6 +272,7 @@ func makeCandidate(name, repo, quant string, files []gfile, proj *gfile) Candida
 	c := Candidate{Name: name, Repo: repo, Quant: quant}
 	for _, f := range files {
 		c.Files = append(c.Files, f.abs)
+		c.Paths = append(c.Paths, f.path)
 		c.Rels = append(c.Rels, f.rel)
 		c.SHAs = append(c.SHAs, f.sha)
 		c.Size += f.size
@@ -274,7 +281,7 @@ func makeCandidate(name, repo, quant string, files []gfile, proj *gfile) Candida
 		}
 	}
 	if proj != nil {
-		c.Projector, c.ProjectorSHA = proj.abs, proj.sha
+		c.Projector, c.ProjectorAt, c.ProjectorSHA = proj.abs, proj.path, proj.sha
 		c.Size += proj.size
 	}
 	return c
@@ -426,7 +433,7 @@ func scanLlamaCache(root string) []Candidate {
 		if !ok {
 			continue
 		}
-		f := gfile{rel: e.Name(), abs: real, size: info.Size(), mod: info.ModTime()}
+		f := gfile{rel: e.Name(), path: p, abs: real, size: info.Size(), mod: info.ModTime()}
 		if repo, file := llamaURL(p + ".json"); repo != "" {
 			f.rel = file
 			if _, ok := repos[repo]; !ok {
@@ -685,7 +692,7 @@ func filterSources(store *Store, all []Source) []Source {
 		}
 		cp.Link = "hard"
 		if !SameDisk(s.Dir, store.Dir()) {
-			cp.Link = "symlink"
+			cp.Link = "in place"
 		}
 		out = append(out, cp)
 	}
@@ -754,9 +761,12 @@ func pathHash(p string) string {
 	return hex.EncodeToString(h[:8])
 }
 
-// ImportFound links candidates found in a source into the store: a hard
-// link on the same disk, else a symlink. The other app's files are only
-// read. It returns how many models it added.
+// ImportFound brings candidates found in a source into the store without
+// copying: hard links on the store's disk, and on another disk the files
+// are used where they are (their full paths go in the manifest), which
+// needs no symlinks and so no admin rights on Windows. The other app's
+// files are only read, and deleting the model here never touches them.
+// It returns how many models it added.
 func (s *Store) ImportFound(source string, cs []Candidate) (int, error) {
 	added := 0
 	for _, c := range cs {
@@ -774,25 +784,32 @@ func (s *Store) ImportFound(source string, cs []Candidate) (int, error) {
 		if len(c.Files) > 1 {
 			dir = "link-" + pathHash(c.Files[0])
 		}
+		// All of a model's parts link, or none do: llama.cpp wants a split
+		// model's parts side by side.
+		var made []string
 		for i, f := range c.Files {
-			name, kind, err := s.linkFile(f, c.SHAs[i], dir, path.Base(c.Rels[i]))
+			name, fresh, err := s.linkFile(f, c.SHAs[i], dir, path.Base(c.Rels[i]))
 			if err != nil {
-				return added, err
+				for _, n := range made {
+					os.Remove(s.Blob(n))
+				}
+				if dir != "" {
+					os.Remove(s.Blob(dir))
+				}
+				m.Files, m.Link = append([]string(nil), c.Paths...), "in place"
+				break
 			}
-			if kind == "symlink" {
-				m.Link = "symlink"
+			if fresh {
+				made = append(made, name)
 			}
 			m.Files = append(m.Files, name)
 		}
 		if c.Projector != "" {
-			name, kind, err := s.linkFile(c.Projector, c.ProjectorSHA, "", "")
-			if err != nil {
-				return added, err
+			if name, _, err := s.linkFile(c.Projector, c.ProjectorSHA, "", ""); err == nil {
+				m.Projector = name
+			} else {
+				m.Projector = c.ProjectorAt
 			}
-			if kind == "symlink" {
-				m.Link = "symlink"
-			}
-			m.Projector = name
 		}
 		m.Digest = c.SHAs[0]
 		if m.Digest == "" {
@@ -806,10 +823,9 @@ func (s *Store) ImportFound(source string, cs []Candidate) (int, error) {
 	return added, nil
 }
 
-// linkFile links src into blobs/ and returns its name there and whether it
-// is a "hard" link or a "symlink". A file whose sha256 is known and
-// already in the store is reused.
-func (s *Store) linkFile(src, sha, dir, base string) (name, kind string, err error) {
+// linkFile hard-links src into blobs/ and returns its name there, and
+// whether it made the link (false: an earlier import already had it).
+func (s *Store) linkFile(src, sha, dir, base string) (name string, fresh bool, err error) {
 	switch {
 	case dir != "":
 		name = dir + "/" + base
@@ -820,18 +836,29 @@ func (s *Store) linkFile(src, sha, dir, base string) (name, kind string, err err
 	}
 	dst := s.Blob(name)
 	if _, err := os.Stat(dst); err == nil {
-		return name, linkKind(dst), nil
+		return name, false, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return "", "", err
+		return "", false, err
 	}
 	os.Remove(dst) // a dangling link from before
 	if err := hardLink(src, dst); err != nil {
-		if serr := os.Symlink(src, dst); serr != nil {
-			return "", "", fmt.Errorf("link %s: %v (it isn't copied; on Windows, symlinks need Developer Mode or an elevated prompt)", filepath.Base(src), serr)
-		}
+		return "", false, err
 	}
-	return name, linkKind(dst), nil
+	return name, true, nil
+}
+
+// linkKind says how a file the store uses is held: "hard", "symlink"
+// (imports from before files were used in place), or "in place" (a path
+// outside the store).
+func (s *Store) linkKind(name string) string {
+	if filepath.IsAbs(name) {
+		return "in place"
+	}
+	if info, err := os.Lstat(s.Blob(name)); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return "symlink"
+	}
+	return "hard"
 }
 
 // hardLink is os.Link; tests swap it to act like a second disk.

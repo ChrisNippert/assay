@@ -35,8 +35,11 @@ func (s *Server) linkNoteOf(name string) *linkNote {
 		return nil
 	}
 	n := &linkNote{Text: "linked from " + engine.SourceTitle(m.Source), Title: m.Origin}
-	if m.Link == "symlink" {
+	switch m.Link {
+	case "symlink":
 		n.Text += " (symlink, on another disk)"
+	case "in place":
+		n.Text += " (used where it is, on another disk)"
 	}
 	if len(st.Missing(m)) > 0 {
 		n.Missing = true

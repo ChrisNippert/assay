@@ -128,7 +128,7 @@ installed version (0.40.x) before building UI for it.
 Library → "Found on this computer": Hugging Face cache (Unsloth, llama.cpp
 `-hf`), Unsloth Studio's own caches, LM Studio, added folders; linked, never
 copied (see ARCHITECTURE). Open: verify on Windows (hard links need the
-same NTFS volume; symlinks need Developer Mode, else a clear error), and
+same NTFS volume; other drives are used in place, no symlinks or admin), and
 maybe read GGUF headers to catch mislabelled quants.
 
 ### 3. Windows release follow-ups (S–M)

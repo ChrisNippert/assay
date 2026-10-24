@@ -93,7 +93,14 @@ func OpenStore(dir string) (*Store, error) {
 }
 
 // Blob is a file's full path.
-func (s *Store) Blob(name string) string { return filepath.Join(s.Dir(), "blobs", name) }
+// Blob is where a model file is: in blobs/, or, for a file used in place
+// (an absolute name), right where it is.
+func (s *Store) Blob(name string) string {
+	if filepath.IsAbs(name) {
+		return name
+	}
+	return filepath.Join(s.Dir(), "blobs", name)
+}
 
 // Dir is the store's folder. It changes when the store is moved.
 func (s *Store) Dir() string {
@@ -216,7 +223,8 @@ func (s *Store) Delete(name string) error {
 		}
 	}
 	for _, f := range append(m.Files, m.Projector) {
-		if f != "" && !used[f] {
+		// A file used in place belongs to another app: only forget it.
+		if f != "" && !used[f] && !filepath.IsAbs(f) {
 			os.Remove(s.Blob(f))
 			os.Remove(s.Blob(f) + ".partial")
 			if dir := filepath.Dir(f); dir != "." {
@@ -326,7 +334,7 @@ func (s *Store) ImportOllama(ollamaDir string) (int, error) {
 		if err != nil {
 			return added, err
 		}
-		m := &Model{Files: []string{file}, Size: f.size, Digest: strings.TrimPrefix(f.model, "sha256:"), Modified: f.modified, Params: f.params, Source: "ollama", Link: linkKind(s.Blob(file)), Origin: ollamaBlob(ollamaDir, f.model)}
+		m := &Model{Files: []string{file}, Size: f.size, Digest: strings.TrimPrefix(f.model, "sha256:"), Modified: f.modified, Params: f.params, Source: "ollama", Link: s.linkKind(file), Origin: ollamaBlob(ollamaDir, f.model)}
 		if f.projector != "" {
 			if m.Projector, err = s.linkBlob(ollamaDir, f.projector); err != nil {
 				return added, err
@@ -370,8 +378,9 @@ func ollamaBlob(ollamaDir, digest string) string {
 	return filepath.Join(ollamaDir, "blobs", strings.Replace(digest, ":", "-", 1))
 }
 
-// linkBlob hard-links (or symlinks) an Ollama blob into the store and
-// returns its name there.
+// linkBlob hard-links an Ollama blob into the store and returns its name
+// there. On another disk the blob is used in place: its full path is the
+// name (no symlink, so no admin rights on Windows).
 func (s *Store) linkBlob(ollamaDir, digest string) (string, error) {
 	src := ollamaBlob(ollamaDir, digest)
 	name := strings.Replace(digest, ":", "-", 1) + ".gguf"
@@ -379,10 +388,11 @@ func (s *Store) linkBlob(ollamaDir, digest string) (string, error) {
 	if _, err := os.Stat(dst); err == nil {
 		return name, nil
 	}
-	if err := os.Link(src, dst); err != nil {
-		if err := os.Symlink(src, dst); err != nil {
-			return "", fmt.Errorf("import %s: %w", digest, err)
-		}
+	if _, err := os.Stat(src); err != nil {
+		return "", fmt.Errorf("import %s: %w", digest, err)
+	}
+	if err := hardLink(src, dst); err != nil {
+		return src, nil
 	}
 	return name, nil
 }

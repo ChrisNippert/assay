@@ -64,11 +64,11 @@
     text.append(el('span', 'row-title', s.title));
     const how = s.link === 'hard'
       ? 'hard link, not a copy'
-      : 'symlink (another disk), not a copy';
+      : 'used where it is (another disk), not a copy';
     const sub = el('span', 'row-sub');
     sub.title = s.link === 'hard'
       ? 'The file is shared, so it stays if that app removes it.'
-      : 'It is on another disk, so ollamui links to it. If that app removes the file, the model shows as missing.';
+      : 'It is on another disk, so ollamui uses the file where it is. If that app removes it, the model shows as missing.';
     sub.append(el('span', 'mono', s.dir), document.createTextNode(' · ' + how));
     text.append(sub);
     head.append(text);

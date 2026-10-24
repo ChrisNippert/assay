@@ -69,7 +69,7 @@ code doesn't care which engine runs (`server.Backend`).
 
 - **Store**: `<data>/models/` holds `blobs/` (GGUF files) and one JSON
   manifest per model (name, aliases, files, projector, default params).
-  Ollama's models are imported by hard link (symlink across disks), so
+  Ollama's models are imported by hard link (used in place across disks), so
   nothing is copied and Ollama keeps working if you still use it.
 - **Processes**: started on demand with `-np 1` (more slots overfill VRAM),
   `-c 32768` unless a context is asked for (letting `--fit` pick grew it to
@@ -150,7 +150,15 @@ code doesn't care which engine runs (`server.Backend`).
 - **Found on this computer** (`internal/engine/sources.go`). Library
   offers, never imports by itself, the models other apps already
   downloaded, linked like the Ollama import: hard link on the store's disk,
-  symlink across disks, never a copy, the other app's folder only read.
+  and across disks the file is **used in place**: its absolute path goes in
+  the manifest (`Store.Blob` passes absolute names through), as found, not
+  resolved, so a split model's parts keep the names llama.cpp needs. No
+  symlinks, so no admin rights or Developer Mode on Windows. All of a
+  model's parts link or none do. `Store.Delete` never removes an absolute
+  (in-place) file, only forgets it. Imports from before 2026-10-24 may be
+  symlinks; they keep working. Never a copy; the other app's folder is only
+  read. Checked: SmolLM3 from Unsloth Studio's cache on a second disk loaded
+  in place (99 tok/s), and deleting it left Studio's file untouched.
   Sources: the Hugging Face hub cache (`HF_HUB_CACHE`, `HF_HOME/hub`,
   `~/.cache/huggingface/hub`; also where current llama.cpp `-hf` puts
   downloads, per its `common/hf-cache.cpp`), **Unsloth Studio**'s own caches
