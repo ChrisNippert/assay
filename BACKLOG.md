@@ -65,7 +65,7 @@ Stages (the app keeps working after each):
    client.
 2. ✅ **Downloads** straight from Hugging Face (resume, split files, mmproj),
    replacing `ollama pull`; delete.
-3. **API for editors:** ollamui serves `/v1/chat/completions`, `/v1/models`,
+3. ✅ (2026-10-23) **API for editors:** ollamui serves `/v1/chat/completions`, `/v1/models`,
    `/v1/embeddings` (OpenAI-compatible, loads models on demand); presets
    show up as models there (replacing "publish to Ollama").
 4. **Settings and tuning:** ✅ an engine section (llama.cpp version,

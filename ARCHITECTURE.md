@@ -96,6 +96,20 @@ code doesn't care which engine runs (`server.Backend`).
   forces flash attention on. The `-cache-type` flag (q8_0) and flash
   attention on are the defaults for models without their own. Re-pulling
   keeps a model's settings and aliases.
+- **OpenAI-compatible API (`/v1`).** `GET /v1/models`, `POST
+  /v1/chat/completions` (streaming or not) and `POST /v1/embeddings` on
+  ollamui's own address, for editors like Zed. `model` is an installed model
+  or a preset (installed names win); a preset becomes its base model, its
+  options and its system prompt and think setting, added only where the
+  request set none. `engine.Proxy` loads the model on demand, fills sampling
+  defaults only for fields the body left out, rewrites `model`, and passes
+  the rest through untouched (`tools`, `tool_choice`, `response_format`),
+  streaming the reply back with a flush per chunk. An open response counts
+  as busy for idle unload. Errors use OpenAI's shape (unknown model 404,
+  embeddings with a chat model 400). Presets need no publishing on
+  llama.cpp: they're simply listed. Settings → Models shows the base URL.
+  Checked: Qwen3.5-2B returned a proper `tool_calls` for a one-function
+  `tools` list.
 
 ### internal/ollama
 
