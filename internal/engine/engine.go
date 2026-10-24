@@ -335,15 +335,15 @@ func (e *Engine) ensure(ctx context.Context, name string, options map[string]any
 	}
 	if p != nil && p.running() && p.opts.sameNames(o) {
 		// Only the adapter scales changed: set them on the running server.
-		if err := e.setScales(ctx, p, o.LoRA); err == nil {
+		err := e.setScales(ctx, p, o.LoRA)
+		if err == nil {
 			p.mu.Lock()
 			p.asked = name
 			p.mu.Unlock()
 			p.opts = o
 			return p, false, nil
-		} else {
-			e.opt.Log.Warn("couldn't set adapter scales live; loading again", "model", m.Name, "err", err)
 		}
+		e.opt.Log.Warn("couldn't set adapter scales live; loading again", "model", m.Name, "err", err)
 	}
 	if p != nil {
 		e.stop(p)
