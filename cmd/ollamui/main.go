@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -22,6 +21,7 @@ import (
 	"ollamui/internal/engine"
 	"ollamui/internal/hf"
 	"ollamui/internal/hw"
+	"ollamui/internal/llamacpp"
 	"ollamui/internal/ollama"
 	"ollamui/internal/presets"
 	"ollamui/internal/projects"
@@ -43,7 +43,7 @@ func run() error {
 	listen := flag.String("listen", "127.0.0.1:8484", "address to serve the UI on")
 	ollamaURL := flag.String("ollama", ollama.ResolveHost(os.Getenv("OLLAMA_HOST")), "Ollama server URL (with -engine ollama, and for importing and pulling models meanwhile)")
 	engineName := flag.String("engine", "llama.cpp", `what runs the models: "llama.cpp" or "ollama"`)
-	llamaServer := flag.String("llama-server", os.Getenv("OLLAMUI_LLAMA_SERVER"), "llama.cpp's llama-server binary (default: ~/.local/share/ollamui/llama.cpp/llama-server, then PATH)")
+	llamaServer := flag.String("llama-server", os.Getenv("OLLAMUI_LLAMA_SERVER"), "llama.cpp's llama-server binary (default: ~/.local/share/ollamui/llama.cpp/llama-server, then the release installed from Settings, then PATH)")
 	cacheType := flag.String("cache-type", "q8_0", "K/V cache type for llama.cpp: f16, q8_0 or q4_0")
 	ollamaModels := flag.String("ollama-models", filepath.Join(os.Getenv("HOME"), ".ollama", "models"), "Ollama's models folder, imported (by hard link) into ollamui's own")
 	dataDir := flag.String("data", defaultDir("XDG_DATA_HOME", ".local/share"), "where chats are stored")
@@ -113,6 +113,7 @@ func run() error {
 	var models server.Backend = client
 	var puller pulls.Puller = client
 	var eng *engine.Engine
+	var llama *llamacpp.Manager
 	if *engineName == "llama.cpp" {
 		folder := engine.FolderSetting{File: filepath.Join(*configDir, "models.json"), Pinned: *modelsFlag != ""}
 		modelsDir := *modelsFlag
@@ -136,11 +137,13 @@ func run() error {
 		} else if n > 0 {
 			log.Info("imported Ollama models", "count", n)
 		}
-		bin := findLlamaServer(*llamaServer, *dataDir)
+		llama = llamacpp.NewManager(*dataDir, *llamaServer, nil, log)
+		bin, _ := llama.Resolve()
 		if bin == "" {
 			log.Warn("llama-server not found: models can't run until llama.cpp is installed (see Settings)")
 		}
 		eng = engine.New(store, engine.Options{Server: bin, CacheType: *cacheType, FlashAttn: "on", Log: log})
+		llama.Eng = eng
 		eng.OllamaDir = *ollamaModels
 		eng.Folder = folder
 		eng.HF = hfClient
@@ -157,6 +160,7 @@ func run() error {
 		RAGSettings:   ragSettings,
 		HF:            hfClient,
 		Pulls:         pulls.New(puller, log),
+		LlamaCpp:      llama,
 		Scores:        scoreStore,
 		Bench:         bench.Open(filepath.Join(*dataDir, "bench")),
 		Voice:         speech,
@@ -269,23 +273,6 @@ func displayAddr(addr string) string {
 		host = "localhost"
 	}
 	return net.JoinHostPort(host, port)
-}
-
-// findLlamaServer looks for llama-server: the flag, ollamui's own copy,
-// then PATH.
-func findLlamaServer(flagPath, dataDir string) string {
-	for _, p := range []string{flagPath, filepath.Join(dataDir, "llama.cpp", "llama-server")} {
-		if p == "" {
-			continue
-		}
-		if info, err := os.Stat(p); err == nil && !info.IsDir() {
-			return p
-		}
-	}
-	if p, err := exec.LookPath("llama-server"); err == nil {
-		return p
-	}
-	return ""
 }
 
 // enginePuller downloads Hugging Face models with the engine itself and

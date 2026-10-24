@@ -296,17 +296,18 @@ var (
 )
 
 func (e *Engine) start(ctx context.Context, m *Model, o loadOpts) (*proc, error) {
-	if e.opt.Server == "" {
+	bin := e.ServerPath()
+	if bin == "" {
 		return nil, errors.New("llama.cpp isn't set up: no llama-server found")
 	}
 	port, err := freePort()
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(e.opt.Server, e.args(m, o, port)...)
+	cmd := exec.Command(bin, e.args(m, o, port)...)
 	// Its shared libraries sit beside it, wherever that is.
-	cmd.Env = append(os.Environ(), "LD_LIBRARY_PATH="+strings.TrimSuffix(filepath.Dir(e.opt.Server)+":"+os.Getenv("LD_LIBRARY_PATH"), ":"))
-	if v := hsaOverride(e.opt.Server); v != "" {
+	cmd.Env = append(os.Environ(), "LD_LIBRARY_PATH="+strings.TrimSuffix(filepath.Dir(bin)+":"+os.Getenv("LD_LIBRARY_PATH"), ":"))
+	if v := hsaOverride(bin); v != "" {
 		cmd.Env = append(cmd.Env, "HSA_OVERRIDE_GFX_VERSION="+v)
 	}
 	setProcAttrs(cmd)
@@ -527,10 +528,11 @@ func (e *Engine) StopAll() {
 
 // Version is the llama.cpp build, e.g. "b1-339f324".
 func (e *Engine) Version(ctx context.Context) (string, error) {
-	if e.opt.Server == "" {
+	bin := e.ServerPath()
+	if bin == "" {
 		return "", errors.New("no llama-server")
 	}
-	out, err := exec.CommandContext(ctx, e.opt.Server, "--version").CombinedOutput()
+	out, err := exec.CommandContext(ctx, bin, "--version").CombinedOutput()
 	if err != nil {
 		return "", err
 	}
@@ -841,9 +843,10 @@ func (e *Engine) SetSettings(name string, s map[string]any) error {
 // Backend names the GPU library the llama-server build uses, from the
 // libraries beside it ("" if it can't tell).
 func (e *Engine) Backend() string {
-	dir := filepath.Dir(e.opt.Server)
+	dir := filepath.Dir(e.ServerPath())
 	for _, b := range []struct{ lib, name string }{
 		{"libggml-hip.so", "ROCm"}, {"libggml-cuda.so", "CUDA"}, {"libggml-vulkan.so", "Vulkan"}, {"libggml-metal.so", "Metal"},
+		{"libggml-metal.dylib", "Metal"}, {"ggml-vulkan.dll", "Vulkan"},
 	} {
 		if _, err := os.Stat(filepath.Join(dir, b.lib)); err == nil {
 			return b.name
@@ -874,4 +877,30 @@ func (e *Engine) FlashAttn() string { return e.opt.FlashAttn }
 func (e *Engine) CacheType() string { return e.opt.CacheType }
 
 // ServerPath is the llama-server binary in use.
-func (e *Engine) ServerPath() string { return e.opt.Server }
+func (e *Engine) ServerPath() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.opt.Server
+}
+
+// SetServer switches to another llama-server binary ("" for none). Models
+// already running keep the process they have until they unload; the next
+// start uses the new one.
+func (e *Engine) SetServer(path string) {
+	e.mu.Lock()
+	e.opt.Server = path
+	e.mu.Unlock()
+}
+
+// LoadedNames lists the models the engine has running, so callers can ask
+// before replacing the binary under them.
+func (e *Engine) LoadedNames() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	names := make([]string, 0, len(e.procs))
+	for n := range e.procs {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}

@@ -43,8 +43,12 @@
   <p class="muted small">Models run with llama.cpp, one at a time on the GPU. Context length, GPU layers, how long a model stays loaded and its memory options are set per model: open <strong>Tune</strong> in a chat with it.</p>
   <div class="boxed-list">
     <div class="row">
-      <div class="row-text"><span class="row-title">llama.cpp{{with .Backend}} · {{.}}{{end}}</span><span class="row-sub">{{if .Version}}Build {{.Version}} · {{end}}{{.Server}}</span></div>
+      <div class="row-text"><span class="row-title">llama.cpp{{with .Backend}} · {{.}}{{end}}</span><span class="row-sub">{{if .Server}}{{if .Version}}Build {{.Version}} · {{end}}{{.Server}}{{else}}No llama-server found. Models can't run until llama.cpp is installed.{{end}}{{if eq .Source "own"}} · Your own build{{else if eq .Source "release"}} · Downloaded release{{else if eq .Source "flag"}} · Set with -llama-server{{else if eq .Source "path"}} · Found on your PATH{{end}}</span></div>
     </div>
+    {{if .Install}}<div class="row lc-row" id="lc-row" hidden>
+      <div class="row-text"><span class="row-title" id="lc-title"></span><span class="row-sub" id="lc-sub"></span><div class="lc-bar" id="lc-bar" hidden><span></span></div></div>
+      <div class="row-ctrl"><span class="muted small" id="lc-state"></span><button type="button" class="btn subtle" id="lc-alt" hidden></button><button type="button" class="btn" id="lc-btn"></button></div>
+    </div>{{end}}
     <div class="row">
       <div class="row-text"><span class="row-title">Defaults</span><span class="row-sub">A model without its own settings uses a {{if eq .CacheType "q8_0"}}half-size (q8_0){{else if eq .CacheType "q4_0"}}quarter-size (q4_0){{else}}full-size (f16){{end}} context cache, flash attention {{.FlashAttn}}, and stays loaded {{.KeepAlive}} after the last message.</span></div>
     </div>
@@ -490,6 +494,135 @@
     try { await navigator.clipboard.writeText(pre.textContent); e.target.textContent = 'Copied'; } catch {}
     setTimeout(() => { e.target.textContent = 'Copy'; }, 1500);
   });
+})();
+(() => {
+  // llama.cpp install and update (Models section).
+  const row = document.getElementById('lc-row');
+  if (!row) return;
+  const $ = (id) => document.getElementById(id);
+  const title = $('lc-title'), sub = $('lc-sub'), bar = $('lc-bar'), state = $('lc-state'), btn = $('lc-btn'), alt = $('lc-alt');
+  let st = null, chk = null, note = '', noteBad = false, busy = false, timer = null;
+  const size = (n) => n >= 1e9 ? (n / 1e9).toFixed(1) + ' GB' : Math.round(n / 1e6) + ' MB';
+  async function api(path, opts) {
+    const res = await fetch(path, opts);
+    const body = res.status === 204 ? {} : await res.json().catch(() => ({}));
+    if (!res.ok) { const e = new Error(body.error || res.statusText); e.status = res.status; e.body = body; throw e; }
+    return body;
+  }
+  const send = (method, path, data) => api(path, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data || {}) });
+  function render() {
+    row.hidden = false;
+    btn.hidden = false; btn.className = 'btn'; btn.disabled = busy; alt.hidden = true; alt.disabled = busy; bar.hidden = true; state.textContent = '';
+    btn.onclick = alt.onclick = null;
+    const label = st.label || 'Vulkan';
+    const job = st.job;
+    if (job && job.state === 'running') {
+      const pct = job.total > 0 ? Math.floor(100 * job.completed / job.total) : 0;
+      title.textContent = 'Installing llama.cpp' + (job.tag ? ' ' + job.tag : '');
+      sub.classList.remove('settings-warn');
+      sub.textContent = job.phase === 'Downloading' && job.total > 0
+        ? `Downloading ${size(job.completed)} of ${size(job.total)} (${pct}%)` + (job.bytesPerSec > 0 ? ` · ${(job.bytesPerSec / 1e6).toFixed(1)} MB/s` : '')
+        : (job.phase || 'Working') + '…';
+      bar.hidden = false; bar.firstElementChild.style.width = (job.phase === 'Downloading' ? pct : 100) + '%';
+      btn.textContent = 'Cancel'; btn.disabled = false;
+      btn.onclick = async () => { btn.disabled = true; try { await send('POST', '/api/llamacpp/cancel'); } catch {} };
+      return;
+    }
+    let msg = note, bad = noteBad;
+    if (!msg && job && (job.state === 'failed' || job.state === 'canceled') && Date.now() - Date.parse(job.finished) < 5 * 60e3) {
+      msg = job.state === 'canceled' ? 'The install was canceled. Nothing was changed.' : 'The install failed: ' + job.error + ' Nothing was changed.';
+      bad = job.state === 'failed';
+    }
+    const say = (text) => { sub.textContent = text + (msg ? ' ' + msg : ''); sub.classList.toggle('settings-warn', bad); };
+    if (!st.supported) {
+      title.textContent = 'Official llama.cpp release';
+      say('llama.cpp has no ready-made build for this system. Install llama.cpp yourself and put llama-server on your PATH, or start ollamui with -llama-server.');
+      btn.hidden = true; return;
+    }
+    const known = chk && chk.supported ? chk : null;
+    const mb = known ? `, ~${size(known.size)}` : '';
+    const checkFail = chk && chk.error ? ' Couldn’t reach GitHub: ' + chk.error : '';
+    if (!st.installed) {
+      const have = st.source !== 'none';
+      title.textContent = have ? `Official llama.cpp release (${label})` : 'Install llama.cpp';
+      say(have
+        ? 'Not installed. ollamui can download llama.cpp’s official ready-made build into its own folder (' + label + ', works on most GPUs). The llama.cpp you have now stays where it is, untouched, and keeps being used until you switch.' + checkFail
+        : 'Models can’t run without it. ollamui downloads llama.cpp’s official ready-made build from its GitHub releases into its own folder (' + label + ', works on most GPUs; it needs the system Vulkan loader, libvulkan).' + checkFail);
+      btn.textContent = `${have ? 'Download' : 'Install llama.cpp'} (${label}${mb})`;
+      if (!have) btn.className = 'btn primary';
+      btn.onclick = () => install(false);
+      return;
+    }
+    const inUse = st.source === 'release';
+    title.textContent = `Official llama.cpp release ${st.installed} (${label})`;
+    let text;
+    if (inUse) text = 'In use.';
+    else if (st.source === 'flag') text = 'Not in use: -llama-server takes priority.';
+    else if (st.source === 'own') text = 'Not in use: your own build (' + st.ownPath + ') comes first. It isn’t touched; switch to try this one.';
+    else text = 'Not in use.';
+    if (inUse && st.probe) {
+      const p = st.probe;
+      if (p.error) text += ' It won’t start: ' + p.error + ' (Vulkan needs the system loader, libvulkan.so.1, from your distro’s Vulkan package.)';
+      else if (p.devices && p.devices.length) text += ' GPU: ' + p.devices.join('; ') + '.';
+      else if (p.listed) text += ' Vulkan found no GPU, so models will run on the CPU, which is slow. Check that your GPU driver and the Vulkan loader (libvulkan.so.1) are installed.';
+    }
+    say(text + (known && known.upToDate ? ' Up to date.' : '') + (chk && chk.error ? ' Couldn’t check for updates: ' + chk.error : ''));
+    if (known && !known.upToDate && known.tag) {
+      btn.textContent = `Update to ${known.tag} (~${size(known.size)})`; btn.className = 'btn primary';
+      btn.onclick = () => install(false);
+    } else {
+      btn.textContent = 'Check for update'; btn.className = 'btn subtle';
+      btn.onclick = recheck;
+    }
+    if (st.ownPath && st.source !== 'flag') {
+      alt.hidden = false; alt.textContent = inUse ? 'Use my own build' : 'Use this release';
+      alt.onclick = () => use(!inUse);
+    }
+  }
+  async function use(release) {
+    busy = true; render();
+    try { await send('PUT', '/api/llamacpp/use', { release }); location.hash = 'models'; location.reload(); }
+    catch (err) { busy = false; note = 'Couldn’t switch: ' + err.message; noteBad = true; render(); }
+  }
+  async function recheck() {
+    busy = true; note = ''; render(); state.textContent = 'Checking…';
+    try { chk = await api('/api/llamacpp/check?fresh=1'); } catch (err) { chk = { error: err.message }; }
+    busy = false; render();
+  }
+  async function install(force) {
+    busy = true; note = ''; render();
+    try {
+      st.job = await send('POST', '/api/llamacpp/install', { force });
+    } catch (err) {
+      busy = false;
+      if (err.status === 409 && err.body.running) {
+        const n = err.body.running;
+        if (confirm(`${n.join(', ')} ${n.length > 1 ? 'are' : 'is'} loaded from this llama.cpp. Updating stops ${n.length > 1 ? 'them' : 'it'}; ${n.length > 1 ? 'they load' : 'it loads'} again on the next message. Continue?`)) return install(true);
+        return render();
+      }
+      note = 'Couldn’t start: ' + err.message; noteBad = true; return render();
+    }
+    busy = false; render(); poll();
+  }
+  function poll() {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      try { st = await api('/api/llamacpp'); } catch { return poll(); }
+      if (st.job && st.job.state === 'running') { render(); return poll(); }
+      if (st.job && st.job.state === 'done') { location.hash = 'models'; location.reload(); return; }
+      render();
+    }, 600);
+  }
+  (async () => {
+    try { st = await api('/api/llamacpp'); } catch { return; }
+    render();
+    const running = st.job && st.job.state === 'running';
+    if (running) poll();
+    if (st.supported) {
+      try { chk = await api('/api/llamacpp/check'); } catch (err) { chk = { error: err.message }; }
+      if (!(st.job && st.job.state === 'running')) render();
+    }
+  })();
 })();
 </script>
 {{end}}

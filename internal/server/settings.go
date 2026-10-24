@@ -95,6 +95,10 @@ type enginePage struct {
 	// What a model without its own settings gets.
 	CacheType, FlashAttn, KeepAlive string
 	Saved                           []savedModel
+	// Install is set when ollamui can install llama.cpp (the page's script
+	// fills in the rest from /api/llamacpp).
+	Install bool
+	Source  string // flag, own, release, path or none
 }
 
 type savedModel struct {
@@ -112,6 +116,10 @@ type engineInfo interface {
 func (s *Server) enginePage(ctx context.Context, e engineInfo) *enginePage {
 	p := &enginePage{Server: e.ServerPath(), Backend: e.Backend(), CacheType: e.CacheType(), FlashAttn: e.FlashAttn(), KeepAlive: keepAliveText(e.KeepAlive().String())}
 	p.Version, _ = s.ollama.Version(ctx)
+	if s.llama != nil {
+		p.Install = true
+		_, p.Source = s.llama.Resolve()
+	}
 	for name, opts := range e.SavedSettings() {
 		p.Saved = append(p.Saved, savedModel{Name: name, Summary: settingsSummary(opts)})
 	}

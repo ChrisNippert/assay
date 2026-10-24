@@ -24,6 +24,7 @@ import (
 	"ollamui/internal/chats"
 	"ollamui/internal/hf"
 	"ollamui/internal/hw"
+	"ollamui/internal/llamacpp"
 	"ollamui/internal/ollama"
 	"ollamui/internal/presets"
 	"ollamui/internal/projects"
@@ -63,6 +64,8 @@ type Options struct {
 	Presets *presets.Store
 	HF      *hf.Client
 	Pulls   *pulls.Manager
+	// LlamaCpp installs llama.cpp releases (Settings); nil with Ollama.
+	LlamaCpp *llamacpp.Manager
 	// Scores is optional; without it nothing is rated.
 	Scores *scores.Store
 	// Bench keeps speed tests; without it they aren't saved.
@@ -92,6 +95,7 @@ type Server struct {
 	hf      *hf.Client
 	pulls   *pulls.Manager
 	move    moveJob // the models folder move, if any
+	llama   *llamacpp.Manager
 	scores  *scores.Store
 	bench   *bench.Store
 	// projects, their RAG settings, and files waiting to be indexed.
@@ -125,7 +129,7 @@ type Server struct {
 func New(opts Options) (*Server, error) {
 	s := &Server{
 		ollama: opts.Ollama, chats: opts.Chats, presets: opts.Presets,
-		hf: opts.HF, pulls: opts.Pulls, scores: opts.Scores, bench: opts.Bench, projects: opts.Projects, ragSt: opts.RAGSettings, indexQueue: make(chan indexJob, 256), voice: opts.Voice, voiceSt: opts.VoiceSettings, speech: opts.VoiceLauncher, memory: opts.Memory, log: opts.Logger,
+		hf: opts.HF, pulls: opts.Pulls, llama: opts.LlamaCpp, scores: opts.Scores, bench: opts.Bench, projects: opts.Projects, ragSt: opts.RAGSettings, indexQueue: make(chan indexJob, 256), voice: opts.Voice, voiceSt: opts.VoiceSettings, speech: opts.VoiceLauncher, memory: opts.Memory, log: opts.Logger,
 		vramUsed: hw.VRAMUsed,
 	}
 	if s.bench == nil {
@@ -221,6 +225,11 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("GET /v1/models", s.handleV1Models)
 	mux.HandleFunc("POST /v1/chat/completions", s.handleV1Chat)
 	mux.HandleFunc("POST /v1/embeddings", s.handleV1Embeddings)
+	mux.HandleFunc("GET /api/llamacpp", s.handleLlamaStatus)
+	mux.HandleFunc("GET /api/llamacpp/check", s.handleLlamaCheck)
+	mux.HandleFunc("POST /api/llamacpp/install", s.handleLlamaInstall)
+	mux.HandleFunc("POST /api/llamacpp/cancel", s.handleLlamaCancel)
+	mux.HandleFunc("PUT /api/llamacpp/use", s.handleLlamaUse)
 
 	mux.HandleFunc("GET /api/presets", s.handlePresetList)
 	mux.HandleFunc("PUT /api/presets/{name}", s.handlePresetSave)

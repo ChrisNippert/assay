@@ -801,3 +801,9 @@ a.tag-link:hover { border-color: var(--accent-line); color: var(--accent-text); 
 @media (pointer: coarse) {
   html input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), html select, html textarea { font-size: 16px !important; }
 }
+
+/* llama.cpp install row (Settings -> Models) */
+.lc-row[hidden] { display: none; }
+.lc-row .row-ctrl { flex-wrap: wrap; justify-content: flex-end; }
+.lc-bar { margin-top: var(--s2); height: 6px; border-radius: 3px; background: var(--soft); overflow: hidden; }
+.lc-bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; }
