@@ -108,16 +108,9 @@ func (r Repo) Vision() bool {
 	return false
 }
 
-// generativeMedia are pipelines for models that make images, video or
-// audio. Their GGUFs (e.g. FLUX, Qwen-Image) aren't chat models Ollama can run.
-var generativeMedia = map[string]bool{
-	"text-to-image": true, "image-to-image": true, "text-to-video": true, "image-to-video": true,
-	"text-to-speech": true, "text-to-audio": true, "unconditional-image-generation": true,
-}
-
 // IsChatModel reports whether the repo looks like a text model rather than
 // an image, video or audio generator.
-func (r Repo) IsChatModel() bool { return !generativeMedia[r.PipelineTag] }
+func (r Repo) IsChatModel() bool { return !r.Generator() }
 
 // IsDraft reports whether the repo is a draft model for speculative
 // decoding (DSpark, DFlash, EAGLE): small, fast, and only useful next to
@@ -178,6 +171,8 @@ type SearchParams struct {
 	Query  string
 	Author string
 	Max    int // stop after this many repos; 0 means DefaultSearchMax
+	// Pipeline asks Hugging Face for one pipeline tag only, e.g. "text-to-image".
+	Pipeline string
 }
 
 // DefaultSearchMax caps how many repos one search fetches. All of Unsloth's
@@ -199,6 +194,9 @@ func (c *Client) Search(ctx context.Context, p SearchParams) (repos []Repo, trun
 	}
 	if p.Author != "" {
 		q.Set("author", p.Author)
+	}
+	if p.Pipeline != "" {
+		q.Set("pipeline_tag", p.Pipeline)
 	}
 	q.Set("sort", "downloads")
 	q.Set("direction", "-1")

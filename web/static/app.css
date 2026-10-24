@@ -256,6 +256,7 @@ table.models { width: 100%; border-collapse: collapse; }
 .chip { font: inherit; font-size: var(--fs-xs); background: none; color: var(--text-2); border: 1px solid var(--border-strong); border-radius: 999px; padding: 2px 10px; cursor: pointer; }
 .chip:hover { background: var(--soft); }
 .chip.on, .chip[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent-line); }
+.io-row { display: flex; flex-direction: column; gap: 4px; }
 .segmented { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--border-strong); border-radius: 5px; overflow: hidden; }
 .segmented button { font: inherit; font-size: var(--fs-sm); background: none; color: var(--text-2); border: none; padding: 5px; cursor: pointer; }
 .segmented button + button { border-left: 1px solid var(--border-strong); }

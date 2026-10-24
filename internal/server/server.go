@@ -444,6 +444,7 @@ var templateFuncs = template.FuncMap{
 		return rest
 	},
 	"bytes": formatBytes,
+	"join":  strings.Join,
 	"kib":   func(n int) int { return (n + 512) / 1024 },
 	// compact formats counts like 1329922 as "1.3M".
 	"compact": func(n int) string {

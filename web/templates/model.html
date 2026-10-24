@@ -13,6 +13,7 @@
 
   {{with .Data.Repo}}
   {{if $.Data.Draft}}<div class="banner draft-banner" role="note"><strong>This is a draft model, not a model to chat with.</strong> It's a small helper for speculative decoding: it guesses the next few tokens so {{with $.Data.DraftFor}}<a href="/discover?open={{.}}">{{.}}</a>{{else}}the big model it was trained for{{end}} can confirm them in one step and write faster. ollamui can't download draft GGUFs yet; to speed a model up, pick a smaller model of the same family as its draft in Tune.</div>{{end}}
+  {{if $.Data.Generator}}<div class="banner draft-banner" role="note"><strong>This model makes {{join $.Data.Out " and "}}, which ollamui can't run.</strong> ollamui can't run image, video or audio generators yet: llama.cpp runs text models, plus image and some audio input through an mmproj file. The files are on <a href="https://huggingface.co/{{.ID}}" target="_blank" rel="noopener">Hugging Face ↗</a> for other tools.</div>{{end}}
   <header class="model-head">
     <div class="model-title">
       <h1>{{.Name}}</h1>
@@ -20,7 +21,7 @@
         <a class="row-link muted" href="/discover?author={{.Author}}" title="More from {{.Author}}">{{.Author}}</a>
         {{with billions .Params}}<a class="tag tag-link" href="/discover?author={{$.Data.Repo.Author}}&type={{if $.Data.MoE}}moe{{else}}dense{{end}}" title="More {{if $.Data.MoE}}MoE{{else}}dense{{end}} models">{{if $.Data.MoE}}MoE {{else}}dense {{end}}{{.}}</a>{{end}}
         {{with .Arch}}<a class="tag tag-link" href="/discover?author={{$.Data.Repo.Author}}&arch={{.}}" title="More {{.}} models">{{.}}</a>{{end}}
-        {{if $.Data.Vision}}<a class="tag tag-link" href="/discover?author={{$.Data.Repo.Author}}&vision=1" title="More vision models">vision</a>{{end}}
+        <a class="tag tag-link" href="/discover?author={{$.Data.Repo.Author}}&takes={{join $.Data.In ","}}&makes={{join $.Data.Out ","}}" title="More models that take {{join $.Data.In " and "}} and make {{or (join $.Data.Out " and ") "no text"}}">{{join $.Data.In "+"}} → {{or (join $.Data.Out "+") "embeddings"}}</a>
         {{with .ContextLength}}<span class="tag">{{kib .}}k ctx</span>{{end}}
         {{if .IsGated}}<span class="tag warn">gated: needs HF_TOKEN</span>{{end}}
       </div>
@@ -33,7 +34,7 @@
 
   <div class="model-body">
     <section class="card quants">
-      {{if $.Data.Draft}}<div class="card-head"><h2>Files</h2></div>{{else}}
+      {{if or $.Data.Draft $.Data.Generator}}<div class="card-head"><h2>Files</h2></div>{{else}}
       <div class="card-head">
         <h2>Pick a quant</h2>
         <form method="get" class="ctx-form small">
@@ -50,6 +51,7 @@
       </p>
       {{if not $.Data.Quants}}<p class="muted">{{if $.Data.Drafts}}No quants of a model to chat with here, only draft models (below).{{else}}No GGUF quants found in this repo.{{end}}</p>{{end}}
       {{end}}
+      {{if $.Data.Generator}}<p class="muted">No download is offered: ollamui can't run image, video or audio generators yet.</p>{{end}}
       <div class="quant-list">
         {{range $.Data.Quants}}
         <div class="quant-row{{if .Best}} best{{end}}" data-tag="{{.Tag}}">
@@ -103,6 +105,8 @@
           <dt>Architecture</dt><dd>{{or .Arch "unknown"}}</dd>
           <dt>Parameters</dt><dd>{{or (billions .Params) "unknown"}}{{if $.Data.MoE}} (MoE){{end}}</dd>
           <dt>Trained context</dt><dd>{{if .ContextLength}}{{kib .ContextLength}}k tokens{{else}}unknown{{end}}</dd>
+          <dt>Takes</dt><dd>{{join $.Data.In ", "}}</dd>
+          <dt>Makes</dt><dd>{{or (join $.Data.Out ", ") "nothing (embeddings)"}}</dd>
           <dt>Pipeline</dt><dd>{{or .PipelineTag "—"}}</dd>
         </dl>
       </section>

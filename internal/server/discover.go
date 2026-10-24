@@ -28,14 +28,19 @@ func (s *Server) handleDiscover(w http.ResponseWriter, r *http.Request) {
 
 // searchResult is one row on the Discover page.
 type searchResult struct {
-	ID        string    `json:"id"`
-	Author    string    `json:"author"`
-	Name      string    `json:"name"`
-	Params    int64     `json:"params"`
-	Arch      string    `json:"arch"`
-	Context   int       `json:"context"`
-	MoE       bool      `json:"moe"`
-	Vision    bool      `json:"vision"`
+	ID      string   `json:"id"`
+	Author  string   `json:"author"`
+	Name    string   `json:"name"`
+	Params  int64    `json:"params"`
+	Arch    string   `json:"arch"`
+	Context int      `json:"context"`
+	MoE     bool     `json:"moe"`
+	Vision  bool     `json:"vision"`
+	In      []string `json:"in"`  // what it takes: text, image, video, audio
+	Out     []string `json:"out"` // what it makes
+	// Generator marks a model that makes images, video or audio and no text,
+	// which llama.cpp can't run.
+	Generator bool      `json:"generator,omitempty"`
 	Gated     bool      `json:"gated"`
 	Downloads int       `json:"downloads"`
 	Likes     int       `json:"likes"`
@@ -66,18 +71,20 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		Query:  strings.TrimSpace(q.Get("q")),
 		Author: strings.TrimSpace(q.Get("author")),
 	}
-	repos, truncated, err := s.search.get(params, func() ([]hf.Repo, bool, error) {
-		return s.hf.Search(r.Context(), params)
-	})
+	takes, makes := modalityList(q.Get("takes")), modalityList(q.Get("makes"))
+	repos, truncated, err := s.searchModalities(r.Context(), params, takes, makes)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	installed := s.installedRepos(r.Context())
 	kvf := s.kvFactor(r.Context())
+	// Generators stay out of the list unless the page asked for something
+	// other than text to be made.
+	wantMedia := makesMedia(makes)
 	out := make([]searchResult, 0, len(repos))
 	for _, repo := range repos {
-		if !repo.IsChatModel() {
+		if repo.Generator() && !wantMedia {
 			continue
 		}
 		params := repo.Params()
@@ -90,11 +97,17 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 			Updated:   repo.LastModified,
 			Installed: installed[strings.ToLower(repo.ID)],
 		}
+		res.In, res.Out = repo.Modalities()
+		res.Generator = repo.Generator()
 		res.Score, res.ScoreOf = s.scoreFor(repo.Tags)
 		res.Draft, res.DraftFor = repo.IsDraft(), repo.DraftFor()
 		if params > 0 {
 			res.Q4Size = params * 48 / 80 // ~4.8 bits per weight, typical of Q4_K_M
 			res.Fit = hw.Classify(hw.EstimateKV(res.Q4Size, params, discoverCtx, moe, kvf), s.memory)
+		}
+		if res.Generator {
+			res.Fit = hw.Fit{Level: "draft", Label: "Can\u2019t run here"}
+			res.Score, res.ScoreOf = nil, ""
 		}
 		if res.Draft {
 			// Fitting on the GPU says nothing useful about a draft, and it
@@ -108,6 +121,77 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		"results": out, "truncated": truncated, "max": hf.DefaultSearchMax,
 		"memory": s.memory, "context": discoverCtx,
 	})
+}
+
+// modalityList parses a comma-separated list of modalities, dropping
+// anything that isn't one.
+func modalityList(v string) []string {
+	var out []string
+	for _, m := range strings.Split(v, ",") {
+		if slices.Contains(hf.Modalities, m) && !slices.Contains(out, m) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// makesMedia reports whether the selection asks for image, video or audio output.
+func makesMedia(makes []string) bool {
+	for _, m := range makes {
+		if m != "text" {
+			return true
+		}
+	}
+	return false
+}
+
+// searchModalities runs the ordinary search and, when the Takes/Makes
+// selection points at models a plain search would bury (speech
+// recognition, image or audio generators), a search per matching pipeline
+// tag too, merged by downloads. Asking only for things that make media
+// skips the ordinary search: its results would all be filtered out.
+func (s *Server) searchModalities(ctx context.Context, p hf.SearchParams, takes, makes []string) ([]hf.Repo, bool, error) {
+	run := func(p hf.SearchParams) ([]hf.Repo, bool, error) {
+		return s.search.get(p, func() ([]hf.Repo, bool, error) { return s.hf.Search(ctx, p) })
+	}
+	var pipes []string
+	if makesMedia(makes) || slices.Contains(takes, "audio") || slices.Contains(takes, "video") {
+		pipes = hf.SearchPipelines(takes, makes)
+	}
+	if len(pipes) == 0 {
+		return run(p)
+	}
+	var all []hf.Repo
+	var truncated bool
+	seen := map[string]bool{}
+	add := func(p hf.SearchParams) error {
+		repos, t, err := run(p)
+		if err != nil {
+			return err
+		}
+		truncated = truncated || t
+		for _, r := range repos {
+			if !seen[r.ID] {
+				seen[r.ID] = true
+				all = append(all, r)
+			}
+		}
+		return nil
+	}
+	if !makesMedia(makes) || slices.Contains(makes, "text") {
+		if err := add(p); err != nil {
+			return nil, false, err
+		}
+	}
+	for _, pipe := range pipes {
+		pp := p
+		pp.Pipeline = pipe
+		if err := add(pp); err != nil {
+			return nil, false, err
+		}
+	}
+	sort.SliceStable(all, func(i, j int) bool { return all[i].Downloads > all[j].Downloads })
+	return all, truncated, nil
 }
 
 // scoreFor rates a repo by the model it was quantized from. Finetunes and
@@ -218,10 +302,14 @@ type setting struct {
 }
 
 type modelPageData struct {
-	Repo        *hf.Repo
-	Quants      []quantRow
-	MoE         bool
-	Vision      bool
+	Repo    *hf.Repo
+	Quants  []quantRow
+	MoE     bool
+	Vision  bool
+	In, Out []string // what the model takes and makes
+	// Generator marks a model that makes images, video or audio and no text:
+	// nothing here can run it, so no quants are offered.
+	Generator   bool
 	Recommended []setting
 	Ctx         int
 	CtxOptions  []int
@@ -312,7 +400,15 @@ func (s *Server) handleModelPage(w http.ResponseWriter, r *http.Request) {
 	quants, vision := hf.Quants(repo.ID, files)
 	data.Vision = vision || repo.Vision()
 	data.Draft, data.DraftFor = repo.IsDraft(), repo.DraftFor()
+	data.In, data.Out = repo.Modalities()
+	if vision && !slices.Contains(data.In, "image") && slices.Contains(data.Out, "text") {
+		data.In = slices.SortedFunc(slices.Values(append(data.In, "image")), func(a, b string) int { return slices.Index(hf.Modalities, a) - slices.Index(hf.Modalities, b) }) // a projector means it sees
+	}
+	data.Generator = repo.Generator()
 	for _, q := range quants {
+		if data.Generator {
+			break
+		}
 		if q.Draft || data.Draft {
 			data.Drafts = append(data.Drafts, quantRow{Quant: q})
 			continue

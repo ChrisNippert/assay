@@ -4,6 +4,30 @@
     <div class="filters-head"><span class="filters-title">Filters</span><button type="button" class="link-btn" id="f-clear">Clear all</button></div>
 
     <fieldset>
+      <legend>Takes → Makes</legend>
+      <p class="muted small hint">Image → text is vision; audio → text is speech recognition.</p>
+      <div class="io-row">
+        <span class="muted small">Takes</span>
+        <div class="chips" id="f-takes" role="group" aria-label="Takes">
+          <button type="button" class="chip" data-mod="text" aria-pressed="false">Text</button>
+          <button type="button" class="chip" data-mod="image" aria-pressed="false">Image</button>
+          <button type="button" class="chip" data-mod="video" aria-pressed="false">Video</button>
+          <button type="button" class="chip" data-mod="audio" aria-pressed="false">Audio</button>
+        </div>
+      </div>
+      <div class="io-row">
+        <span class="muted small">Makes</span>
+        <div class="chips" id="f-makes" role="group" aria-label="Makes">
+          <button type="button" class="chip" data-mod="text" aria-pressed="false">Text</button>
+          <button type="button" class="chip" data-mod="image" aria-pressed="false">Image</button>
+          <button type="button" class="chip" data-mod="video" aria-pressed="false">Video</button>
+          <button type="button" class="chip" data-mod="audio" aria-pressed="false">Audio</button>
+        </div>
+      </div>
+      <p class="muted small hint" id="f-io-note" hidden>Image, video and audio makers are shown but marked: ollamui can't run them yet.</p>
+    </fieldset>
+
+    <fieldset>
       <legend>Size (total params)</legend>
       <div class="range-row">
         <label class="sr-only" for="f-min">Minimum, billions</label>
@@ -40,7 +64,6 @@
     <fieldset>
       <legend>Can do</legend>
       <div class="checklist">
-        <label><input type="checkbox" id="f-vision">Vision</label>
         <label><input type="checkbox" id="f-longctx">128k+ context</label>
         <label><input type="checkbox" id="f-rated">Has intelligence score</label>
       </div>

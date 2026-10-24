@@ -15,7 +15,7 @@
   const minIn = $('f-min');
   const maxIn = $('f-max');
   const archBox = $('f-arch');
-  const checks = { vision: 'f-vision', long: 'f-longctx', rated: 'f-rated', fits: 'f-fits', hideInstalled: 'f-hide-installed', hideGated: 'f-hide-gated', hideDrafts: 'f-hide-drafts' };
+  const checks = { long: 'f-longctx', rated: 'f-rated', fits: 'f-fits', hideInstalled: 'f-hide-installed', hideGated: 'f-hide-gated', hideDrafts: 'f-hide-drafts' };
 
   const PAGE = 20;
   const memory = JSON.parse(root.dataset.memory || '{}');
@@ -27,6 +27,9 @@
   let truncated = false;
   let max = 1000;
   let type = '';
+  const takes = new Set(); // modalities the model must take; empty means any
+  const makes = new Set(); // ...and must make
+  const MODS = ['text', 'image', 'video', 'audio'];
   const archs = new Set(); // selected architectures; empty means any
   let limit = PAGE;
   let controller = null;
@@ -56,6 +59,8 @@
     if (maxIn.value) p.set('max', maxIn.value);
     if (type) p.set('type', type);
     if (archs.size) p.set('arch', [...archs].join(','));
+    if (takes.size) p.set('takes', [...takes].join(','));
+    if (makes.size) p.set('makes', [...makes].join(','));
     for (const [key, id] of Object.entries(checks)) if ($(id).checked) p.set(key, '1');
     if (openId) p.set('open', openId);
     return '?' + p;
@@ -73,6 +78,10 @@
     maxIn.value = p.get('max') || '';
     setType(p.get('type') || '');
     for (const a of (p.get('arch') || '').split(',')) if (a) archs.add(a);
+    for (const m of (p.get('takes') || '').split(',')) if (MODS.includes(m)) takes.add(m);
+    for (const m of (p.get('makes') || '').split(',')) if (MODS.includes(m)) makes.add(m);
+    if (p.get('vision') === '1') takes.add('image'); // the old Vision checkbox
+    syncIO();
     for (const [key, id] of Object.entries(checks)) $(id).checked = p.get(key) === '1';
   }
 
@@ -81,6 +90,9 @@
     controller?.abort();
     controller = new AbortController();
     const params = new URLSearchParams({ q: q.value.trim(), author: author.value });
+    if (takes.size) params.set('takes', [...takes].join(','));
+    if (makes.size) params.set('makes', [...makes].join(','));
+    fetched = ioKey();
     saveURL();
     meta.textContent = 'Searching Hugging Face…';
     try {
@@ -103,6 +115,39 @@
   }
 
   // ---- filters ----
+  // The server only needs to hear about Takes/Makes when they point at models
+  // an ordinary search buries (media makers, audio or video input).
+  let fetched = '';
+  const ioKey = () => {
+    const media = [...makes].some((m) => m !== 'text') || takes.has('audio') || takes.has('video');
+    return media ? [...takes].join() + '>' + [...makes].join() : '';
+  };
+
+  function syncIO() {
+    for (const [set, id] of [[takes, 'f-takes'], [makes, 'f-makes']]) {
+      for (const b of $(id).querySelectorAll('.chip')) b.setAttribute('aria-pressed', String(set.has(b.dataset.mod)));
+    }
+    $('f-io-note').hidden = ![...makes].some((m) => m !== 'text');
+  }
+
+  function toggleIO(set, mod) {
+    if (!set.delete(mod)) set.add(mod);
+    ioChanged();
+  }
+
+  // Set Takes and Makes at once, e.g. from a tag on a result.
+  function setIO(inn, out) {
+    takes.clear(); makes.clear();
+    for (const m of inn) takes.add(m);
+    for (const m of out) makes.add(m);
+    ioChanged();
+  }
+
+  function ioChanged() {
+    syncIO();
+    if (ioKey() !== fetched) { limit = PAGE; search(); } else changed();
+  }
+
   function buildArchFilter() {
     const counts = new Map();
     for (const r of results) {
@@ -143,7 +188,10 @@
     if (type === 'moe' && !r.moe) return false;
     if (type === 'dense' && r.moe) return false;
     if (archs.size && !archs.has(r.arch || 'unknown')) return false;
-    if ($('f-vision').checked && !r.vision) return false;
+    for (const m of takes) if (!r.in.includes(m)) return false;
+    for (const m of makes) if (!r.out.includes(m)) return false;
+    // Generators show only when something other than text is asked for.
+    if (r.generator && ![...makes].some((m) => m !== 'text')) return false;
     if ($('f-longctx').checked && r.context < 131072) return false;
     if ($('f-rated').checked && r.score == null) return false;
     if ($('f-fits').checked && r.fit.level !== 'gpu' && r.fit.level !== 'tight') return false;
@@ -274,9 +322,17 @@
         changed();
       }));
     }
-    if (r.vision) tags.append(filterTag('vision', 'Only models that take images', () => { $('f-vision').checked = true; changed(); }));
+    {
+      const io = `${r.in.join('+') || 'nothing'} \u2192 ${r.out.join('+') || 'embeddings'}`;
+      tags.append(filterTag(io, 'Only models that take and make this', () => setIO(r.in, r.out), r.generator ? 'generator' : ''));
+    }
     if (r.context >= 131072) {
       tags.append(filterTag(`${Math.round(r.context / 1024)}k ctx`, 'Only models with 128k+ context', () => { $('f-longctx').checked = true; changed(); }));
+    }
+    if (r.generator) {
+      const t = el('span', 'tag draft', 'not runnable here');
+      t.title = 'ollamui can\u2019t run image, video or audio generators yet';
+      tags.append(t);
     }
     if (r.draft) {
       const t = el('span', 'tag draft', 'draft model');
@@ -288,7 +344,11 @@
     main.append(tags);
 
     const side = el('div', 'r-side small');
-    if (r.draft) {
+    if (r.generator) {
+      const fit = el('div', 'r-fit fit-draft', 'Can\u2019t run here');
+      fit.title = 'ollamui can\u2019t run image, video or audio generators yet';
+      side.append(fit, el('div', 'muted', `makes ${r.out.join(' and ')}`));
+    } else if (r.draft) {
       const fit = el('div', 'r-fit fit-draft', 'Draft model');
       fit.title = 'Speeds up another model through speculative decoding; it can\u2019t chat on its own';
       side.append(fit, el('div', 'muted', r.draftFor ? `for ${r.draftFor.split('/').pop()}` : 'not the actual model'));
@@ -410,13 +470,18 @@
   for (const b of document.querySelectorAll('#f-type button')) {
     b.addEventListener('click', () => { setType(b.dataset.value); changed(); });
   }
+  for (const [set, id] of [[takes, 'f-takes'], [makes, 'f-makes']]) {
+    for (const b of $(id).querySelectorAll('.chip')) b.addEventListener('click', () => toggleIO(set, b.dataset.mod));
+  }
   $('f-clear').addEventListener('click', () => {
+    const refetch = ioKey() !== '';
+    takes.clear(); makes.clear(); syncIO();
     minIn.value = maxIn.value = '';
     setType('');
     archs.clear();
     for (const id of Object.values(checks)) $(id).checked = false;
     buildArchFilter();
-    changed();
+    if (refetch) search(); else changed();
   });
 
   loadURL();
