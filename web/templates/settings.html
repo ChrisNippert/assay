@@ -196,6 +196,7 @@
 
   function paintRun(m) {
     f('mf-run').hidden = m.state !== 'running';
+    if (m.state === 'running') f('mf-edit').hidden = true;
     if (m.state !== 'running') return;
     const copy = m.total > 0 && m.kind === 'move' && m.done > 0;
     f('mf-run-title').textContent = m.kind === 'switch' ? 'Switching…' : 'Moving the models…';

@@ -148,7 +148,7 @@ func (s *Store) Plan(dst string) (*MovePlan, error) {
 		}
 		return p, nil
 	}
-	p.SameDisk = sameDisk(cur, dst)
+	p.SameDisk = SameDisk(cur, dst)
 	if !p.SameDisk {
 		p.Bytes, p.Linked, p.LinkedCount = scan(cur)
 	}

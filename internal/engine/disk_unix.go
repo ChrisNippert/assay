@@ -41,9 +41,9 @@ func DiskTotal(path string) (int64, error) {
 	return int64(st.Blocks) * int64(st.Bsize), nil
 }
 
-// sameDisk reports whether a and b (or their closest existing parents) are
+// SameDisk reports whether a and b (or their closest existing parents) are
 // on one filesystem, so a rename between them is instant.
-func sameDisk(a, b string) bool {
+func SameDisk(a, b string) bool {
 	var x, y syscall.Stat_t
 	if syscall.Stat(nearest(a), &x) != nil || syscall.Stat(nearest(b), &y) != nil {
 		return false

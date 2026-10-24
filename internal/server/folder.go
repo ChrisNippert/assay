@@ -49,7 +49,7 @@ type diskMount struct {
 }
 
 // mounts lists mounted disks (from /proc/mounts) worth offering.
-func mounts() []diskMount {
+func mounts(cur string) []diskMount {
 	f, err := os.Open("/proc/mounts")
 	if err != nil {
 		return nil
@@ -68,6 +68,9 @@ func mounts() []diskMount {
 			continue
 		}
 		seen[fields[0]] = true
+		if engine.SameDisk(path, cur) {
+			continue // where the models are already
+		}
 		free, err := engine.DiskFree(path)
 		total, _ := engine.DiskTotal(path)
 		if err != nil || total == 0 {
@@ -75,7 +78,7 @@ func mounts() []diskMount {
 		}
 		m := diskMount{Path: path, Free: free, Total: total, Suggest: filepath.Join(path, "ollamui", "models")}
 		if path == "/" {
-			m.Suggest = "/opt/ollamui/models"
+			m.Suggest = filepath.Join(os.Getenv("HOME"), "ollamui-models") // / itself isn't writable
 		}
 		out = append(out, m)
 	}
@@ -106,7 +109,7 @@ func (s *Server) folderInfo() map[string]any {
 	total, _ := engine.DiskTotal(st.Dir())
 	return map[string]any{
 		"dir": st.Dir(), "used": used, "free": free, "total": total,
-		"pinned": mf.FolderPinned(), "mounts": mounts(),
+		"pinned": mf.FolderPinned(), "mounts": mounts(st.Dir()),
 		"move": s.move.snapshot(), "pulling": s.pullsRunning(),
 	}
 }

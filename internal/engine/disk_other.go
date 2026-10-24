@@ -13,5 +13,6 @@ func DiskFree(path string) (int64, error) { return 0, errors.New("not supported 
 // DiskTotal is the size of the disk holding path.
 func DiskTotal(path string) (int64, error) { return 0, errors.New("not supported here") }
 
-func sameDisk(a, b string) bool         { return false }
+// SameDisk reports whether a and b are on one filesystem.
+func SameDisk(a, b string) bool         { return false }
 func linkCount(info os.FileInfo) uint64 { return 1 }
