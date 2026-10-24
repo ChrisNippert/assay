@@ -12,6 +12,7 @@ import (
 
 func (s *Server) handlePresetsPage(w http.ResponseWriter, r *http.Request) {
 	p := s.basePage(r.Context(), "presets", "Presets")
+	_, p.Data = s.ollama.(apiEngine)
 	s.render(w, "presets", p)
 }
 

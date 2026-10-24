@@ -722,3 +722,6 @@
     else if (tune && !tuneOpen) document.getElementById('tune-btn')?.click();
   }, { passive: true });
 })();
+
+// The API address on the presets page.
+document.querySelectorAll('[data-api-url]').forEach((el) => { el.textContent = location.origin + '/v1'; });

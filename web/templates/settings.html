@@ -49,6 +49,13 @@
       <div class="row-text"><span class="row-title">Defaults</span><span class="row-sub">A model without its own settings uses a {{if eq .CacheType "q8_0"}}half-size (q8_0){{else if eq .CacheType "q4_0"}}quarter-size (q4_0){{else}}full-size (f16){{end}} context cache, flash attention {{.FlashAttn}}, and stays loaded {{.KeepAlive}} after the last message.</span></div>
     </div>
   </div>
+  <h3 class="group-title settings-sub">API for other apps</h3>
+  <div class="boxed-list">
+    <div class="row">
+      <div class="row-text"><span class="row-title">OpenAI-compatible API</span><span class="row-sub">Set this as the API URL in Zed or another editor. Installed models and presets are listed, and tools work. <span class="mono" id="api-url">/v1</span></span></div>
+      <div class="row-ctrl"><button type="button" class="btn" id="api-copy">Copy</button></div>
+    </div>
+  </div>
   <h3 class="group-title settings-sub">Models with their own settings</h3>
   <div class="boxed-list" id="saved-list">
     {{range .Saved}}
@@ -154,6 +161,24 @@
   </div>
 </div>
 <script>
+(() => {
+  // ---- API address ----
+  const url = location.origin + '/v1';
+  const label = document.getElementById('api-url');
+  if (label) label.textContent = url;
+  document.getElementById('api-copy')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    try {
+      if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(url);
+      else {
+        const t = document.createElement('textarea');
+        t.value = url; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove();
+      }
+      btn.textContent = 'Copied';
+    } catch { btn.textContent = 'Couldn’t copy'; }
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+  });
+})();
 (() => {
   // ---- models with their own settings ----
   document.getElementById('saved-list')?.addEventListener('click', async (e) => {

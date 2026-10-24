@@ -213,6 +213,10 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("POST /api/pulls", s.handlePullStart)
 	mux.HandleFunc("POST /api/pulls/{id}/cancel", s.handlePullCancel)
 
+	mux.HandleFunc("GET /v1/models", s.handleV1Models)
+	mux.HandleFunc("POST /v1/chat/completions", s.handleV1Chat)
+	mux.HandleFunc("POST /v1/embeddings", s.handleV1Embeddings)
+
 	mux.HandleFunc("GET /api/presets", s.handlePresetList)
 	mux.HandleFunc("PUT /api/presets/{name}", s.handlePresetSave)
 	mux.HandleFunc("DELETE /api/presets/{name}", s.handlePresetDelete)

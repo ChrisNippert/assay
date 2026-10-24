@@ -423,7 +423,7 @@
     if (preset) saveBtn.textContent = `Save to “${preset.name}”`;
     saveBtn.disabled = !changedCount();
     resetBtn.disabled = !changedCount();
-    publishRow.hidden = !preset;
+    publishRow.hidden = !preset || perModel(); // with llama.cpp every preset is in the /v1 API
     if (preset) {
       publishBox.checked = !!preset.published;
       publishName.textContent = 'ollamui/' + preset.name;
