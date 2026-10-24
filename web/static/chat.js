@@ -379,10 +379,11 @@
     const close = () => { box.remove(); msg.classList.remove('editing'); };
     const submit = () => {
       const text = area.value.trim();
-      if (!text || controller) return;
+      if ((!text && !msg.dataset.att) || controller) return;
       const n = userMsgs().indexOf(msg);
+      const kept = JSON.parse(msg.dataset.att || '[]');
       dropFrom(msg);
-      send(text, n);
+      send(text, n, [], kept);
     };
     cancel.addEventListener('click', close);
     save.addEventListener('click', submit);
@@ -398,8 +399,9 @@
     if (!user) return;
     const n = userMsgs().indexOf(user);
     const text = user.querySelector('.bubble').textContent;
+    const kept = JSON.parse(user.dataset.att || '[]');
     dropFrom(user);
-    send(text, n);
+    send(text, n, [], kept);
   }
 
   list.addEventListener('click', async (e) => {
@@ -691,22 +693,29 @@
     return box;
   }
 
-  form.addEventListener('submit', (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (controller) { controller.abort(); return; } // the button is "Stop" while streaming
     const text = input.value.trim();
-    if (!text || !select.value) return;
+    const att = window.ollamuiAttach;
+    if ((!text && !att.count()) || !select.value || att.busy()) return;
+    if (await att.blockedImage()) return; // the chip says the model can't see it
     input.value = '';
-    send(text);
+    send(text, undefined, att.take());
   });
 
   // send streams a reply to text. fromUser (edit/regenerate) replaces that
   // user message, counted from 0, and everything after it. voice.js may ask
   // for a reply in spoken style and read it aloud as it streams.
-  async function send(text, fromUser) {
+  async function send(text, fromUser, files = [], kept = []) {
     const voice = window.ollamuiVoice?.turn() ?? {};
     document.getElementById('empty')?.remove();
     const userMsg = el('div', 'msg user');
+    const atts = [...kept, ...files];
+    if (atts.length) {
+      userMsg.dataset.att = JSON.stringify(atts.map(({ url, state, error, ...a }) => a));
+      userMsg.append(window.ollamuiAttach.render(atts, chatId));
+    }
     userMsg.append(el('div', 'bubble', text));
     addActions(userMsg);
     list.append(userMsg);
@@ -745,7 +754,7 @@
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chatId, project: chatId ? undefined : project(), content: text, fromUser, spoken: !!voice.spoken, ...tune.selection(), ...tune.settings() }),
+        body: JSON.stringify({ chatId, project: chatId ? undefined : project(), content: text, fromUser, attachments: files.map((f) => f.file), spoken: !!voice.spoken, ...tune.selection(), ...tune.settings() }),
         signal: controller.signal,
       });
       if (!res.ok) throw new Error(await errorText(res));
@@ -762,6 +771,11 @@
               addSidebarChat(chatId, text, project());
             }
             break;
+          case 'attachments': {
+            const cut = ev.attachments.filter((a) => a.cut).map((a) => a.name).join(', ');
+            if (cut) userMsg.append(el('div', 'msg-warn', `Part of ${cut} was left out because it didn’t fit the context. Raise “Context length” in Tune to include more.`));
+            break;
+          }
           case 'sources':
             reply.insertBefore(sourcesBox(ev.sources), stats);
             break;

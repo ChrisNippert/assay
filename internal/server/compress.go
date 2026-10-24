@@ -130,6 +130,9 @@ func (s *Server) promptSize(ctx context.Context, model string, options map[strin
 		b.WriteString("\n")
 	}
 	overhead := 12 * len(msgs)
+	for _, m := range msgs {
+		overhead += 768 * len(m.Images) // an image is a few hundred tokens
+	}
 	ctxLen := intOf(options["num_ctx"])
 	t, ok := s.ollama.(tokenizer)
 	if !ok {
@@ -183,7 +186,7 @@ func (s *Server) compressTurn(ctx context.Context, t *turn, emit func(event) err
 	if !needsCompression(est, ctxLen, intOf(t.req.Options["num_predict"])) {
 		return
 	}
-	upTo := cutPoint(t.chat.Messages, ctxLen)
+	upTo := cutPoint(t.hist(s), ctxLen)
 	if upTo <= compressedUpTo(t.chat) {
 		return
 	}
@@ -193,7 +196,7 @@ func (s *Server) compressTurn(ctx context.Context, t *turn, emit func(event) err
 		emit(event{Type: "status"})
 		return
 	}
-	t.req.Messages = buildMessages(t.system, t.chat.Compression, t.chat.Messages)
+	t.req.Messages = buildMessages(t.system, t.chat.Compression, t.hist(s))
 	emit(event{Type: "compressed", Compression: t.chat.Compression})
 }
 
@@ -217,12 +220,13 @@ func (s *Server) compressTo(ctx context.Context, c *chats.Chat, model string, op
 	if ctxLen > 0 {
 		budget = ctxLen / 2
 	}
-	text, err := s.summarize(ctx, model, options, old, c.Messages[from:upTo], budget)
+	full, _ := s.withFiles(c.ID, c.Messages, false, 0)
+	text, err := s.summarize(ctx, model, options, old, full[from:upTo], budget)
 	if err != nil {
 		return err
 	}
 	before := 0
-	for _, m := range c.Messages[:upTo] {
+	for _, m := range full[:upTo] {
 		before += approxTokens(m.Content)
 	}
 	c.Compression = &chats.Compression{
