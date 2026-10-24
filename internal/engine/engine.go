@@ -451,6 +451,16 @@ func (e *Engine) start(ctx context.Context, m *Model, o loadOpts) (*proc, error)
 		}
 		time.Sleep(150 * time.Millisecond)
 	}
+	// It can answer /health after an allocation failed while it was
+	// reserving memory, and then die on the first request. Treat that as
+	// a load that ran out of memory, so the caller falls back.
+	p.mu.Lock()
+	oom := p.oom
+	p.mu.Unlock()
+	if oom != "" {
+		stopProcess(cmd)
+		return nil, fmt.Errorf("%w loading %s. Fewer GPU layers or a smaller context would fit (GPU layers: Auto does this for you). llama-server said: %s", errGPUMemory, m.Name, oom)
+	}
 	p.touch(0, e.opt.KeepAlive)
 	e.mu.Lock()
 	e.procs[m.Name] = p
