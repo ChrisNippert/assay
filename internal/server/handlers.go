@@ -356,6 +356,10 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 			think = preset.Think
 		}
 	}
+	if err := presets.CheckReplyFormat(options); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return nil, false
+	}
 
 	var c *chats.Chat
 	if req.ChatID != "" {

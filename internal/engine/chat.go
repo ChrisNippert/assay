@@ -70,7 +70,32 @@ func chatBody(m *Model, req ollama.ChatRequest) map[string]any {
 		body["chat_template_kwargs"] = map[string]any{"enable_thinking": true}
 		body["reasoning_effort"] = t
 	}
+	for k, v := range replyFields(opts) {
+		body[k] = v
+	}
 	return body
+}
+
+// replyFields maps the reply format settings to llama-server's request
+// fields: nothing for text, response_format for JSON (any object, or a
+// schema) and grammar for a GBNF grammar. Options are validated when saved,
+// so a schema that doesn't parse is just left out here.
+func replyFields(opts map[string]any) map[string]any {
+	switch mode, _ := opts["reply_format"].(string); mode {
+	case "json":
+		return map[string]any{"response_format": map[string]any{"type": "json_object"}}
+	case "schema":
+		s, _ := opts["reply_schema"].(string)
+		if !json.Valid([]byte(s)) {
+			return nil
+		}
+		return map[string]any{"response_format": map[string]any{"type": "json_schema", "json_schema": map[string]any{"schema": json.RawMessage(s)}}}
+	case "grammar":
+		if g, _ := opts["reply_grammar"].(string); g != "" {
+			return map[string]any{"grammar": g}
+		}
+	}
+	return nil
 }
 
 type chunk struct {

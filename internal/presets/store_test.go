@@ -94,3 +94,34 @@ func TestMerge(t *testing.T) {
 		t.Errorf("merge = %v, base = %v", got, base)
 	}
 }
+
+func TestReplyFormatOptions(t *testing.T) {
+	schema := `{"type":"object","properties":{"ok":{"type":"boolean"}}}`
+	got, err := CleanOptions(map[string]any{"reply_format": "schema", "reply_schema": schema})
+	if err != nil || got["reply_format"] != "schema" || got["reply_schema"] != schema {
+		t.Errorf("got %#v, %v", got, err)
+	}
+	for _, bad := range []map[string]any{
+		{"reply_format": "yaml"},
+		{"reply_format": "json", "reply_schema": "{nope"},
+		{"reply_format": "schema", "reply_schema": `[1,2]`},
+		{"reply_schema": strings.Repeat(" ", maxReplyText+1) + "{}"},
+		{"reply_grammar": strings.Repeat("a", maxReplyText+1)},
+		{"reply_schema": 3.0},
+	} {
+		if _, err := CleanOptions(bad); err == nil {
+			t.Errorf("accepted %v", bad)
+		} else if strings.Contains(err.Error(), "nope") || len(err.Error()) > 200 {
+			t.Errorf("error should not echo the value: %v", err)
+		}
+	}
+	if err := CheckReplyFormat(map[string]any{"reply_format": "schema"}); err == nil {
+		t.Error("schema mode without a schema passed")
+	}
+	if err := CheckReplyFormat(map[string]any{"reply_format": "grammar", "reply_grammar": `root ::= "a"`}); err != nil {
+		t.Error(err)
+	}
+	if err := CheckReplyFormat(map[string]any{"reply_format": "json"}); err != nil {
+		t.Error(err)
+	}
+}

@@ -53,6 +53,10 @@ func (s *Server) handlePresetSave(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if err := presets.CheckReplyFormat(p.Options); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	if _, err := s.ollama.Show(ctx, p.Base); err != nil {

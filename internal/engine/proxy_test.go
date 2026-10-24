@@ -71,6 +71,37 @@ func TestProxyFillsDefaultsAndRewritesModel(t *testing.T) {
 	}
 }
 
+// A preset's reply format goes to llama-server only when the body asks for
+// no format of its own.
+func TestProxyReplyFormatFromPreset(t *testing.T) {
+	var got map[string]any
+	e, _ := fakeProc(t, func(w http.ResponseWriter, r *http.Request) {
+		got = nil
+		json.NewDecoder(r.Body).Decode(&got)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{}`)
+	}, nil)
+	preset := map[string]any{"reply_format": "json"}
+	send := func(body string) map[string]any {
+		t.Helper()
+		res, err := e.Proxy(context.Background(), "short:q4", preset, "/v1/chat/completions", []byte(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		return got
+	}
+	if rf, _ := send(`{"messages":[]}`)["response_format"].(map[string]any); rf["type"] != "json_object" {
+		t.Errorf("preset format not applied: %v", got)
+	}
+	if rf, _ := send(`{"messages":[],"response_format":{"type":"text"}}`)["response_format"].(map[string]any); rf["type"] != "text" {
+		t.Errorf("the body's own format was replaced: %v", got)
+	}
+	if got := send(`{"messages":[],"grammar":"root ::= \"a\""}`); got["response_format"] != nil || got["grammar"] != `root ::= "a"` {
+		t.Errorf("grammar and format both set: %v", got)
+	}
+}
+
 func TestProxyErrors(t *testing.T) {
 	e, _ := fakeProc(t, func(w http.ResponseWriter, r *http.Request) {}, nil)
 	_, err := e.Proxy(context.Background(), "nope", nil, "/v1/chat/completions", []byte(`{}`))
