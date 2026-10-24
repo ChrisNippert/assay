@@ -151,6 +151,19 @@ code doesn't care which engine runs (`server.Backend`).
   object, texts are capped at 32 KB, schema/grammar mode without text is a
   400. A reply that is JSON shows as a highlighted JSON block (display only).
   Checked on Qwen3.5-2B: a one-value enum schema forced `{"answer":"alpha"}`.
+- **Chat caches** (`internal/engine/kvcache.go`). Requests send
+  `cache_prompt` and servers run with `--cache-reuse 256` (no measured
+  effect on hybrid Qwen3.5; untested on a dense model). When a model
+  unloads, the KV cache of the chat it served last is saved to
+  `<data>/kvcache/<model key>/<chat id>.bin` (`--slot-save-path`) if the
+  history is over 1k tokens; the first request to a fresh server restores
+  it before sending, then the file goes. Editing/regenerating or deleting
+  the chat drops its file (`Engine.ForgetChat`); `/v1` traffic is never
+  saved. The key covers blob, context, cache type, flash attention and
+  draft, so a server with other settings never reads a file it can't use.
+  Capped at 2 GB, oldest first; files are big (~0.5 GB for 5k tokens at
+  16k context). Qwen3.5-2B with a 5k-token history: reload to first token
+  2.6 s → 1.4 s. Bigger models should gain more (unmeasured).
 - **CPU threads.** `num_thread` becomes `-t` (Tune → Memory). Only matters
   for layers on the CPU; 4 threads beat the default (all 16) on a CPU-only
   9B (3.7 vs 2.6 tok/s, one sample), so Auto may deserve a better default.
