@@ -127,6 +127,20 @@ code doesn't care which engine runs (`server.Backend`).
   is usually only a backtrace) and, on one, loads again with Auto; the
   process keeps the asked-for options so the next request doesn't restart
   it. Tune's GPU layers row says Auto fits to memory and a number doesn't.
+- **LoRA adapters** (`internal/engine/lora.go`). A GGUF with
+  `general.type` "adapter" and `adapter.type` "lora" (`gguf.File.IsLoRA`)
+  lives in the store beside the models (`Model.Adapter`, with its base
+  architecture), left out of `Store.List`, the picker and `/v1`. Added from
+  a path (hard link, else used in place) or found by the scan, which reads
+  each file's header once (`Finder.markAdapters`). Only models of the same
+  architecture offer it (`Engine.AdaptersFor`, `checkLoRA`). The per-model
+  (and preset) setting `lora` is a list of `{name, scale}` (0–2, up to 8).
+  The server starts with `--lora … --lora-init-without-apply` and sets
+  scales through `/lora-adapters`, so a scale change needs no restart;
+  adding or removing one restarts the model. Library lists adapters; Tune's
+  MODEL group has a row per compatible one. Checked with a synthetic rank-4
+  adapter on Qwen3.5-2B (loaded, scaled live, applied through a preset on
+  `/v1`); not yet with a real Unsloth LoRA.
 - **CPU threads.** `num_thread` becomes `-t` (Tune → Memory). Only matters
   for layers on the CPU; 4 threads beat the default (all 16) on a CPU-only
   9B (3.7 vs 2.6 tok/s, one sample), so Auto may deserve a better default.
