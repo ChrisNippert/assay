@@ -527,6 +527,9 @@ input.switch:checked::after { transform: translateX(20px); }
 .tune-section-sub:empty, .tune-saved:empty { display: none; }
 .tune-saved { margin: 0; padding: 0 var(--s1); }
 .tune-error:empty { display: none; }
+.reply-box { flex: 1 1 100%; display: flex; flex-direction: column; gap: var(--s1); }
+.reply-box[hidden] { display: none; }
+.reply-code { font-family: "IBM Plex Mono", ui-monospace, "JetBrains Mono", monospace; font-size: var(--fs-sm); min-height: 7.5rem; }
 /* Docked, Tune would squeeze the chat on a half-screen window, so below
    that it floats over the chat instead. */
 @media (max-width: 1180px) {

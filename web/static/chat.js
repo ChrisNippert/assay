@@ -314,9 +314,13 @@
   }
 
   // Markdown is rendered in place, so the raw text is kept for copying.
+  // With a JSON reply format the text shows as a highlighted JSON block. The
+  // fence is added for display only; the saved reply stays as written.
   function setMarkdown(md, src) {
     md.dataset.src = src;
-    md.innerHTML = renderMarkdown(src);
+    const mode = tune?.replyFormat?.();
+    const asJSON = (mode === 'json' || mode === 'schema') && src.trim() !== '';
+    md.innerHTML = renderMarkdown(asJSON ? '```json\n' + src + '\n```' : src);
   }
 
   function addActions(msg) {
