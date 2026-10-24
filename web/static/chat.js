@@ -733,6 +733,8 @@
 
     sendBtn.textContent = 'Stop';
     controller = new AbortController();
+    // If the reply has to load the model first, the memory list shows it.
+    const loadCheck = isLoaded(selectedOption()) ? null : setTimeout(() => refreshLoaded(true), 500);
     let content = '';
     let thinking = '';
     const running = new Map(); // tool call id -> its row, until the result is in
@@ -832,6 +834,7 @@
         row.querySelector('summary').textContent = 'Stopped before the call finished';
       }
       if (!content && !thinking && reply.querySelector('.tool')) md.remove(); // nothing after the last call
+      clearTimeout(loadCheck);
       controller = null;
       sendBtn.textContent = 'Send';
       voice.end?.();

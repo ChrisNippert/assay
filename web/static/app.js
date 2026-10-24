@@ -62,16 +62,18 @@
       // A model with nothing on the GPU was put on the CPU on purpose (voice
       // mode's talker), so it isn't flagged as spilling.
       const cpu = m.size > 0 && m.sizeVram === 0;
-      const pill = el('div', 'mem-pill' + (cpu ? ' cpu' : pct < 100 ? ' partial' : ''));
-      pill.title = m.pinned ? 'Stays loaded until ejected' : 'Unloads after a few idle minutes';
+      const pill = el('div', 'mem-pill' + (m.loading ? ' loading' : cpu ? ' cpu' : pct < 100 ? ' partial' : ''));
+      pill.title = m.loading ? 'Loading. Eject to stop it'
+        : m.pinned ? 'Stays loaded until ejected' : 'Unloads after a few idle minutes';
       const dot = el('span', 'mem-dot');
       dot.setAttribute('aria-hidden', 'true');
       const link = el('a', 'row-link mem-name', m.name);
       link.href = '/chat?model=' + encodeURIComponent(m.name);
       link.title = 'Chat with ' + m.name;
-      let detail = fmtBytes(cpu ? m.size : m.sizeVram);
+      let detail = m.loading ? 'Loading…' : fmtBytes(cpu ? m.size : m.sizeVram);
       if (m.context) detail += ` · ${Math.round(m.context / 1024)}k`;
-      if (cpu) detail += ' · CPU';
+      if (m.loading) { /* nothing measured yet */ }
+      else if (cpu) detail += ' · CPU';
       else if (pct < 100) detail += ` · ${pct}% GPU`;
       const btn = el('button', 'icon-btn mem-eject');
       btn.type = 'button';
@@ -84,18 +86,32 @@
     }
   }
 
-  async function refreshLoaded() {
+  // While a model loads, the list is polled until it's done; listeners
+  // hear only about loaded models, and during polling only on a change.
+  let loadPoll = null;
+  let lastLoaded = null;
+  async function refreshLoaded(polling) {
+    clearTimeout(loadPoll);
     try {
       const res = await fetch('/api/loaded');
       if (!res.ok) return null;
-      const models = await res.json();
-      renderLoaded(models);
-      document.dispatchEvent(new CustomEvent('loaded-changed', { detail: models }));
+      const all = await res.json();
+      renderLoaded(all);
+      const models = all.filter((m) => !m.loading);
+      const key = models.map((m) => m.name).join(' ');
+      if (polling !== true || key !== lastLoaded) {
+        document.dispatchEvent(new CustomEvent('loaded-changed', { detail: models }));
+      }
+      lastLoaded = key;
+      if (all.some((m) => m.loading)) loadPoll = setTimeout(() => refreshLoaded(true), 1500);
       return models;
     } catch {
       return null;
     }
   }
+  // A page opened while a model loads picks it up (the page's own list was
+  // rendered by the server without it).
+  if (document.getElementById('loaded-list')) refreshLoaded(true);
 
   // Makes a text button act as Load or Eject for a model.
   function setLoadButton(btn, name, loaded) {
@@ -134,9 +150,21 @@
     const isText = !btn.classList.contains('icon-btn') && !btn.classList.contains('keep-text');
     btn.disabled = true;
     if (isText) btn.textContent = loading ? 'Loading…' : 'Ejecting…';
+    // Ejecting can take a few seconds (the chat's cache is saved first).
+    const pill = btn.closest('.mem-pill');
+    if (pill && !loading) {
+      pill.classList.add('ejecting');
+      pill.title = 'Ejecting…';
+      const detail = pill.querySelector('.mem-detail');
+      if (detail) detail.textContent = 'Ejecting…';
+    }
+    // Loads show in the memory list while they run.
+    const poll = loading && setTimeout(() => refreshLoaded(true), 400);
     try {
       await post(loading ? '/api/models/load' : '/api/models/eject', { name });
     } catch (err) {
+      clearTimeout(poll);
+      if (/ejected while loading/.test(err.message)) { btn.disabled = false; await refreshLoaded(); return; }
       alert(`Couldn't ${loading ? 'load' : 'eject'} ${name}: ${err.message}`);
     }
     btn.disabled = false;

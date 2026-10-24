@@ -440,6 +440,10 @@ table.models { width: 100%; border-collapse: collapse; }
 }
 .mem-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
 .mem-pill.partial .mem-dot { background: var(--warn); }
+.mem-pill.loading .mem-dot { background: var(--muted, currentColor); animation: mem-pulse 1.2s ease-in-out infinite; }
+.mem-pill.ejecting { opacity: .6; }
+@keyframes mem-pulse { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .mem-pill.loading .mem-dot { animation: none; } }
 .mem-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; min-width: 40px; }
 /* Narrower desktops (a half-screen window): the switcher and the pills
    share the bar, so both give way, and the secondary details go first. */

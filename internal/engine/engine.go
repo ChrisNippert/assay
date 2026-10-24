@@ -75,7 +75,21 @@ type Engine struct {
 	meta  map[string]*gguf.File
 	// loading serialises starts, so two requests don't start one model twice.
 	loading sync.Mutex
+	// pending is the load in progress, if any (under mu), so Running can
+	// show it and Unload can cancel it.
+	pending *pendingLoad
 }
+
+// pendingLoad is a model being loaded.
+type pendingLoad struct {
+	model   *Model
+	asked   string
+	cancel  context.CancelFunc
+	ejected bool
+}
+
+// errEjected is a load cancelled by ejecting the model.
+var errEjected = errors.New("ejected while loading")
 
 // New returns an engine for store.
 func New(store *Store, opt Options) *Engine {
@@ -425,9 +439,25 @@ func (e *Engine) ensure(ctx context.Context, name string, options map[string]any
 	if !o.Embedding && o.GPULayers != 0 {
 		e.makeRoom(m.Name)
 	}
-	p, err = e.start(ctx, m, o)
+	// The load goes on if the request that asked for it goes away (the
+	// user switched chats or pages): it's slow, and they'll want the model.
+	// Only ejecting it stops it.
+	lctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	pl := &pendingLoad{model: m, asked: name, cancel: cancel}
+	e.mu.Lock()
+	e.pending = pl
+	e.mu.Unlock()
+	defer func() {
+		e.mu.Lock()
+		if e.pending == pl {
+			e.pending = nil
+		}
+		e.mu.Unlock()
+		cancel()
+	}()
+	p, err = e.start(lctx, m, o)
 	manual := o.GPULayers > 0 || o.CPUMoE != cpuMoEUnset
-	if err != nil && manual && outOfMemory(err) && ctx.Err() == nil {
+	if err != nil && manual && outOfMemory(err) && lctx.Err() == nil {
 		// A fixed layer count (or experts placed by hand) turns llama.cpp's
 		// --fit off, so too many layers for the GPU just crash. Load it the
 		// way Auto would: --fit keeps what fits on the GPU and, for MoE
@@ -437,10 +467,16 @@ func (e *Engine) ensure(ctx context.Context, name string, options map[string]any
 		e.opt.Log.Warn("too many GPU layers or experts on the GPU for free memory; loading with automatic fitting instead", "model", m.Name, "asked", o.GPULayers, "n_cpu_moe", o.CPUMoE)
 		auto := o
 		auto.GPULayers, auto.CPUMoE = -1, cpuMoEUnset
-		if p, err = e.start(ctx, m, auto); err == nil {
+		if p, err = e.start(lctx, m, auto); err == nil {
 			p.opts = o
 			p.fitted = true
 		}
+	}
+	e.mu.Lock()
+	ejected := pl.ejected
+	e.mu.Unlock()
+	if err != nil && ejected {
+		err = fmt.Errorf("%s was %w", m.Name, errEjected)
 	}
 	if err == nil {
 		p.asked = name
@@ -861,6 +897,17 @@ func (e *Engine) Running(ctx context.Context) ([]ollama.RunningModel, error) {
 	return out, nil
 }
 
+// Loading is the name of the model being loaded, or "". Running leaves it
+// out until it's ready.
+func (e *Engine) Loading() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.pending == nil || e.pending.ejected {
+		return ""
+	}
+	return e.pending.asked
+}
+
 // Show describes a model: GGUF metadata in Ollama's model_info shape,
 // capabilities guessed from the chat template, default parameters.
 func (e *Engine) Show(ctx context.Context, name string) (*ollama.ShowResponse, error) {
@@ -988,6 +1035,10 @@ func (e *Engine) Unload(ctx context.Context, model string) error {
 	}
 	e.mu.Lock()
 	p := e.procs[m.Name]
+	if pl := e.pending; pl != nil && pl.model.Name == m.Name {
+		pl.ejected = true
+		pl.cancel()
+	}
 	e.mu.Unlock()
 	if p != nil {
 		e.stop(p)

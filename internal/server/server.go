@@ -407,6 +407,7 @@ type loadedModel struct {
 	Pinned    bool      `json:"pinned"`
 	ExpiresAt time.Time `json:"expiresAt"`
 	Context   int       `json:"context"`
+	Loading   bool      `json:"loading,omitempty"`
 }
 
 // pinnedAfter is how far away an expiry has to be for us to treat the model
@@ -431,6 +432,11 @@ func (s *Server) loaded(ctx context.Context) ([]loadedModel, error) {
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	if l, ok := s.ollama.(interface{ Loading() string }); ok {
+		if name := l.Loading(); name != "" && !slices.ContainsFunc(out, func(m loadedModel) bool { return m.Name == name }) {
+			out = append(out, loadedModel{Name: name, Loading: true})
+		}
+	}
 	return out, nil
 }
 
