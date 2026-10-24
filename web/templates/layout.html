@@ -73,15 +73,22 @@
         <div id="download-list" class="download-list"></div>
       </div>
     </div>
-    <div class="mem-list" id="loaded-list" aria-label="Models in memory">
-      {{range .Loaded}}
-      <div class="mem-pill{{if not .SizeVRAM}} cpu{{else if lt (gpuPct .) 100}} partial{{end}}" title="{{if .Pinned}}Stays loaded until ejected{{else}}Unloads after a few idle minutes{{end}}">
-        <span class="mem-dot" aria-hidden="true"></span>
-        <a class="row-link mem-name" href="/chat?model={{.Name}}" title="Chat with {{.Name}}">{{.Name}}</a>
-        <span class="mem-detail">{{if .SizeVRAM}}{{bytes .SizeVRAM}}{{else}}{{bytes .Size}}{{end}}{{with .Context}} · {{kib .}}k{{end}}{{if not .SizeVRAM}} · CPU{{else if lt (gpuPct .) 100}} · {{gpuPct .}}% GPU{{end}}</span>
-        <button type="button" class="icon-btn mem-eject" data-eject="{{.Name}}" aria-label="Eject {{.Name}}" title="Eject {{.Name}}">{{template "icon-eject"}}</button>
+    <div class="mem-wrap" id="mem-wrap">
+      <button type="button" class="mem-chip{{if not .Loaded}} empty{{end}}" id="mem-btn" aria-expanded="false" aria-controls="mem-pop" aria-label="Models in memory" title="Models in memory">
+        <span class="mem-meter" hidden><span></span></span>
+        <span class="mem-label">{{if not .Loaded}}No model loaded{{else if eq (len .Loaded) 1}}{{(index .Loaded 0).Name}}{{else}}{{len .Loaded}} models{{end}}</span>
+      </button>
+      <div class="mem-pop" id="mem-pop" role="dialog" aria-label="Models in memory" hidden>
+        <div class="mem-gpu" id="mem-gpu" hidden>
+          <div class="mem-stat" id="mem-vram"><div class="mem-stat-head"><span>VRAM</span><span id="mem-vram-text"></span></div><div class="bar mem-vram-bar" id="mem-vram-bar"></div></div>
+          <div class="mem-stat" id="mem-gpubusy"><div class="mem-stat-head"><span>GPU</span><span id="mem-gpu-text"></span></div><svg class="mem-spark" id="mem-spark" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+          <div class="mem-stat" id="mem-ram"><div class="mem-stat-head"><span>System RAM</span><span id="mem-ram-text"></span></div><div class="bar" id="mem-ram-bar"><span></span></div></div>
+        </div>
+        <div class="mem-head">Loaded models</div>
+        <div class="mem-rows" id="loaded-list" aria-label="Models in memory">
+          {{range .Loaded}}<div class="mem-row" data-name="{{.Name}}"><span class="mem-dot" aria-hidden="true"></span><div class="mem-row-main"><a class="row-link mem-name" href="/chat?model={{.Name}}" title="Chat with {{.Name}}">{{.Name}}</a><div class="mem-sub"></div></div><button type="button" class="icon-btn mem-eject" data-eject="{{.Name}}" aria-label="Eject {{.Name}}" title="Eject {{.Name}}">{{template "icon-eject"}}</button></div>{{else}}<div class="mem-none">No model loaded</div>{{end}}
+        </div>
       </div>
-      {{else}}<span class="mem-empty">No model loaded</span>{{end}}
     </div>
     {{block "appbar-end" .}}{{end}}
   </header>

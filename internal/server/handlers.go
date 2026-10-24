@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"ollamui/internal/chats"
+	"ollamui/internal/hw"
 	"ollamui/internal/ollama"
 	"ollamui/internal/presets"
 	"ollamui/internal/projects"
@@ -144,6 +145,14 @@ func (s *Server) handleLoaded(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, models)
+}
+
+// readLiveGPU is swapped out in tests.
+var readLiveGPU = hw.ReadLive
+
+func (s *Server) handleGPU(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, readLiveGPU())
 }
 
 func (s *Server) handleLoad(w http.ResponseWriter, r *http.Request) {
