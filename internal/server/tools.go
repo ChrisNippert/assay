@@ -174,6 +174,9 @@ func (s *Server) chatLoop(ctx context.Context, t *turn, emit func(event) error) 
 			res := tools.Run(ctx, t.tools, call.Name, calls[i].Function.Arguments)
 			if ctx.Err() != nil {
 				t.calls = t.calls[:idx] // never ran to the end
+				if i == 0 { // what it said first was kept on this call
+					return c.String(), th.String(), stats, ctx.Err() // keep what it said first
+				}
 				return "", "", stats, ctx.Err()
 			}
 			text := tools.Clip(res.Text, toolResultLimit)

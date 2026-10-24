@@ -274,6 +274,7 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 	}
 	s.compressTurn(r.Context(), t, emit)
 	content, thinking, stats, err := s.chatLoop(r.Context(), t, emit)
+	t.stopped = r.Context().Err() != nil
 	s.saveReply(t, content, thinking, "", stats)
 	if err == nil {
 		s.noteThinking(t.req, thinking != "")
@@ -293,6 +294,8 @@ type turn struct {
 	chat *chats.Chat
 	req  ollama.ChatRequest
 	auto autoContext
+	// stopped is set when the user stopped the reply.
+	stopped bool
 	// spoken is what voice mode said before the reply (lead-in only).
 	spoken string
 	// replyModel is the model that wrote the reply, when it isn't the
@@ -504,6 +507,7 @@ func (s *Server) saveReply(t *turn, content, thinking, spoken string, stats *cha
 		Content:  content,
 		Thinking: thinking,
 		Spoken:   spoken,
+		Stopped:  t.stopped,
 		Calls:    t.calls,
 		Model:    model,
 		Stats:    stats,
@@ -544,7 +548,16 @@ func toOllama(msgs []chats.Message) []ollama.Message {
 	for _, m := range msgs {
 		// Tool calls the reply made come first, as the model saw them.
 		out = append(out, toolMessages(m)...)
-		out = append(out, ollama.Message{Role: m.Role, Content: m.Content})
+		content := m.Content
+		if m.Stopped {
+			// The model sees where it was cut off, and what it was thinking
+			// if it hadn't started the answer yet.
+			if content == "" && m.Thinking != "" {
+				content = "(Thinking so far: " + m.Thinking + ")"
+			}
+			content = strings.TrimSpace(content + "\n\n[The user stopped this reply here.]")
+		}
+		out = append(out, ollama.Message{Role: m.Role, Content: content})
 	}
 	return out
 }

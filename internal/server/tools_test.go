@@ -195,3 +195,18 @@ func TestToolMessagesRoundTrip(t *testing.T) {
 	}
 	_ = tools.Catalog
 }
+
+func TestStoppedReplyStaysInContext(t *testing.T) {
+	msgs := toOllama([]chats.Message{
+		{Role: "user", Content: "hi"},
+		{Role: "assistant", Content: "Half an ans", Stopped: true},
+		{Role: "user", Content: "go on"},
+		{Role: "assistant", Thinking: "let me think", Stopped: true},
+	})
+	if got := msgs[1].Content; !strings.HasPrefix(got, "Half an ans") || !strings.Contains(got, "stopped") {
+		t.Fatalf("stopped reply = %q", got)
+	}
+	if got := msgs[3].Content; !strings.Contains(got, "let me think") {
+		t.Fatalf("thinking-only stopped reply = %q", got)
+	}
+}

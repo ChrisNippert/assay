@@ -43,6 +43,8 @@ type Message struct {
 	// Spoken is what voice mode said aloud while the model was still
 	// thinking, before Content.
 	Spoken string `json:"spoken,omitempty"`
+	// Stopped is set on a reply the user stopped before it finished.
+	Stopped bool `json:"stopped,omitempty"`
 	// Calls are the tool calls made on the way to Content, in order.
 	Calls []ToolCall `json:"calls,omitempty"`
 	Model string     `json:"model,omitempty"`
