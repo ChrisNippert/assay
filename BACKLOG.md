@@ -5,6 +5,44 @@ big it is (S = an hour or two, M = a session, L = several sessions).
 
 ## Next up
 
+### Tool use (M–L)
+
+Asked for 2026-10-23. llama-server already runs with `--jinja` and models
+whose template mentions tools get a "tools" capability, but chat never
+sends `tools` or handles `tool_calls`.
+
+- **`/v1` OpenAI-compatible API first** (stage 3 below): passes `tools`
+  straight through, so Zed's agent tools work with local models and show
+  how well they call tools before we build our own. (M)
+- **Built-in tools in chat**: web search (needs SearXNG or an API key:
+  decide), fetch a URL, calculator, search chats / project files. Loop:
+  model asks → ollamui runs → result goes back → model continues. Each call
+  shows as a foldable row in the reply, like thinking; saved with the chat. (M–L)
+- Off per chat or model when the template has no tools; a step limit so a
+  model can't loop forever. Qwen3.5 calls tools decently, Gemma less so.
+
+### Automatic context compression (M)
+
+Asked for 2026-10-23. Long chats hit the context length and the oldest
+turns silently fall off (or the reply is cut at `length`). Instead, when a
+chat nears ~80% of `num_ctx`, summarize the older turns with the same model
+and send summary + recent turns. Keep the full history on disk and in the
+page; show a quiet "earlier messages summarized" marker where the cut is,
+clickable to see the summary. Cache the summary in the chat file so it's
+made once, redone only when edits touch summarized turns. Thinking text
+from old turns is dropped first, before any summarizing. A setting to
+turn it off.
+
+### Choose where models are stored (S–M)
+
+Asked for 2026-10-23. Models live in `<data>/models` (hard links from
+`~/.ollama/models` on import), fixed by `-data`. Add a "Models folder"
+row in Settings → Models: pick a path, ollamui moves `blobs/` and the
+manifests there (with progress; stop loaded models first) and remembers
+it in its config, with `-models DIR` as a flag. Gotcha: hard links can't
+cross filesystems, so on another disk Ollama imports become copies (show
+the space needed) or symlinks. Check free space before moving.
+
 ### Engine: llama.cpp replaces Ollama (L, several sessions)
 
 Decided 2026-10-20: full replacement, Vulkan build. Measured here with
