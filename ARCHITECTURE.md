@@ -725,3 +725,7 @@ A load is detached from the request that asked for it (`context.WithoutCancel`),
 ## Stopped replies and the queue
 
 A reply the user stops is saved with `Stopped`; `toOllama` tells the model where it was cut off and, if it was still thinking, what it had thought. Text said before a tool call that was stopped mid-run is kept. In the chat page, a message sent while a reply streams goes into a queue (button reads "Queue", Esc stops the reply) and is sent when the reply finishes; stopping or an error pauses the queue ("Send next").
+
+## Tune layout, resizing, context meter
+
+The Tune panel (`tune.js`, markup in `chat.html`) is four collapsible sections — Reply style, Sampling (extra samplers nested), Context & memory, Performance & loading (collapsed; cache/flash/threads/MoE nested) — each with a one-line summary; open state in localStorage `tune:sec:<id>`. `resize.js` adds drag/keyboard/double-click-reset handles to the sidebar (180–420px) and the docked Tune panel (300–720px), as `--sidebar-w`/`--tune-w`, stored under `width:sidebar`/`width:tune`. Under the composer, `#ctx-meter` shows the last reply's prompt + output tokens against its context (from `Stats`, seeded from the last `.stats[data-used]`), counting up while streaming, amber at 80%. Streaming follows the bottom only until the user scrolls up by hand; Stop (or Esc) needs a second press within 3 s.
