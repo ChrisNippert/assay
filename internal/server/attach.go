@@ -87,7 +87,8 @@ func (s *Server) classify(ctx context.Context, name string, data []byte) (a chat
 	}
 	text, err = rag.Extract(ctx, name, data)
 	if err != nil {
-		return a, "", "", fmt.Errorf("could not read it: %v", err)
+		s.log.Info("attachment not readable", "name", name, "err", err)
+		return a, "", "", fmt.Errorf("could not read the text in it")
 	}
 	if strings.TrimSpace(text) == "" {
 		return a, "", "", fmt.Errorf("no text found in it")

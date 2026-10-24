@@ -492,8 +492,17 @@ var templateFuncs = template.FuncMap{
 		return rest
 	},
 	"bytes": formatBytes,
-	"join":  strings.Join,
-	"kib":   func(n int) int { return (n + 512) / 1024 },
+	"filesize": func(n int64) string {
+		switch {
+		case n >= 1<<20:
+			return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+		case n >= 1024:
+			return fmt.Sprintf("%d KB", n/1024)
+		}
+		return fmt.Sprintf("%d B", n)
+	},
+	"join": strings.Join,
+	"kib":  func(n int) int { return (n + 512) / 1024 },
 	// compact formats counts like 1329922 as "1.3M".
 	"compact": func(n int) string {
 		switch {
