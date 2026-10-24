@@ -596,6 +596,42 @@
 
   const nearBottom = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
   const scrollDown = () => { scroller.scrollTop = scroller.scrollHeight; };
+  // Streaming follows the reply only while the user hasn't scrolled away:
+  // any upward scroll by hand lets go, getting back to the bottom picks up.
+  let follow = true;
+  const letGo = () => { if (controller) follow = false; };
+  scroller.addEventListener('wheel', (e) => { if (e.deltaY < 0) letGo(); }, { passive: true });
+  scroller.addEventListener('touchmove', letGo, { passive: true });
+  scroller.addEventListener('keydown', (e) => { if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) letGo(); });
+  scroller.addEventListener('scroll', () => {
+    if (scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 4) follow = true;
+  }, { passive: true });
+
+  // ---- context meter ----
+  // How full the model's context is: the last reply's prompt plus its
+  // output, counted up while a reply streams.
+  const meter = document.getElementById('ctx-meter');
+  const kfmt = (n) => n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n);
+  let ctxUsed = 0, ctxMax = 0;
+  function showContext(used, max) {
+    if (used != null) ctxUsed = used;
+    if (max) ctxMax = max;
+    if (!meter) return;
+    meter.hidden = !ctxUsed;
+    const pct = ctxMax ? Math.min(100, (ctxUsed * 100) / ctxMax) : 0;
+    document.getElementById('ctx-fill').style.width = pct + '%';
+    meter.classList.toggle('warn', pct >= 80);
+    meter.classList.toggle('nomax', !ctxMax);
+    document.getElementById('ctx-text').textContent = ctxMax
+      ? `${kfmt(ctxUsed)} / ${kfmt(ctxMax)} context · ${Math.round(pct)}%`
+      : `${kfmt(ctxUsed)} tokens of context used`;
+  }
+  {
+    const last = [...list.querySelectorAll('.stats[data-used]')].pop();
+    if (last) showContext(last.dataset.used.split('+').reduce((a, b) => a + +b, 0), +last.dataset.ctx || 0);
+  }
+  meter?.addEventListener('click', () => document.getElementById('tune-btn')?.click());
+  meter?.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); meter.click(); } });
 
   async function readNDJSON(body, onEvent) {
     const reader = body.getReader();
@@ -699,7 +735,21 @@
   const queueBox = document.getElementById('queue');
   let queue = [];
   const hasDraft = () => !!input.value.trim() || window.ollamuiAttach.count() > 0;
+  // Stopping takes a second press (click or Esc) within a few seconds.
+  let stopAsked = null;
+  function askStop() {
+    if (!controller) return;
+    if (stopAsked) { clearTimeout(stopAsked); stopAsked = null; controller.abort(); return; }
+    sendBtn.textContent = 'Stop?';
+    sendBtn.classList.add('confirm');
+    sendBtn.title = 'Press again to stop the reply';
+    stopAsked = setTimeout(() => { stopAsked = null; syncSendBtn(); }, 3000);
+  }
   function syncSendBtn() {
+    if (stopAsked && controller && !hasDraft()) return;
+    clearTimeout(stopAsked);
+    stopAsked = null;
+    sendBtn.classList.remove('confirm');
     sendBtn.textContent = !controller ? 'Send' : hasDraft() ? 'Queue' : 'Stop';
     sendBtn.title = controller && hasDraft() ? 'Send this after the reply finishes (Esc stops the reply)' : '';
   }
@@ -707,7 +757,7 @@
   // Attaching a file also makes a draft.
   new MutationObserver(syncSendBtn).observe(document.getElementById('att-row'), { childList: true, subtree: true });
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && controller) { e.preventDefault(); controller.abort(); }
+    if (e.key === 'Escape' && controller) { e.preventDefault(); askStop(); }
   });
   function paintQueue(paused) {
     queueBox.hidden = !queue.length;
@@ -746,7 +796,7 @@
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const att = window.ollamuiAttach;
-    if (controller && !hasDraft()) { controller.abort(); return; } // the button is "Stop" while streaming
+    if (controller && !hasDraft()) { askStop(); return; } // the button is "Stop" while streaming
     const text = input.value.trim();
     if ((!text && !att.count()) || !select.value || att.busy()) return;
     if (await att.blockedImage()) return; // the chip says the model can't see it
@@ -796,6 +846,7 @@
     stats.title = 'Open Tune';
     reply.append(thinkBox, spoken, md, stats);
     list.append(reply);
+    follow = true;
     scrollDown();
 
     controller = new AbortController();
@@ -816,8 +867,8 @@
       });
       if (!res.ok) throw new Error(await errorText(res));
       await readNDJSON(res.body, (ev) => {
-        const stick = nearBottom();
         voice.onEvent?.(ev);
+        if (ev.type === 'content' || ev.type === 'thinking') showContext(ctxUsed + 1);
         switch (ev.type) {
           case 'chat':
             if (!chatId) {
@@ -885,13 +936,16 @@
             setMarkdown(md, content);
             break;
           case 'done':
-            if (ev.stats) stats.textContent = statsText(ev.stats);
+            if (ev.stats) {
+              stats.textContent = statsText(ev.stats);
+              showContext(ev.stats.promptTokens + ev.stats.outputTokens, ev.stats.context);
+            }
             if (ev.stats?.doneReason === 'length') reply.append(el('div', 'msg-warn', lengthNote(!content && !!thinking, ev.stats)));
             break;
           case 'error':
             throw new Error(ev.message);
         }
-        if (stick) scrollDown();
+        if (follow) scrollDown();
       });
     } catch (err) {
       outcome = err.name === 'AbortError' ? 'stopped' : 'error';

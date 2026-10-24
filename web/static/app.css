@@ -1044,3 +1044,13 @@ a.tag-link:hover { border-color: var(--accent-line); color: var(--accent-text); 
   .mem-chip.loading, .mem-chip.loading .mem-meter > span, .mem-row.loading .mem-dot { animation: none; }
   .mem-load > span { animation: none; left: 0; width: 100%; opacity: .5; }
 }
+
+/* ---- context meter, stop confirm ---- */
+.ctx-meter { display: flex; align-items: center; justify-content: flex-end; gap: var(--s2); margin-top: var(--s1); font-size: var(--fs-sm); color: var(--muted); cursor: pointer; }
+.ctx-meter:hover { color: var(--text-2); }
+.ctx-bar { width: 96px; height: 4px; border-radius: 2px; background: var(--soft); overflow: hidden; }
+.ctx-bar span { display: block; height: 100%; width: 0; background: var(--good); transition: width .3s ease; }
+.ctx-meter.warn .ctx-bar span { background: var(--warn); }
+.ctx-meter.nomax .ctx-bar { display: none; }
+#send.confirm { background: var(--bad); border-color: transparent; }
+@media (prefers-reduced-motion: reduce) { .ctx-bar span { transition: none; } }

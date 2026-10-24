@@ -56,7 +56,7 @@
               {{with .Spoken}}<div class="spoken">{{.}}</div>{{end}}
               <div class="md">{{.Content}}</div>
               {{with .Sources}}{{template "sources" .}}{{end}}
-              {{with .Stats}}<div class="stats" role="button" tabindex="0" title="Open Tune">{{printf "%.1f" .TokensPerSec}} tok/s · {{.OutputTokens}} tokens{{with .Context}} · {{kib .}}k context{{end}}{{if .AutoContext}} (auto){{end}}</div>
+              {{with .Stats}}<div class="stats" data-used="{{.PromptTokens}}+{{.OutputTokens}}" data-ctx="{{.Context}}" role="button" tabindex="0" title="Open Tune">{{printf "%.1f" .TokensPerSec}} tok/s · {{.OutputTokens}} tokens{{with .Context}} · {{kib .}}k context{{end}}{{if .AutoContext}} (auto){{end}}</div>
               {{if eq .DoneReason "length"}}<div class="msg-warn">Cut off: the conversation filled the context ({{.PromptTokens}} prompt + {{.OutputTokens}} reply tokens). Raise “Context length” in Tune for longer replies.</div>{{end}}{{end}}
             </div>
             {{end}}
@@ -101,6 +101,7 @@
         </button>
         <button type="submit" class="btn primary" id="send">Send</button>
       </form>
+      <div class="ctx-meter column" id="ctx-meter" hidden role="button" tabindex="0" title="How much of the model's context this chat fills. Open Tune to change the context length."><span class="ctx-bar"><span id="ctx-fill"></span></span><span id="ctx-text"></span></div>
       <div class="voice-bar column" id="voice-bar" hidden>
         <span class="voice-dot" id="voice-dot" aria-hidden="true"></span>
         <span class="voice-state" id="voice-state" role="status"></span>
