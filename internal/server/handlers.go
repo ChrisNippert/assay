@@ -377,6 +377,7 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 			writeError(w, http.StatusBadRequest, "no such message")
 			return nil, false
 		}
+		s.forgetChat(c.ID) // a saved cache may hold the messages just cut
 	}
 	c.Model = req.Model // switching models mid-chat is allowed
 	c.Preset, c.Options, c.System, c.Think = req.Preset, overrides, req.System, req.Think
@@ -431,7 +432,7 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 		saved, _ := ms.Settings(c.Model)
 		_, t.ctxSaved = saved["num_ctx"]
 	}
-	t.req = ollama.ChatRequest{Model: c.Model, Messages: msgs, Options: options}
+	t.req = ollama.ChatRequest{Model: c.Model, Messages: msgs, Options: options, ChatID: c.ID}
 	if think != nil {
 		t.req.Think = *think
 	}
@@ -504,6 +505,7 @@ func (s *Server) handleDeleteChat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "chat not found")
 		return
 	}
+	s.forgetChat(r.PathValue("id"))
 	w.WriteHeader(http.StatusNoContent)
 }
 

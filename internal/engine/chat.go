@@ -50,7 +50,7 @@ func chatBody(m *Model, req ollama.ChatRequest) map[string]any {
 		}
 		msgs = append(msgs, chatMessage{Role: x.Role, Content: parts})
 	}
-	body := map[string]any{"messages": msgs, "stream": true, "timings_per_token": false}
+	body := map[string]any{"messages": msgs, "stream": true, "timings_per_token": false, "cache_prompt": true}
 	opts := m.options(req.Options)
 	for k, v := range opts {
 		if f, ok := sampling[k]; ok {
@@ -82,6 +82,7 @@ type chunk struct {
 		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
 	Timings *struct {
+		CacheN      int     `json:"cache_n"` // prompt tokens reused from the cache
 		PromptN     int     `json:"prompt_n"`
 		PromptMS    float64 `json:"prompt_ms"`
 		PredictedN  int     `json:"predicted_n"`
@@ -117,6 +118,22 @@ func (e *Engine) Chat(ctx context.Context, req ollama.ChatRequest, fn func(ollam
 		p.busy--
 		p.mu.Unlock()
 		p.touch(ka, e.opt.KeepAlive)
+	}()
+
+	// The slot serves this chat now. A server that was just started gets the
+	// chat's saved cache first (kvcache.go); the slot forgets the chat again
+	// if the reply fails.
+	chat := chatKey(req.ChatID)
+	restored := 0
+	if chat != "" && p.takeFresh() {
+		restored = e.restoreSlot(p, chat)
+	}
+	p.beginChat(chat, restored)
+	replied := false
+	defer func() {
+		if !replied {
+			p.beginChat("", 0)
+		}
 	}()
 
 	b, _ := json.Marshal(chatBody(p.model, req))
@@ -158,6 +175,10 @@ func (e *Engine) Chat(ctx context.Context, req ollama.ChatRequest, fn func(ollam
 			final.PromptEvalCount, final.EvalCount = c.Timings.PromptN, c.Timings.PredictedN
 			final.PromptEvalDuration = int64(c.Timings.PromptMS * float64(time.Millisecond))
 			final.EvalDuration = int64(c.Timings.PredictedMS * float64(time.Millisecond))
+			if chat != "" {
+				// The slot holds the whole history and the reply now.
+				p.beginChat(chat, c.Timings.CacheN+c.Timings.PromptN+c.Timings.PredictedN)
+			}
 		}
 		for _, ch := range c.Choices {
 			if ch.FinishReason != nil && *ch.FinishReason != "" {
@@ -176,6 +197,7 @@ func (e *Engine) Chat(ctx context.Context, req ollama.ChatRequest, fn func(ollam
 	if err := sc.Err(); err != nil {
 		return err
 	}
+	replied = true
 	final.CreatedAt = time.Now()
 	final.TotalDuration = int64(time.Since(start))
 	final.Message = ollama.Message{Role: "assistant"}
