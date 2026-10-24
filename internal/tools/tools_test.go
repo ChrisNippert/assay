@@ -368,7 +368,7 @@ func TestSearchChats(t *testing.T) {
 		t.Fatalf("%+v %v", hits, err)
 	}
 	// Both match both words; the title hit ranks the rye chat first.
-	if hits[0].ID != "20261001-00000003" || hits[1].ID != "20261001-00000001" || !strings.Contains(hits[1].Snippet, "sourdough starter") {
+	if hits[0].ID != "20261001-00000003" || hits[1].ID != "20261001-00000001" || !strings.Contains(hits[1].Snippet, "You: How do I feed a sourdough starter?") || !strings.Contains(hits[1].Snippet, "Assistant: Feed it equal weights") {
 		t.Errorf("%+v", hits)
 	}
 	r := Run(context.Background(), Build(Deps{Chats: st, ExceptChat: "20261001-00000004"}), "search_chats", json.RawMessage(`{"query":"tyre"}`))

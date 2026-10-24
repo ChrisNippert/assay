@@ -73,14 +73,15 @@ func SearchChats(st ChatStore, query, except string) ([]ChatHit, error) {
 		title := strings.ToLower(c.Title)
 		score, distinct := 0, 0
 		seen := make([]bool, len(ws))
-		snippet := ""
+		var snippets []string
 		for i, w := range ws {
 			if n := strings.Count(title, w); n > 0 {
 				score += 3 * n
 				seen[i] = true
 			}
 		}
-		for _, m := range c.Messages {
+		answered := -1 // the reply already quoted as the answer to a matching question
+		for mi, m := range c.Messages {
 			if m.Role != "user" && m.Role != "assistant" {
 				continue
 			}
@@ -95,8 +96,17 @@ func SearchChats(st ChatStore, query, except string) ([]ChatHit, error) {
 					}
 				}
 			}
-			if first >= 0 && snippet == "" {
-				snippet = excerpt(m.Content, first, 220)
+			if first >= 0 && len(snippets) < 4 && mi != answered {
+				who := "You: "
+				if m.Role == "assistant" {
+					who = "Assistant: "
+				}
+				snippets = append(snippets, who+excerpt(m.Content, first, 400))
+				// A question that matched: its answer is what's wanted.
+				if m.Role == "user" && mi+1 < len(c.Messages) && c.Messages[mi+1].Role == "assistant" {
+					snippets = append(snippets, "Assistant: "+excerpt(c.Messages[mi+1].Content, 0, 400))
+					answered = mi + 1
+				}
 			}
 		}
 		for _, s := range seen {
@@ -107,8 +117,9 @@ func SearchChats(st ChatStore, query, except string) ([]ChatHit, error) {
 		if score == 0 {
 			continue
 		}
-		if snippet == "" {
-			snippet = "(matched in the title)"
+		snippet := "(matched in the title)"
+		if len(snippets) > 0 {
+			snippet = strings.Join(snippets, "\n   ")
 		}
 		hits = append(hits, ChatHit{ID: c.ID, Title: c.Title, Updated: c.Updated.Format("2006-01-02"), Snippet: snippet, score: distinct*1000 + score})
 	}
