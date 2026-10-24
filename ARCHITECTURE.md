@@ -163,7 +163,8 @@ code doesn't care which engine runs (`server.Backend`).
   draft, so a server with other settings never reads a file it can't use.
   Capped at 2 GB, oldest first; files are big (~0.5 GB for 5k tokens at
   16k context). Qwen3.5-2B with a 5k-token history: reload to first token
-  2.6 s → 1.4 s. Bigger models should gain more (unmeasured).
+  2.6 s → 1.4 s; after the chat page preloads it, 1.6 s → 0.3 s (one early
+  preload run didn't restore, cause unknown). Bigger models should gain more.
 - **CPU threads.** `num_thread` becomes `-t` (Tune → Memory). Only matters
   for layers on the CPU; 4 threads beat the default (all 16) on a CPU-only
   9B (3.7 vs 2.6 tok/s, one sample), so Auto may deserve a better default.
