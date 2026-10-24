@@ -478,3 +478,36 @@ func (f *File) ModelInfo() map[string]any {
 	}
 	return out
 }
+
+// VocabSize is the number of tokens in the tokenizer's vocabulary, 0 if
+// the file has none.
+func (f *File) VocabSize() int {
+	switch t := f.Meta["tokenizer.ggml.tokens"].(type) {
+	case []any:
+		return len(t)
+	case ArrayInfo:
+		return int(t.Len)
+	}
+	return 0
+}
+
+// SameVocab reports whether two files tokenize alike, which a draft model
+// for speculative decoding must: same tokenizer kind and pre-tokenizer,
+// same vocabulary size and the same special tokens.
+func (f *File) SameVocab(o *File) bool {
+	n := f.VocabSize()
+	if n == 0 || n != o.VocabSize() {
+		return false
+	}
+	for _, k := range []string{"tokenizer.ggml.model", "tokenizer.ggml.pre"} {
+		if f.String(k) != o.String(k) {
+			return false
+		}
+	}
+	for _, k := range []string{"tokenizer.ggml.bos_token_id", "tokenizer.ggml.eos_token_id"} {
+		if f.Uint(k) != o.Uint(k) {
+			return false
+		}
+	}
+	return true
+}

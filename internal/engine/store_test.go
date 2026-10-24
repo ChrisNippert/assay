@@ -142,3 +142,27 @@ func TestModelSettingsLayering(t *testing.T) {
 		t.Errorf("settings left: %v", s)
 	}
 }
+
+func TestDraftAndThreadArgs(t *testing.T) {
+	st, err := OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := New(st, Options{CacheType: "q8_0", FlashAttn: "on"})
+	for _, m := range []*Model{{Name: "big:1", Files: []string{"big.gguf"}}, {Name: "small:1", Files: []string{"small.gguf"}}} {
+		if err := st.Put(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m, _ := st.Get("big:1")
+	o := loadOptsFrom(map[string]any{"draft_model": "small:1", "draft_max": 8.0, "num_thread": 6.0})
+	a := strings.Join(e.args(m, o, 1), " ")
+	for _, want := range []string{"-md " + st.Blob("small.gguf"), "--spec-draft-n-max 8", "-t 6"} {
+		if !strings.Contains(a, want) {
+			t.Errorf("args lack %q: %s", want, a)
+		}
+	}
+	if a := strings.Join(e.args(m, loadOptsFrom(nil), 1), " "); strings.Contains(a, "-md") || strings.Contains(a, " -t ") {
+		t.Errorf("args = %s", a)
+	}
+}
