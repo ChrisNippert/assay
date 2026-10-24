@@ -156,11 +156,10 @@ select, textarea, input { font: inherit; color: var(--text); }
 .thinking summary { cursor: pointer; font-size: var(--fs-sm); color: var(--muted); }
 .thinking-text { margin-top: var(--s2); padding-left: var(--s3); border-left: 2px solid var(--border-strong); color: var(--muted); white-space: pre-wrap; font-size: var(--fs-sm); }
 /* Where a chat's summary stands in for older messages: a quiet rule that folds open. */
-.compress-divider { margin: var(--s4) 0; padding-top: var(--s3); border-top: 1px solid var(--border); font-size: var(--fs-sm); color: var(--muted); }
-.compress-divider > summary { cursor: pointer; list-style: none; text-align: center; text-wrap: balance; }
-.compress-divider > summary::-webkit-details-marker { display: none; }
+.compress-divider { margin: var(--s4) 0; padding-top: var(--s3); border-top: 1px dashed var(--border-strong); font-size: var(--fs-sm); color: var(--muted); }
+.compress-divider > summary { cursor: pointer; }
 .compress-divider > summary:hover { color: var(--text); }
-.compress-text { margin: var(--s3) auto 0; max-width: 62ch; padding: var(--s3) var(--s4); border-radius: 10px; background: var(--surface); color: var(--text-2); white-space: pre-wrap; text-align: left; line-height: 1.5; }
+.compress-text { margin-top: var(--s2); padding-left: var(--s3); border-left: 2px solid var(--border-strong); color: var(--muted); line-height: 1.5; }
 /* A tool call: a quiet one-line row like thinking, opening to the details. */
 .tool { margin: var(--s2) 0; }
 .tool summary { cursor: pointer; font-size: var(--fs-sm); color: var(--muted); }

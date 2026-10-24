@@ -994,7 +994,7 @@
     const box = el('details', 'compress-divider');
     const n = c.saved >= 1000 ? (c.saved / 1000).toFixed(1) + 'k' : String(c.saved || 0);
     const saved = c.saved ? `, saved ~${n} tokens` : '';
-    box.append(el('summary', null, `Earlier messages summarized · ${c.upTo} messages${saved}`));
+    box.append(el('summary', null, `Context compacted · ${c.upTo} earlier messages summarized${saved}`));
     const body = el('div', 'compress-text md');
     setMarkdown(body, c.text);
     box.append(body);
