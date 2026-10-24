@@ -5,6 +5,12 @@ big it is (S = an hour or two, M = a session, L = several sessions).
 
 ## Next up
 
+**In progress (2026-10-24):** speculative decoding types (n-gram, MTP heads,
+EAGLE3/DFlash/DSpark drafts, an Auto speed-up), LoRA adapters, prompt-cache
+reuse and slot save/restore, structured output (JSON / schema / grammar),
+MoE tuning (load mode, experts on CPU). **Then, as asked:** tool use, and
+context compression, both automatic and a manual "compress now".
+
 ### 1. ✅ Finish the llama.cpp switch (done 2026-10-23)
 
 Done 2026-10-23: Ollama is no longer needed (stages 1–5 below).
