@@ -4,23 +4,8 @@ package engine
 
 import (
 	"os"
-	"path/filepath"
 	"syscall"
 )
-
-// nearest returns path, or its closest ancestor that exists.
-func nearest(path string) string {
-	for {
-		if _, err := os.Stat(path); err == nil {
-			return path
-		}
-		up := filepath.Dir(path)
-		if up == path {
-			return path
-		}
-		path = up
-	}
-}
 
 // DiskFree is the space available to us on the disk holding path (or its
 // closest existing parent).

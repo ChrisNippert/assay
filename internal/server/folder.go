@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -48,8 +49,12 @@ type diskMount struct {
 	Total   int64  `json:"total"`
 }
 
-// mounts lists mounted disks (from /proc/mounts) worth offering.
+// mounts lists mounted disks (from /proc/mounts; drive letters on
+// Windows) worth offering.
 func mounts(cur string) []diskMount {
+	if runtime.GOOS == "windows" {
+		return driveLetters(cur)
+	}
 	f, err := os.Open("/proc/mounts")
 	if err != nil {
 		return nil
@@ -78,9 +83,29 @@ func mounts(cur string) []diskMount {
 		}
 		m := diskMount{Path: path, Free: free, Total: total, Suggest: filepath.Join(path, "ollamui", "models")}
 		if path == "/" {
-			m.Suggest = filepath.Join(os.Getenv("HOME"), "ollamui-models") // / itself isn't writable
+			home, _ := os.UserHomeDir()
+			m.Suggest = filepath.Join(home, "ollamui-models") // / itself isn't writable
 		}
 		out = append(out, m)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Free > out[j].Free })
+	return out
+}
+
+// driveLetters offers C: to Z: (skipping the one the models are on).
+func driveLetters(cur string) []diskMount {
+	var out []diskMount
+	for c := 'C'; c <= 'Z'; c++ {
+		root := string(c) + `:\`
+		if _, err := os.Stat(root); err != nil || engine.SameDisk(root, cur) {
+			continue
+		}
+		free, err := engine.DiskFree(root)
+		total, _ := engine.DiskTotal(root)
+		if err != nil || total == 0 {
+			continue
+		}
+		out = append(out, diskMount{Path: root, Free: free, Total: total, Suggest: filepath.Join(root, "ollamui", "models")})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Free > out[j].Free })
 	return out

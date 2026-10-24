@@ -123,6 +123,17 @@ installed version (0.40.x) before building UI for it.
   documented option (default 4, 0 = off). Revisit on a newer Ollama; if it
   lands, check `/api/show` lists the draft before showing any UI.
 
+### 3. Windows release follow-ups (S–M)
+
+Windows build and zip exist (2026-10-24, see ARCHITECTURE "Platforms").
+- Test on a real Windows PC: load a model, chat, models folder move,
+  second launch, Ollama import (Ollama on Windows keeps `%USERPROFILE%\.ollama\models`).
+- An exe icon and version info (a `.syso` resource), maybe code signing to
+  avoid the SmartScreen warning.
+- Optional: a tray icon instead of the console window (needs cgo or a
+  pure-Go tray lib; weigh against the single-binary rule).
+- PDFs need pdftotext; a pure-Go PDF text extractor would avoid that.
+
 ## Lower priority
 
 Set 2026-10-23: after the llama.cpp switch and the models folder.

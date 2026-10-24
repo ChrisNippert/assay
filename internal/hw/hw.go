@@ -20,12 +20,15 @@ type Memory struct {
 }
 
 // Detect finds the largest GPU's memory (AMD via sysfs, NVIDIA via
-// nvidia-smi) and total system RAM. Missing pieces are left as zero.
+// nvidia-smi, any vendor via the registry on Windows) and total system RAM.
+// Missing pieces are left as zero.
 func Detect() Memory {
-	m := Memory{RAM: memTotal("/proc/meminfo")}
+	m := Memory{RAM: totalRAM()}
 	if v := amdVRAM("/sys/class/drm"); v > 0 {
 		m.GPU, m.VRAM = "AMD GPU", v
 	} else if name, v := nvidiaVRAM(); v > 0 {
+		m.GPU, m.VRAM = name, v
+	} else if name, v := windowsVRAM(); v > 0 {
 		m.GPU, m.VRAM = name, v
 	}
 	return m

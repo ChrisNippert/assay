@@ -385,6 +385,25 @@ against a strict pattern before they touch the filesystem.
   - The llama-servers listen on 127.0.0.1 only. Remote browsers and
     editors only talk to ollamui.
 
+## Platforms and releases
+
+`sh tools/release/build.sh [version]` cross-compiles (no cgo) Windows
+amd64, Linux amd64/arm64 and macOS arm64 into `dist/`: a zip or tar.gz with
+the one binary and a README (`tools/release/README-*.txt`). Platform bits:
+
+- **Windows**: data in `%LOCALAPPDATA%\ollamui`, settings in
+  `%APPDATA%\ollamui`; RAM from `GlobalMemoryStatusEx`, VRAM from the
+  display adapters' registry keys (`HardwareInformation.qwMemorySize`, any
+  vendor; nvidia-smi first), disk space from `GetDiskFreeSpaceExW`, drive
+  letters as models-folder suggestions. `-open` (default on Windows) opens
+  the browser; a second launch finds the port taken and just opens the
+  page; an error waits for Enter so a double-clicked console doesn't
+  vanish. Hard links aren't counted (no link count in `FileInfo`).
+- Checked under Wine (2026-10-24): pages, the llama.cpp install
+  (`win-vulkan` zip, found the GPU over Vulkan) and a model download work;
+  `llama-server.exe` itself crashes at warm-up under Wine even when run by
+  hand, so loading a model needs a real Windows machine to test.
+
 ## Storage
 
 No database. Plain files under XDG directories:

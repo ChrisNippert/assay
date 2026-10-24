@@ -10,8 +10,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -32,9 +34,18 @@ import (
 	voiceserver "ollamui/tools/voice"
 )
 
+// version is set at build time (tools/release/build.sh).
+var version = "dev"
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "ollamui:", err)
+		// Started by double-clicking, the console window would close
+		// before anyone could read why.
+		if runtime.GOOS == "windows" {
+			fmt.Fprintln(os.Stderr, "Press Enter to close.")
+			fmt.Scanln()
+		}
 		os.Exit(1)
 	}
 }
@@ -43,10 +54,12 @@ func run() error {
 	listen := flag.String("listen", "127.0.0.1:8484", "address to serve the UI on")
 	llamaServer := flag.String("llama-server", os.Getenv("OLLAMUI_LLAMA_SERVER"), "llama.cpp's llama-server binary (default: ~/.local/share/ollamui/llama.cpp/llama-server, then the release installed from Settings, then PATH)")
 	cacheType := flag.String("cache-type", "q8_0", "K/V cache type for llama.cpp: f16, q8_0 or q4_0")
-	ollamaModels := flag.String("ollama-models", filepath.Join(os.Getenv("HOME"), ".ollama", "models"), "Ollama's models folder, imported (by hard link) into ollamui's own")
-	dataDir := flag.String("data", defaultDir("XDG_DATA_HOME", ".local/share"), "where chats are stored")
+	ollamaModels := flag.String("ollama-models", defaultOllamaModels(), "Ollama's models folder, imported (by hard link) into ollamui's own")
+	dataDir := flag.String("data", defaultDir("XDG_DATA_HOME", ".local/share", "LOCALAPPDATA"), "where chats are stored")
 	modelsFlag := flag.String("models", "", "where models are stored (default: the folder chosen in Settings, else <data>/models); overrides the saved choice")
-	configDir := flag.String("config", defaultDir("XDG_CONFIG_HOME", ".config"), "where presets and settings are stored")
+	configDir := flag.String("config", defaultDir("XDG_CONFIG_HOME", ".config", "APPDATA"), "where presets and settings are stored")
+	showVersion := flag.Bool("version", false, "print the version and exit")
+	openUI := flag.Bool("open", runtime.GOOS == "windows", "open the UI in the browser once it's ready")
 	voiceURL := flag.String("voice", envOr("OLLAMUI_VOICE", "http://127.0.0.1:8485"), "speech service for voice mode (OpenAI audio API); empty turns voice off")
 	sttModel := flag.String("stt-model", "", "speech-to-text model name to ask the speech service for")
 	voiceLaunch := flag.Bool("voice-launch", true, "start the bundled speech service (with uv) when voice mode is used, and stop it when idle")
@@ -59,6 +72,10 @@ func run() error {
 		return nil
 	})
 	flag.Parse()
+	if *showVersion {
+		fmt.Println("ollamui", version)
+		return nil
+	}
 
 	level := slog.LevelInfo
 	if *debug {
@@ -186,9 +203,25 @@ func run() error {
 		ReadHeaderTimeout: 10 * time.Second,
 		// No WriteTimeout: chat replies stream for as long as the model talks.
 	}
+	ln, err := net.Listen("tcp", *listen)
+	if err != nil {
+		// Most likely ollamui is already running (a second double-click):
+		// show that one instead.
+		if *openUI && addrInUse(err) {
+			log.Info("ollamui is already running; opening it", "listen", *listen)
+			return openBrowser("http://" + displayAddr(*listen))
+		}
+		return err
+	}
 	errc := make(chan error, 1)
-	go func() { errc <- hs.ListenAndServe() }()
-	log.Info("ollamui ready", "url", "http://"+displayAddr(*listen))
+	go func() { errc <- hs.Serve(ln) }()
+	url := "http://" + displayAddr(*listen)
+	log.Info("ollamui ready", "url", url)
+	if *openUI {
+		if err := openBrowser(url); err != nil {
+			log.Warn("couldn't open the browser", "url", url, "err", err)
+		}
+	}
 
 	select {
 	case err := <-errc:
@@ -212,8 +245,15 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
-// defaultDir follows the XDG convention: $env/ollamui, else ~/fallback/ollamui.
-func defaultDir(env, fallback string) string {
+// defaultDir follows the XDG convention: $env/ollamui, else
+// ~/fallback/ollamui. On Windows it's %winEnv%\ollamui (LOCALAPPDATA for
+// data, APPDATA for settings).
+func defaultDir(env, fallback, winEnv string) string {
+	if runtime.GOOS == "windows" {
+		if d := os.Getenv(winEnv); d != "" {
+			return filepath.Join(d, "ollamui")
+		}
+	}
 	if d := os.Getenv(env); d != "" {
 		return filepath.Join(d, "ollamui")
 	}
@@ -222,6 +262,37 @@ func defaultDir(env, fallback string) string {
 		return "ollamui-" + filepath.Base(fallback)
 	}
 	return filepath.Join(home, fallback, "ollamui")
+}
+
+// defaultOllamaModels is where Ollama keeps its models: $OLLAMA_MODELS, else
+// ~/.ollama/models (on Windows too, under the user's profile).
+func defaultOllamaModels() string {
+	if d := os.Getenv("OLLAMA_MODELS"); d != "" {
+		return d
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".ollama", "models")
+}
+
+// addrInUse reports whether listening failed because the address is taken
+// (WSAEADDRINUSE, 10048, on Windows).
+func addrInUse(err error) bool {
+	var errno syscall.Errno
+	return errors.As(err, &errno) && (errno == syscall.EADDRINUSE || errno == 10048)
+}
+
+// openBrowser shows url in the default browser.
+func openBrowser(url string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	case "darwin":
+		cmd = exec.Command("open", url)
+	default:
+		cmd = exec.Command("xdg-open", url)
+	}
+	return cmd.Start()
 }
 
 func isLoopback(addr string) bool {
