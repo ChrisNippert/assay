@@ -74,3 +74,22 @@ func TestSearchPipelines(t *testing.T) {
 		}
 	}
 }
+
+func TestCantRun(t *testing.T) {
+	gg := func(arch string) *GGUF { return &GGUF{Architecture: arch} }
+	cases := []struct {
+		r    Repo
+		want bool
+	}{
+		{Repo{PipelineTag: "text-to-image"}, true},
+		{Repo{PipelineTag: "automatic-speech-recognition", GGUF: gg("whisper")}, true},
+		{Repo{PipelineTag: "automatic-speech-recognition"}, true},
+		{Repo{PipelineTag: "automatic-speech-recognition", GGUF: gg("qwen3asr")}, false},
+		{Repo{PipelineTag: "text-generation", GGUF: gg("qwen3")}, false},
+	}
+	for _, c := range cases {
+		if got := c.r.CantRun() != ""; got != c.want {
+			t.Errorf("%+v: CantRun = %v", c.r, got)
+		}
+	}
+}

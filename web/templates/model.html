@@ -13,7 +13,7 @@
 
   {{with .Data.Repo}}
   {{if $.Data.Draft}}<div class="banner draft-banner" role="note"><strong>This is a draft model, not a model to chat with.</strong> It's a small helper for speculative decoding: it guesses the next few tokens so {{with $.Data.DraftFor}}<a href="/discover?open={{.}}">{{.}}</a>{{else}}the big model it was trained for{{end}} can confirm them in one step and write faster. ollamui can't download draft GGUFs yet; to speed a model up, pick a smaller model of the same family as its draft in Tune.</div>{{end}}
-  {{if $.Data.Generator}}<div class="banner draft-banner" role="note"><strong>This model makes {{join $.Data.Out " and "}}, which ollamui can't run.</strong> ollamui can't run image, video or audio generators yet: llama.cpp runs text models, plus image and some audio input through an mmproj file. The files are on <a href="https://huggingface.co/{{.ID}}" target="_blank" rel="noopener">Hugging Face ↗</a> for other tools.</div>{{end}}
+  {{if $.Data.Generator}}<div class="banner draft-banner" role="note"><strong>This model makes {{join $.Data.Out " and "}}, which ollamui can't run.</strong> ollamui can't run image, video or audio generators yet: llama.cpp runs text models, plus image and some audio input through an mmproj file. The files are on <a href="https://huggingface.co/{{.ID}}" target="_blank" rel="noopener">Hugging Face ↗</a> for other tools.</div>{{else if $.Data.CantRun}}<div class="banner draft-banner" role="note"><strong>{{$.Data.CantRun}}.</strong> The files are on <a href="https://huggingface.co/{{.ID}}" target="_blank" rel="noopener">Hugging Face ↗</a> for other tools.</div>{{end}}
   <header class="model-head">
     <div class="model-title">
       <h1>{{.Name}}</h1>
@@ -34,7 +34,7 @@
 
   <div class="model-body">
     <section class="card quants">
-      {{if or $.Data.Draft $.Data.Generator}}<div class="card-head"><h2>Files</h2></div>{{else}}
+      {{if or $.Data.Draft $.Data.CantRun}}<div class="card-head"><h2>Files</h2></div>{{else}}
       <div class="card-head">
         <h2>Pick a quant</h2>
         <form method="get" class="ctx-form small">
@@ -51,7 +51,7 @@
       </p>
       {{if not $.Data.Quants}}<p class="muted">{{if $.Data.Drafts}}No quants of a model to chat with here, only draft models (below).{{else}}No GGUF quants found in this repo.{{end}}</p>{{end}}
       {{end}}
-      {{if $.Data.Generator}}<p class="muted">No download is offered: ollamui can't run image, video or audio generators yet.</p>{{end}}
+      {{if $.Data.CantRun}}<p class="muted">No download is offered: {{$.Data.CantRun}}.</p>{{end}}
       <div class="quant-list">
         {{range $.Data.Quants}}
         <div class="quant-row{{if .Best}} best{{end}}" data-tag="{{.Tag}}">

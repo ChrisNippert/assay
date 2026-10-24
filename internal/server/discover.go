@@ -41,6 +41,7 @@ type searchResult struct {
 	// Generator marks a model that makes images, video or audio and no text,
 	// which llama.cpp can't run.
 	Generator bool      `json:"generator,omitempty"`
+	CantRun   string    `json:"cantRun,omitempty"` // why llama.cpp can't run it
 	Gated     bool      `json:"gated"`
 	Downloads int       `json:"downloads"`
 	Likes     int       `json:"likes"`
@@ -98,14 +99,14 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 			Installed: installed[strings.ToLower(repo.ID)],
 		}
 		res.In, res.Out = repo.Modalities()
-		res.Generator = repo.Generator()
+		res.Generator, res.CantRun = repo.Generator(), repo.CantRun()
 		res.Score, res.ScoreOf = s.scoreFor(repo.Tags)
 		res.Draft, res.DraftFor = repo.IsDraft(), repo.DraftFor()
 		if params > 0 {
 			res.Q4Size = params * 48 / 80 // ~4.8 bits per weight, typical of Q4_K_M
 			res.Fit = hw.Classify(hw.EstimateKV(res.Q4Size, params, discoverCtx, moe, kvf), s.memory)
 		}
-		if res.Generator {
+		if res.CantRun != "" {
 			res.Fit = hw.Fit{Level: "draft", Label: "Can\u2019t run here"}
 			res.Score, res.ScoreOf = nil, ""
 		}
@@ -310,6 +311,7 @@ type modelPageData struct {
 	// Generator marks a model that makes images, video or audio and no text:
 	// nothing here can run it, so no quants are offered.
 	Generator   bool
+	CantRun     string // why llama.cpp can't run it, if it can't
 	Recommended []setting
 	Ctx         int
 	CtxOptions  []int
@@ -404,9 +406,9 @@ func (s *Server) handleModelPage(w http.ResponseWriter, r *http.Request) {
 	if vision && !slices.Contains(data.In, "image") && slices.Contains(data.Out, "text") {
 		data.In = slices.SortedFunc(slices.Values(append(data.In, "image")), func(a, b string) int { return slices.Index(hf.Modalities, a) - slices.Index(hf.Modalities, b) }) // a projector means it sees
 	}
-	data.Generator = repo.Generator()
+	data.Generator, data.CantRun = repo.Generator(), repo.CantRun()
 	for _, q := range quants {
-		if data.Generator {
+		if data.CantRun != "" {
 			break
 		}
 		if q.Draft || data.Draft {

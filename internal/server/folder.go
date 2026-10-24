@@ -129,13 +129,16 @@ func (s *Server) folderInfo() map[string]any {
 	if !ok {
 		return nil
 	}
+	// The move's state first: once it says done, the store already has its
+	// new folder, so the two can't disagree.
+	move := s.move.snapshot()
 	st := mf.Store()
 	used, free := st.Usage()
 	total, _ := engine.DiskTotal(st.Dir())
 	return map[string]any{
 		"dir": st.Dir(), "used": used, "free": free, "total": total,
 		"pinned": mf.FolderPinned(), "mounts": mounts(st.Dir()),
-		"move": s.move.snapshot(), "pulling": s.pullsRunning(),
+		"move": move, "pulling": s.pullsRunning(),
 	}
 }
 

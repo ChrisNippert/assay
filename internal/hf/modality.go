@@ -137,3 +137,17 @@ func (r Repo) Generator() bool {
 	_, out := r.Modalities()
 	return len(out) > 0 && !slices.Contains(out, "text")
 }
+
+// CantRun says why llama.cpp can't run the repo's GGUFs, or "" if it can:
+// generators, and speech recognizers in whisper.cpp's format (HF lists
+// their architecture as "whisper", or none), which only look like GGUFs.
+// Speech models built on an LLM (Voxtral, Qwen-ASR) run through an mmproj.
+func (r Repo) CantRun() string {
+	switch {
+	case r.Generator():
+		return "ollamui can’t run image, video or audio generators yet"
+	case r.PipelineTag == "automatic-speech-recognition" && (r.Arch() == "whisper" || r.Arch() == ""):
+		return "Whisper models run in whisper.cpp, not llama.cpp, so ollamui can’t run them"
+	}
+	return ""
+}

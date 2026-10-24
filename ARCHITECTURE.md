@@ -204,6 +204,25 @@ hybrid/sliding-window attention, so it's pessimistic for those models.
 Reading layer counts from the GGUF header via an HTTP range request would
 make it exact; that's a later improvement.
 
+### Takes → Makes (modalities)
+
+`Repo.Modalities()` maps the pipeline tag to what a model takes and makes
+(text, image, video, audio): `image-text-to-text` is text+image → text,
+`automatic-speech-recognition` audio → text, `text-to-speech` text → audio,
+and so on; tags like `vision`, `omni`, `audio` add inputs, only to
+text-output models; no tag counts as text → text; embedding pipelines make
+nothing. Discover's "Takes → Makes" chips match when inputs ⊇ Takes and
+outputs ⊇ Makes (in the browser; `takes=`/`makes=` in the URL, old
+`vision=1` reads as Takes: Image). A plain search's top results bury media
+makers and speech models, so when Makes has media or Takes has audio/video,
+`/api/hf/search` also asks HF once per matching `pipeline_tag`
+(`hf.SearchPipelines`) and merges by downloads. `Repo.CantRun()` explains
+what llama.cpp can't run: generators (FLUX, Wan, TTS; hidden unless Makes
+asks for media) and whisper.cpp-format speech models (ASR with arch
+`whisper` or none). They're badged "Can't run here" and their model page
+shows the reason instead of quants. Known gaps: repos without useful tags
+(ggml-org's Voxtral and Qwen3-Omni) read as text → text.
+
 ### Draft models (speculative decoding)
 
 Repos increasingly ship small draft models (DSpark, DFlash, EAGLE3) for

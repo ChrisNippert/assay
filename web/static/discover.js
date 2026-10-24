@@ -329,9 +329,9 @@
     if (r.context >= 131072) {
       tags.append(filterTag(`${Math.round(r.context / 1024)}k ctx`, 'Only models with 128k+ context', () => { $('f-longctx').checked = true; changed(); }));
     }
-    if (r.generator) {
+    if (r.cantRun) {
       const t = el('span', 'tag draft', 'not runnable here');
-      t.title = 'ollamui can\u2019t run image, video or audio generators yet';
+      t.title = r.cantRun;
       tags.append(t);
     }
     if (r.draft) {
@@ -344,10 +344,10 @@
     main.append(tags);
 
     const side = el('div', 'r-side small');
-    if (r.generator) {
+    if (r.cantRun) {
       const fit = el('div', 'r-fit fit-draft', 'Can\u2019t run here');
-      fit.title = 'ollamui can\u2019t run image, video or audio generators yet';
-      side.append(fit, el('div', 'muted', `makes ${r.out.join(' and ')}`));
+      fit.title = r.cantRun;
+      side.append(fit, el('div', 'muted', r.generator ? `makes ${r.out.join(' and ')}` : 'needs whisper.cpp'));
     } else if (r.draft) {
       const fit = el('div', 'r-fit fit-draft', 'Draft model');
       fit.title = 'Speeds up another model through speculative decoding; it can\u2019t chat on its own';
