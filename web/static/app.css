@@ -1094,3 +1094,11 @@ a.tag-link:hover { border-color: var(--accent-line); color: var(--accent-text); 
 .tune .spin-btn { padding: 5px; }
 .tune .tune-saved { padding: 0 var(--s1); }
 @media (max-width: 760px) { .tune .row { min-height: 44px; } }
+
+/* ---- starred (default) model ---- */
+.star-btn { color: var(--muted); }
+.star-btn[aria-pressed="true"] { color: #e5a50a; }
+.star-btn[aria-pressed="true"] svg { fill: currentColor; }
+.switcher-fav { flex: none; opacity: 0; transition: opacity .15s; }
+.switcher-row:hover .switcher-fav, .switcher-row:focus-visible .switcher-fav, .switcher-fav[aria-pressed="true"] { opacity: 1; }
+@media (hover: none) { .switcher-fav { opacity: 1; } }

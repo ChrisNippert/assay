@@ -499,6 +499,16 @@
         if (o.value.startsWith('preset:')) title.prepend(el('span', 'switcher-star', '★ '));
         text.append(title, el('span', 'row-sub', metaOf(o)));
         row.append(dot, text);
+        if (!o.value.startsWith('preset:')) {
+          // A span, since the row is a button itself; app.js handles the click.
+          const star = el('span', 'icon-btn star-btn switcher-fav');
+          star.setAttribute('role', 'button');
+          star.dataset.star = o.value;
+          star.setAttribute('aria-pressed', String(o.hasAttribute('data-starred')));
+          star.title = o.hasAttribute('data-starred') ? 'Default model for new chats. Click to unstar' : 'Star: use as the default model when none is loaded';
+          star.innerHTML = '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></svg>';
+          row.append(star);
+        }
         // How it fits and how fast it ran; a preset shows its base model's.
         const m = o.value.startsWith('preset:') ? modelOption(baseOf(o)) : o;
         const side = el('span', 'switcher-side');
@@ -552,6 +562,10 @@
   });
 
   select.addEventListener('change', syncPicker);
+  document.addEventListener('star-changed', (e) => {
+    for (const o of select.querySelectorAll('option')) o.toggleAttribute('data-starred', !!e.detail && o.value === e.detail);
+    if (!card.hidden) renderSwitcher();
+  });
   document.addEventListener('loaded-changed', (e) => {
     loadedNames = new Set(e.detail.map((m) => m.name));
     showLoadState();

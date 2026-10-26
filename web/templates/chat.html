@@ -4,7 +4,7 @@
         {{range .Presets}}<option value="preset:{{.Name}}" data-base="{{.Base}}"{{if eq .Name $.Data.Preset}} selected{{end}}>{{.Name}}</option>{{end}}
       </optgroup>{{end}}
       <optgroup label="Models">
-        {{range .ModelGroups}}{{$g := .}}{{with .Primary}}<option value="{{.Name}}" data-base="{{.Name}}" data-names="{{$g.NamesJoined}}" data-meta="{{.Details.Family}} · {{.Details.ParameterSize}} · {{.Details.QuantizationLevel}}" data-size="{{bytes .Size}}" data-fit="{{$g.Fit.Level}}" data-fit-label="{{$g.Fit.Label}}" data-speed="{{$g.Speed}}"{{if and (not $.Data.Preset) ($g.Has $.Data.Model)}} selected{{end}}>{{.Name}}</option>{{end}}{{end}}
+        {{range .ModelGroups}}{{$g := .}}{{with .Primary}}<option value="{{.Name}}" data-base="{{.Name}}" data-names="{{$g.NamesJoined}}" data-meta="{{.Details.Family}} · {{.Details.ParameterSize}} · {{.Details.QuantizationLevel}}" data-size="{{bytes .Size}}" data-fit="{{$g.Fit.Level}}" data-fit-label="{{$g.Fit.Label}}" data-speed="{{$g.Speed}}"{{if $g.Has $.Starred}} data-starred{{end}}{{if and (not $.Data.Preset) ($g.Has $.Data.Model)}} selected{{end}}>{{.Name}}</option>{{end}}{{end}}
       </optgroup>
       {{if not .Models}}<option value="">No models installed</option>{{end}}
     </select>

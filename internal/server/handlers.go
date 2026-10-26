@@ -92,6 +92,9 @@ func (s *Server) handleChatPage(w http.ResponseWriter, r *http.Request) {
 			data.Model = m.Name
 		}
 	}
+	if data.Model == "" && p.Starred != "" && slices.ContainsFunc(p.Models, func(m ollama.Model) bool { return m.Name == p.Starred }) {
+		data.Model = p.Starred
+	}
 	if data.Model == "" && len(p.Models) > 0 {
 		data.Model = p.Models[0].Name
 	}
@@ -169,6 +172,22 @@ func (s *Server) handleLoad(w http.ResponseWriter, r *http.Request) {
 	// ejected, like Unsloth/LM Studio.
 	if _, err := s.loadAuto(r.Context(), req.Name, "-1"); err != nil {
 		writeError(w, ollamaStatus(err), err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleStar stars a model as the default for new chats; an empty name
+// clears it. One model is starred at a time.
+func (s *Server) handleStar(w http.ResponseWriter, r *http.Request) {
+	var req nameRequest
+	if !readJSON(w, r, &req) {
+		return
+	}
+	st := s.chatSt.Get()
+	st.DefaultModel = req.Name
+	if err := s.chatSt.Set(st); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

@@ -311,6 +311,27 @@
     btn.disabled = false;
   }
 
+  // ---- starring: one model is the default for new chats ----
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-star]');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const name = btn.getAttribute('aria-pressed') === 'true' ? '' : btn.dataset.star;
+    try {
+      await post('/api/models/star', { name });
+    } catch (err) {
+      alert(`Couldn't star ${btn.dataset.star}: ${err.message}`);
+      return;
+    }
+    for (const b of document.querySelectorAll('[data-star]')) {
+      const on = !!name && b.dataset.star === name;
+      b.setAttribute('aria-pressed', String(on));
+      b.title = on ? 'Default model for new chats. Click to unstar' : 'Star: use as the default model when none is loaded';
+    }
+    document.dispatchEvent(new CustomEvent('star-changed', { detail: name }));
+  }, true);
+
   // ---- click handling for any [data-load], [data-eject], [data-delete] ----
   document.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-load], [data-eject], [data-delete]');

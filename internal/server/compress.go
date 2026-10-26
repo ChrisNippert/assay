@@ -440,6 +440,7 @@ func (s *Server) handleChatSettings(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &st) {
 		return
 	}
+	st.DefaultModel = s.chatSt.Get().DefaultModel // starred from the library or picker
 	if err := s.chatSt.Set(st); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

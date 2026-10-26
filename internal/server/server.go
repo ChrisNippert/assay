@@ -237,6 +237,7 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("DELETE /api/models/sources/folder", s.handleSourcesFolder)
 	mux.HandleFunc("POST /api/models/load", s.handleLoad)
 	mux.HandleFunc("POST /api/models/eject", s.handleEject)
+	mux.HandleFunc("POST /api/models/star", s.handleStar)
 	mux.HandleFunc("POST /api/models/delete", s.handleDeleteModel)
 	mux.HandleFunc("POST /api/chat", s.handleChatSend)
 	mux.HandleFunc("POST /api/attachments", s.handleAttachmentUpload)
@@ -331,6 +332,8 @@ type page struct {
 	Loaded    []loadedModel
 	Presets   []*presets.Preset
 	ModelsErr string // couldn't list the models
+	// Starred is the default model (see chats.Settings.DefaultModel).
+	Starred string
 	Data      any
 
 	// For ModelGroups' fit and speed.
@@ -363,7 +366,7 @@ func (p *page) IsLoaded(name string) bool {
 }
 
 func (s *Server) basePage(ctx context.Context, active, title string) *page {
-	p := &page{Active: active, Title: title, memory: s.memory, bench: s.bench}
+	p := &page{Active: active, Title: title, memory: s.memory, bench: s.bench, Starred: s.chatSt.Get().DefaultModel}
 	if list, err := s.chats.List(); err == nil {
 		p.Chats = list
 	} else {

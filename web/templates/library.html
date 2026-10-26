@@ -33,6 +33,7 @@
         <span class="muted small">{{with $g.Speed}}{{.}}{{else}}~{{bytes .Need}}{{end}}</span>
       </div>{{end}}
       <div class="row-ctrl actions">
+        <button type="button" class="icon-btn star-btn" data-star="{{.Name}}" aria-pressed="{{if $g.Has $.Starred}}true{{else}}false{{end}}" title="{{if $g.Has $.Starred}}Default model for new chats. Click to unstar{{else}}Star: use as the default model when none is loaded{{end}}" aria-label="Star {{.Name}}"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></svg></button>
         <a class="icon-btn" href="/compare?add={{.Name}}" title="Compare {{.Name}} with other models" aria-label="Compare {{.Name}}">{{template "icon-chart"}}</a>
         {{if $g.Loaded}}<button type="button" class="btn" data-eject="{{$g.EjectName}}">Eject</button>{{else}}<button type="button" class="btn" data-load="{{.Name}}">Load</button>{{end}}
         <a class="btn primary" href="/chat?model={{.Name}}">Chat</a>

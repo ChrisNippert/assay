@@ -13,6 +13,9 @@ type Settings struct {
 	// CompressAuto is the default for "Compress automatically" where neither
 	// the chat nor its preset says otherwise.
 	CompressAuto bool `json:"compressAuto"`
+	// DefaultModel is the starred model: a new chat starts on it when no
+	// model is loaded.
+	DefaultModel string `json:"defaultModel,omitempty"`
 }
 
 // DefaultSettings are used until something is saved.
