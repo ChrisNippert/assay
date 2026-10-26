@@ -107,16 +107,16 @@ func settingsSummary(o map[string]any) string {
 		case "keep_alive":
 			parts = append(parts, "stays loaded "+keepAliveText(v))
 		case "cache_type":
-			parts = append(parts, v+" cache")
+			parts = append(parts, v+" KV cache")
 		case "flash_attn":
 			parts = append(parts, "flash attention "+v)
 		case "speedup":
-			parts = append(parts, map[string]string{"auto": "speed-up auto", "off": "no speed-up", "mtp": "drafts with its MTP head"}[v])
+			parts = append(parts, map[string]string{"auto": "speculative decoding auto", "off": "no speculative decoding", "mtp": "drafts with its MTP head"}[v])
 		case "spec_ngram":
 			if v == "off" {
 				parts = append(parts, "no n-gram guessing")
 			} else {
-				parts = append(parts, "guesses from the conversation")
+				parts = append(parts, "n-gram guessing")
 			}
 		case "draft_model":
 			parts = append(parts, "drafts with "+v)

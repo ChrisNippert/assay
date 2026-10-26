@@ -12,7 +12,7 @@
 
   <h2 class="group-title" id="models">Models</h2>
   {{with .Data.Engine}}
-  <p class="muted small">Models run with llama.cpp, one at a time on the GPU. Context length, GPU layers, how long a model stays loaded and its memory options are set per model: open <strong>Tune</strong> in a chat with it.</p>
+  <p class="muted small">Models run with llama.cpp, one at a time on the GPU. Context length, GPU layers, how long a model stays in memory, speculative decoding and its memory options are set per model: open <strong>Tune</strong> in a chat with it.</p>
   <div class="boxed-list">
     <div class="row">
       <div class="row-text"><span class="row-title">llama.cpp{{with .Backend}} · {{.}}{{end}}</span><span class="row-sub">{{if .Server}}{{if .Version}}Build {{.Version}} · {{end}}{{.Server}}{{else}}No llama-server found. Models can't run until llama.cpp is installed.{{end}}{{if eq .Source "own"}} · Your own build{{else if eq .Source "release"}} · Downloaded release{{else if eq .Source "flag"}} · Set with -llama-server{{else if eq .Source "path"}} · Found on your PATH{{end}}</span></div>
@@ -22,7 +22,7 @@
       <div class="row-ctrl"><span class="muted small" id="lc-state"></span><button type="button" class="btn subtle" id="lc-alt" hidden></button><button type="button" class="btn" id="lc-btn"></button></div>
     </div>{{end}}
     <div class="row">
-      <div class="row-text"><span class="row-title">Defaults</span><span class="row-sub">A model without its own settings uses a {{if eq .CacheType "q8_0"}}half-size (q8_0){{else if eq .CacheType "q4_0"}}quarter-size (q4_0){{else}}full-size (f16){{end}} context cache, flash attention {{.FlashAttn}}, and stays loaded {{.KeepAlive}} after the last message.</span></div>
+      <div class="row-text"><span class="row-title">Defaults</span><span class="row-sub">A model without its own settings uses a {{if eq .CacheType "q8_0"}}half-size (q8_0){{else if eq .CacheType "q4_0"}}quarter-size (q4_0){{else}}full-size (f16){{end}} KV cache, flash attention {{.FlashAttn}}, and stays in memory {{.KeepAlive}} after the last message.</span></div>
     </div>
   </div>
   <h3 class="group-title settings-sub">Models folder</h3>
@@ -69,7 +69,7 @@
   </div>
   {{if .Drafts}}
   <h3 class="group-title settings-sub">Draft models</h3>
-  <p class="small muted">Downloaded helpers (DSpark, DFlash, EAGLE3) that can't chat. Pick one for a model in Tune → Draft model.</p>
+  <p class="small muted">Downloaded helpers (DSpark, DFlash, EAGLE3) that can't chat. Pick one for a model in Tune → Speculative decoding → Draft model.</p>
   <div class="boxed-list" id="draft-list">
     {{range .Drafts}}
     <div class="row" data-names="{{.Name}}">

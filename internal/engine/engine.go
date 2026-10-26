@@ -580,7 +580,7 @@ func (e *Engine) start(ctx context.Context, m *Model, o loadOpts) (*proc, error)
 			oom := p.oom
 			p.mu.Unlock()
 			if oom != "" {
-				return nil, fmt.Errorf("%w loading %s. Fewer GPU layers or a smaller context would fit (GPU layers: Auto does this for you). llama-server said: %s", errGPUMemory, m.Name, oom)
+				return nil, fmt.Errorf("%w loading %s. Fewer GPU layers or a smaller context would fit (setting “GPU layers” to Auto does this for you). llama-server said: %s", errGPUMemory, m.Name, oom)
 			}
 			return nil, fmt.Errorf("llama-server stopped while loading %s: %s", m.Name, p.lastLines())
 		}
@@ -611,7 +611,7 @@ func (e *Engine) start(ctx context.Context, m *Model, o loadOpts) (*proc, error)
 	p.mu.Unlock()
 	if oom != "" {
 		stopProcess(cmd)
-		return nil, fmt.Errorf("%w loading %s. Fewer GPU layers or a smaller context would fit (GPU layers: Auto does this for you). llama-server said: %s", errGPUMemory, m.Name, oom)
+		return nil, fmt.Errorf("%w loading %s. Fewer GPU layers or a smaller context would fit (setting “GPU layers” to Auto does this for you). llama-server said: %s", errGPUMemory, m.Name, oom)
 	}
 	if len(o.LoRA) > 0 {
 		if err := e.setScales(ctx, p, o.LoRA); err != nil {

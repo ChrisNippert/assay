@@ -48,78 +48,84 @@
     { key: 'think', label: 'Thinking', kind: 'think' },
     { key: 'tools', label: 'Tools', kind: 'tools' },
     { key: 'temperature', label: 'Temperature', kind: 'scale', min: 0, max: 2, step: 0.05, short: 'temp',
-      help: 'Lower stays focused, higher gets more varied' },
-    { key: 'num_predict', label: 'Reply length', kind: 'spin', min: -1, max: 262144, step: 256, int: true,
-      help: 'Tokens' },
+      help: 'Randomness: low is focused and repeatable, high is more varied' },
+    { key: 'num_predict', label: 'Max reply length', kind: 'spin', min: -1, max: 262144, step: 256, int: true,
+      help: 'Most tokens in one reply; empty means no limit' },
   ];
   const SAMPLING = [
     { key: 'top_p', label: 'Top P', kind: 'scale', min: 0, max: 1, step: 0.01, short: 'top-p',
-      help: 'Picks only from the likeliest words that add up to this share' },
+      help: 'Picks only among the likeliest words whose chances add up to this share; lower is safer' },
     { key: 'top_k', label: 'Top K', kind: 'scale', min: 0, max: 200, step: 1, int: true, short: 'top-k',
-      help: 'Picks only from this many likeliest words' },
+      help: 'Picks only among this many likeliest words; 0 means no limit' },
     { key: 'min_p', label: 'Min P', kind: 'scale', min: 0, max: 1, step: 0.01, short: 'min-p',
-      help: 'Skips words much less likely than the best one' },
+      help: 'Skips words far less likely than the best one; higher is safer' },
     { key: 'repeat_penalty', label: 'Repeat penalty', kind: 'scale', min: 0.8, max: 2, step: 0.01, short: 'repeat',
-      help: 'Above 1 discourages repeating itself' },
+      help: 'Above 1 makes words used recently less likely; 1 is off' },
     { key: 'presence_penalty', label: 'Presence penalty', kind: 'scale', min: 0, max: 2, step: 0.05,
-      help: 'Nudges the model toward new topics' },
+      help: 'Flat penalty on any word already used, so it moves to new topics' },
     { key: 'frequency_penalty', label: 'Frequency penalty', kind: 'scale', min: 0, max: 2, step: 0.05,
-      help: 'Discourages repeating the same words' },
-    { key: 'repeat_last_n', label: 'Repeat window', kind: 'spin', min: -1, max: 4096, step: 16, int: true,
-      help: 'Tokens the repeat penalty looks back over' },
+      help: 'Penalty that grows each time a word is reused' },
+    { key: 'repeat_last_n', label: 'Repeat penalty window', kind: 'spin', min: -1, max: 4096, step: 16, int: true,
+      help: 'How many recent tokens the penalties look back over; -1 is the whole chat' },
     { key: 'seed', label: 'Seed', kind: 'spin', min: 0, max: 2147483647, step: 1, int: true, placeholder: 'Random',
-      help: 'Same seed and settings give the same reply' },
+      help: 'Fixed number for repeatable replies; empty picks a new one each time' },
   ];
   const MODEL = [
     { key: 'num_ctx', label: 'Context length', kind: 'combo', int: true, scope: 'model',
-      help: 'Prompt, thinking and reply all share it' },
-    { key: 'num_gpu', label: 'GPU layers', kind: 'scale', min: 0, max: 99, step: 1, int: true, placeholder: 'All', scope: 'model' },
-    { key: 'keep_alive', label: 'Keep loaded', kind: 'choice', scope: 'model', engine: true,
-      help: 'After the last message',
+      help: 'Tokens the model can hold in mind at once; the prompt, thinking and reply all share it' },
+    { key: 'num_gpu', label: 'GPU layers', kind: 'scale', min: 0, max: 99, step: 1, int: true, placeholder: 'All', scope: 'model',
+      help: 'How many of the model’s layers run on the GPU; the rest run on the CPU, slower' },
+    { key: 'keep_alive', label: 'Keep in memory', kind: 'choice', scope: 'model', engine: true,
+      help: 'How long the model stays loaded after the last message',
       choices: [['5m', '5 minutes'], ['30m', '30 minutes'], ['1h', '1 hour'], ['4h', '4 hours'], ['-1', 'Until unloaded']] },
     // What drafts for the model. Auto: its MTP head if it has one. Measured
     // here, a small separate draft model was slower than none, so Auto
     // leaves those to the Draft model row.
-    { key: 'speedup', label: 'Speed-up', kind: 'choice', scope: 'model', engine: true,
+    { key: 'speedup', label: 'Speculative decoding', kind: 'choice', scope: 'model', engine: true,
       none: () => (defaults.speed?.mtp ? 'Auto (MTP head)' : 'Auto (none for this model)'),
-      help: 'Writes several words per step; the same words as without it',
-      dyn: () => [['off', 'Off'], ...(defaults.speed?.mtp ? [['mtp', 'MTP head only']] : [])] },
-    { key: 'spec_ngram', label: 'Guess from chat', kind: 'choice', scope: 'model', engine: true,
-      none: () => `Auto (${speedPlan().includes('n-gram guessing') ? 'on' : 'off'})`,
-      help: 'Speeds up code and edits by reusing what’s already in the chat; costs nothing',
-      choices: [['on', 'On'], ['off', 'Off']] },
-    { key: 'spec_ngram_max', label: 'Guess length', kind: 'spin', min: 1, max: 128, step: 1, int: true, scope: 'model',
-      placeholder: 'Auto (up to 64)', help: 'Most tokens guessed from the chat at a time',
-      when: () => speedPlan().includes('n-gram guessing') },
+      help: 'A cheap guesser drafts tokens and the model checks them: same reply, faster',
+      dyn: () => [['off', 'Off'], ...(defaults.speed?.mtp ? [['mtp', 'MTP head']] : [])] },
+    { key: 'draft_max', label: 'MTP head: tokens ahead', kind: 'spin', min: 1, max: 64, step: 1, int: true, scope: 'model',
+      placeholder: 'Auto', help: 'Tokens the MTP head (or draft model) predicts per step; llama.cpp uses 3. Higher isn’t always faster',
+      off: () => {
+        const sp = (state.options.speedup ?? saved.speedup) || 'auto';
+        if (sp === 'off') return 'Speculative decoding is off';
+        if (!speedPlan().some((p) => p === 'MTP head' || p === 'draft model')) return mtpGet.size && mtpGet.name === defaults.speed?.name ? 'This model has no MTP head. Download it above' : 'This model has no MTP head';
+        return '';
+      } },
     // The choices come from the server: installed models with the same
     // vocabulary, and downloaded drafts made for this model.
     { key: 'draft_model', label: 'Draft model', kind: 'choice', scope: 'model', engine: true, none: 'Off',
-      help: 'A separate small model guesses ahead; used instead of the MTP head',
+      help: 'A separate small model that drafts tokens, used instead of the MTP head',
       dyn: () => (defaults.drafts || []).map((d) => [d.name, `${d.name.split('/').pop().replace('-GGUF', '').replace(':', ' ')} (${d.kind ? d.kind + ', ' : ''}${gb(d.size)})`]),
       empty: 'No installed model is a match for drafting' },
-    { key: 'draft_max', label: 'Draft length', kind: 'spin', min: 1, max: 64, step: 1, int: true, scope: 'model',
-      placeholder: 'Auto', help: 'Words guessed ahead at a time',
-      when: () => speedPlan().some((p) => p === 'MTP head' || p === 'draft model') },
+    { key: 'spec_ngram', label: 'N-gram guessing', kind: 'choice', scope: 'model', engine: true,
+      none: () => `Auto (${speedPlan().includes('n-gram guessing') ? 'on' : 'off'})`,
+      help: 'Drafts by copying runs of text already in the chat; great for code edits, costs nothing',
+      choices: [['on', 'On'], ['off', 'Off']] },
+    { key: 'spec_ngram_max', label: 'N-gram: tokens ahead', kind: 'spin', min: 1, max: 128, step: 1, int: true, scope: 'model',
+      placeholder: 'Auto (up to 64)', help: 'Most tokens copied from the chat per step; llama.cpp allows up to 64',
+      off: () => (speedPlan().includes('n-gram guessing') ? '' : 'N-gram guessing is off') },
   ];
   const MEMORY = [
-    { key: 'cache_type', label: 'Context cache', kind: 'choice', scope: 'model', engine: true,
-      help: 'Half fits twice the context at almost the same quality',
+    { key: 'cache_type', label: 'KV cache precision', kind: 'choice', scope: 'model', engine: true,
+      help: 'How precisely the chat’s memory (KV cache) is stored; half fits twice the context at almost the same quality',
       choices: [['f16', 'Full (f16)'], ['q8_0', 'Half (q8_0)'], ['q4_0', 'Quarter (q4_0)']] },
     { key: 'flash_attn', label: 'Flash attention', kind: 'choice', scope: 'model', engine: true,
-      help: 'Faster; a half or quarter cache needs it',
+      help: 'A faster way to compute attention; a half or quarter KV cache needs it',
       choices: [['on', 'On'], ['off', 'Off'], ['auto', 'Auto']] },
     { key: 'num_thread', label: 'CPU threads', kind: 'choice', scope: 'model', engine: true, int: true, none: 'Auto',
-      help: 'Only matters for layers that run on the CPU',
+      help: 'Processor threads used for layers that run on the CPU',
       dyn: () => Array.from({ length: defaults.cpus || navigator.hardwareConcurrency || 8 }, (_, i) => [String(i + 1), String(i + 1)]) },
     // Mixture-of-experts models only. Layers counts the output layer too.
-    { key: 'n_cpu_moe', label: 'Experts in RAM', kind: 'choice', scope: 'model', engine: true, int: true, none: 'Auto',
+    { key: 'n_cpu_moe', label: 'MoE experts in RAM', kind: 'choice', scope: 'model', engine: true, int: true, none: 'Auto',
       when: () => !!defaults.moe,
-      help: 'Expert weights of this many layers run in RAM, which is slower',
+      help: 'Mixture-of-experts models: expert weights of this many layers stay in RAM instead of the GPU (slower, saves VRAM)',
       dyn: () => {
         const blocks = defaults.layers ? defaults.layers - 1 : 30;
         return [['-1', 'All experts'], ...Array.from({ length: blocks + 1 }, (_, n) => [String(n), n ? `${n} layers` : 'None'])];
       } },
-    { key: 'load_mode', label: 'Load mode', kind: 'choice', scope: 'model', engine: true, none: 'Auto',
+    { key: 'load_mode', label: 'File loading', kind: 'choice', scope: 'model', engine: true, none: 'Auto',
       when: () => !!defaults.moe,
       help: 'How the model file is read into memory; mostly changes load time',
       choices: [['mmap', 'Memory-mapped'], ['none', 'Read into RAM'], ['mlock', 'Locked in RAM']] },
@@ -355,7 +361,7 @@
   // the default in Settings. Below it, the summary of the chat's oldest
   // messages, with buttons to make one now or to undo it. Both reload the page.
   {
-    const def = { key: 'compress', label: 'Auto-compress', kind: 'compress', help: 'Summarize the oldest messages when a chat nears the context length' };
+    const def = { key: 'compress', label: 'Auto-compress chat', kind: 'compress', help: 'Summarize the oldest messages when a chat nears the context length, so it can go on' };
     const { row, sub, ctrl, reset } = rowShell(def);
     const sel = el('select', 'combo');
     sel.id = 'tp-compress';
@@ -664,7 +670,7 @@
     return over?.from === 'chat' || own != null;
   }
 
-  // What the speed-up settings amount to, in words.
+  // What the speculative decoding settings amount to, in words.
   function speedPlan() {
     const own = (k) => state.options[k] ?? saved[k];
     const sp = own('speedup') || 'auto';
@@ -772,16 +778,21 @@
     const preset = currentPreset();
     for (const r of rows) {
       r.row.hidden = (!!r.def.engine && !perModel()) || (r.def.when && !r.def.when());
+      const off = r.def.off ? r.def.off() : '';
       const k = r.def.kind;
       const changed = k === 'format' ? renderFormat(r) : k === 'combo' ? renderCombo(r) : k === 'think' ? renderThink(r) : k === 'compress' ? renderCompress(r) : k === 'tools' ? renderTools(r) : k === 'choice' ? renderChoice(r) : renderNumber(r);
       r.row.classList.toggle('changed', changed);
       r.reset.hidden = !changed;
+      // A row that doesn't apply right now stays visible, greyed, with the reason.
+      r.row.classList.toggle('off', !!off);
+      r.row.querySelectorAll('input, select').forEach((c) => { if (off) c.disabled = true; else if (r.def.kind !== 'tools') c.disabled = false; });
+      if (off) { r.sub.textContent = off; }
       if (r.sub.textContent) r.row.title = r.sub.textContent; // the line is clipped to one row
     }
     const samplingChanged = SAMPLING.filter((d) => d.key in state.options).length;
     sampling.sub.textContent = samplingChanged ? `${samplingChanged} changed` : 'Top P, top K, penalties, seed';
     memory.box.hidden = !perModel();
-    memory.sub.textContent = MEMORY.slice(0, 2).map((d) => `${d.label.toLowerCase()} ${shown(d) ?? 'default'}`).join(' · ');
+    memory.sub.textContent = MEMORY.slice(0, 2).map((d, i) => `${['KV cache', 'flash attention'][i]} ${shown(d) ?? 'default'}`).join(' · ');
     renderLoRA();
 
     const changedIn = (keys) => keys.filter((k) => k in state.options).length;

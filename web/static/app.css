@@ -497,6 +497,7 @@ select.combo:hover { filter: brightness(.97); }
 .row-title { font-weight: 500; }
 .row-sub { font-size: var(--fs-xs); color: var(--muted); }
 .row.changed .row-title { color: var(--accent-text); }
+.row.off .row-title, .row.off .row-sub { opacity: .55; }
 .row-ctrl { flex: none; display: flex; align-items: center; gap: var(--s1); }
 .row-reset { color: var(--muted); }
 .spin { display: inline-flex; align-items: center; background: var(--soft); border-radius: 8px; }
