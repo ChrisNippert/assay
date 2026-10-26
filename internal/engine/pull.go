@@ -365,3 +365,62 @@ func (e *Engine) lockFile(dst string) func() {
 	l.Lock()
 	return l.Unlock
 }
+
+// MTPPrefix marks a download of only a model's MTP head, e.g.
+// "mtp:hf.co/owner/repo:QUANT" (see PullMTP).
+const MTPPrefix = "mtp:"
+
+// PullMTP downloads just the multi-token-prediction head from the
+// Hugging Face repo a model came from and adds it to the model. It works
+// for models imported from Ollama or other apps too, as long as the repo
+// is known, and never downloads the weights again.
+func (e *Engine) PullMTP(ctx context.Context, name string, fn func(ollama.PullProgress) error) error {
+	if e.HF == nil {
+		return errors.New("downloads aren't set up")
+	}
+	m, err := e.store.Get(name)
+	if err != nil {
+		return err
+	}
+	if m.MTP != "" {
+		fn(ollama.PullProgress{Status: "success"})
+		return nil
+	}
+	if m.Repo == "" {
+		return fmt.Errorf("%s doesn't say which Hugging Face repo it came from", m.Name)
+	}
+	fn(ollama.PullProgress{Status: "pulling manifest"})
+	files, err := e.HF.Files(ctx, m.Repo)
+	if err != nil {
+		return err
+	}
+	p := hf.MTP(files)
+	if p == "" {
+		return fmt.Errorf("%s has no MTP head", m.Repo)
+	}
+	var f hf.File
+	for _, x := range files {
+		if x.Path == p {
+			f = x
+		}
+	}
+	dst := "hf-" + unsafeChars.ReplaceAllString(m.Repo, "_") + "/" + path.Base(p)
+	if f.SHA256() != "" {
+		dst = "sha256-" + f.SHA256() + ".gguf"
+	}
+	if err := e.download(ctx, m.Repo, f, e.store.Blob(dst), fn); err != nil {
+		return err
+	}
+	// Read it again: settings may have changed while it downloaded.
+	if m, err = e.store.Get(name); err != nil {
+		return err
+	}
+	m.MTP = dst
+	m.Size += f.Size
+	fn(ollama.PullProgress{Status: "writing manifest"})
+	if err := e.store.Put(m); err != nil {
+		return err
+	}
+	fn(ollama.PullProgress{Status: "success"})
+	return nil
+}

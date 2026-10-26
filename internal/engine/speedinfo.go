@@ -22,7 +22,7 @@ func (e *Engine) Speed(name string) (SpeedInfo, error) {
 		return SpeedInfo{}, err
 	}
 	s := SpeedInfo{MTP: m.MTP != ""}
-	if m.MTP == "" && m.Source == "hf" && m.Repo != "" && m.Draft == "" && e.HF != nil {
+	if m.MTP == "" && m.Repo != "" && m.Draft == "" && m.Adapter == nil && e.HF != nil {
 		s.Name = m.Name
 	}
 	return s, nil

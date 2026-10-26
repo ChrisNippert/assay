@@ -339,6 +339,9 @@ type enginePuller struct {
 }
 
 func (p enginePuller) Pull(ctx context.Context, model string, fn func(ollama.PullProgress) error) error {
+	if name, ok := strings.CutPrefix(model, engine.MTPPrefix); ok {
+		return p.eng.PullMTP(ctx, name, fn)
+	}
 	if _, _, ok := engine.ParseHFName(model); !ok {
 		return fmt.Errorf("%s isn't a Hugging Face model: use a name like hf.co/<owner>/<repo>:<quant>", model)
 	}

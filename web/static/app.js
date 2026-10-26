@@ -387,6 +387,7 @@
   const seenDone = new Set();
 
   function jobLabel(j) {
+    if (j.model.startsWith('mtp:')) return 'MTP head · ' + j.model.slice(4).replace(/^hf\.co\//, '');
     return j.alias || j.model.replace(/^hf\.co\//, '');
   }
 

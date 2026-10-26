@@ -188,3 +188,31 @@ func TestTwoPullsOfOneModelAtOnce(t *testing.T) {
 		t.Fatalf("model %+v, %v", m, err)
 	}
 }
+
+func TestPullMTPForImportedModel(t *testing.T) {
+	h := &fakeHF{files: map[string][]byte{
+		"M-Q4_K_M.gguf":   []byte("weights"),
+		"mtp-M-Q8_0.gguf": []byte("mtp head"),
+	}}
+	e := testEngine(t, h)
+	m := &Model{Name: "hf.co/o/M-GGUF:Q4_K_M", Repo: "o/M-GGUF", Quant: "Q4_K_M", Source: "ollama", Files: []string{"sha256-x.gguf"}}
+	if err := e.store.Put(m); err != nil {
+		t.Fatal(err)
+	}
+	if si, _ := e.Speed(m.Name); si.Name != m.Name {
+		t.Fatalf("imported model isn't offered its head: %+v", si)
+	}
+	if err := e.PullMTP(context.Background(), m.Name, func(ollama.PullProgress) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := e.store.Get(m.Name)
+	if got.MTP == "" || got.Files[0] != "sha256-x.gguf" {
+		t.Fatalf("after: %+v", got)
+	}
+	if b, err := os.ReadFile(e.store.Blob(got.MTP)); err != nil || string(b) != "mtp head" {
+		t.Fatalf("head file: %q %v", b, err)
+	}
+	if n := len(h.offsets); n != 1 {
+		t.Fatalf("%d files downloaded, want only the head", n)
+	}
+}

@@ -691,7 +691,7 @@
     mtpGet.busy = true;
     render();
     try {
-      const res = await fetch('/api/pulls', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: mtpGet.name, alias: '' }) });
+      const res = await fetch('/api/pulls', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'mtp:' + mtpGet.name, alias: '' }) });
       if (!res.ok) throw new Error(await errorText(res));
       const job = await res.json();
       for (;;) {
