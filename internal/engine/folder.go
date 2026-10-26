@@ -37,10 +37,7 @@ func SaveFolder(path, dir string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(path+".tmp", append(b, '\n'), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(path+".tmp", path)
+	return writeAtomic(path, append(b, '\n'))
 }
 
 // FolderSetting says where the models folder is remembered.

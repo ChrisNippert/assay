@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"ollamui/internal/hf"
@@ -172,6 +173,11 @@ func (e *Engine) download(ctx context.Context, repo string, f hf.File, dst strin
 	report := func(done int64) {
 		fn(ollama.PullProgress{Status: "pulling " + path.Base(f.Path), Digest: f.Path, Total: f.Size, Completed: done})
 	}
+	// Two downloads can want the same file (quants sharing a projector or
+	// MTP head, or a model fetched again for its head): one writes it, the
+	// other waits and then finds it there.
+	unlock := e.lockFile(dst)
+	defer unlock()
 	if info, err := os.Stat(dst); err == nil && (f.Size == 0 || info.Size() == f.Size) {
 		report(info.Size())
 		return nil
@@ -342,4 +348,20 @@ func (e *Engine) Import() {
 	e.mu.Lock()
 	e.lastImport = time.Now()
 	e.mu.Unlock()
+}
+
+// lockFile holds dst for one download at a time.
+func (e *Engine) lockFile(dst string) func() {
+	e.mu.Lock()
+	if e.files == nil {
+		e.files = map[string]*sync.Mutex{}
+	}
+	l := e.files[dst]
+	if l == nil {
+		l = &sync.Mutex{}
+		e.files[dst] = l
+	}
+	e.mu.Unlock()
+	l.Lock()
+	return l.Unlock
 }

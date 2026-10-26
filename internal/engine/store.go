@@ -238,13 +238,33 @@ func (s *Store) Put(m *Model) error {
 		return err
 	}
 	path := filepath.Join(s.Dir(), "manifests", manifestFile(m.Name))
-	if err := os.WriteFile(path+".tmp", append(b, '\n'), 0o644); err != nil {
-		return err
-	}
-	if err := os.Rename(path+".tmp", path); err != nil {
+	if err := writeAtomic(path, append(b, '\n')); err != nil {
 		return err
 	}
 	return s.reload()
+}
+
+// writeAtomic replaces path with data through a temporary file of its own,
+// so two writers at once can't trip over each other's.
+func writeAtomic(path string, data []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(data)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Chmod(f.Name(), 0o644)
+	}
+	if err == nil {
+		err = os.Rename(f.Name(), path)
+	}
+	if err != nil {
+		os.Remove(f.Name())
+	}
+	return err
 }
 
 // Delete removes a model and any files no other model uses. With an

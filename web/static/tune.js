@@ -88,6 +88,9 @@
       none: () => `Auto (${speedPlan().includes('n-gram guessing') ? 'on' : 'off'})`,
       help: 'Speeds up code and edits by reusing what’s already in the chat; costs nothing',
       choices: [['on', 'On'], ['off', 'Off']] },
+    { key: 'spec_ngram_max', label: 'Guess length', kind: 'spin', min: 1, max: 128, step: 1, int: true, scope: 'model',
+      placeholder: 'Auto (up to 64)', help: 'Most tokens guessed from the chat at a time',
+      when: () => speedPlan().includes('n-gram guessing') },
     // The choices come from the server: installed models with the same
     // vocabulary, and downloaded drafts made for this model.
     { key: 'draft_model', label: 'Draft model', kind: 'choice', scope: 'model', engine: true, none: 'Off',

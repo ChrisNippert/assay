@@ -87,9 +87,27 @@ func (e *Engine) specArgs(m *Model, o loadOpts) []string {
 	}
 	if o.NGram != "" {
 		types = append(types, o.NGram)
+		a = append(a, ngramLength(o.NGram, o.NGramMax)...)
 	}
 	if len(types) > 0 {
 		a = append(a, "--spec-type", strings.Join(types, ","))
 	}
 	return a
+}
+
+// ngramLength caps how many tokens an n-gram type drafts at a time; nil
+// leaves llama.cpp's default (ngram-mod 48-64, the others 48).
+func ngramLength(kind string, n int) []string {
+	if n <= 0 {
+		return nil
+	}
+	v := strconv.Itoa(n)
+	switch kind {
+	case "ngram-mod":
+		// Its minimum (48 by default) can't be above the maximum.
+		return []string{"--spec-ngram-mod-n-max", v, "--spec-ngram-mod-n-min", strconv.Itoa(min(n, 48))}
+	case "ngram-simple", "ngram-map-k", "ngram-map-k4v":
+		return []string{"--spec-" + kind + "-size-m", v}
+	}
+	return nil // ngram-cache has no length to set
 }

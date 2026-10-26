@@ -75,6 +75,8 @@ type Engine struct {
 	meta  map[string]*gguf.File
 	// loading serialises starts, so two requests don't start one model twice.
 	loading sync.Mutex
+	// files are the downloads in progress, by destination (see lockFile).
+	files map[string]*sync.Mutex
 	// pending is the load in progress, if any (under mu), so Running can
 	// show it and Unload can cancel it.
 	pending *pendingLoad
@@ -145,6 +147,7 @@ type loadOpts struct {
 	Embedding bool
 	Draft     string // the draft model's name for speculative decoding, "": none
 	DraftMax  int    // tokens drafted at a time; 0: llama.cpp's default
+	NGramMax  int    // tokens n-gram guessing drafts at a time; 0: llama.cpp's default
 	LoRA      []presets.LoRA
 	// Speed and NGram are the speed-up settings as asked; planSpeed turns
 	// them into MTP, Draft and NGram (the n-gram type, "": none) before a
@@ -201,6 +204,9 @@ func loadOptsFrom(o map[string]any) loadOpts {
 	}
 	if v, _ := o["draft_model"].(string); v != "" {
 		lo.Draft = v
+	}
+	if v, ok := num(o["spec_ngram_max"]); ok && v > 0 {
+		lo.NGramMax = int(v)
 	}
 	if v, ok := num(o["draft_max"]); ok && v > 0 {
 		lo.DraftMax = int(v)

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"ollamui/internal/hf"
@@ -157,5 +158,33 @@ func TestParseHFName(t *testing.T) {
 		if _, _, ok := ParseHFName(in); ok {
 			t.Errorf("%s accepted", in)
 		}
+	}
+}
+
+func TestTwoPullsOfOneModelAtOnce(t *testing.T) {
+	h := &fakeHF{files: map[string][]byte{
+		"M-Q4_K_M.gguf":   bytes.Repeat([]byte("w"), 1<<20),
+		"mmproj-F16.gguf": []byte("projector"),
+		"mtp-M-Q8_0.gguf": []byte("mtp head"),
+	}}
+	e := testEngine(t, h)
+	var wg sync.WaitGroup
+	errs := make([]error, 4)
+	for i := range errs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs[i] = e.Pull(context.Background(), "hf.co/o/M-GGUF:Q4_K_M", func(ollama.PullProgress) error { return nil })
+		}()
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("pull %d: %v", i, err)
+		}
+	}
+	m, err := e.store.Get("hf.co/o/M-GGUF:Q4_K_M")
+	if err != nil || m.MTP == "" {
+		t.Fatalf("model %+v, %v", m, err)
 	}
 }

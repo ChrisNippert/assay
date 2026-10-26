@@ -639,10 +639,7 @@ func (f *Finder) save() error {
 	if err := os.MkdirAll(filepath.Dir(f.File), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(f.File+".tmp", append(b, '\n'), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(f.File+".tmp", f.File)
+	return writeAtomic(f.File, append(b, '\n'))
 }
 
 // Folders lists the folders the user added.
