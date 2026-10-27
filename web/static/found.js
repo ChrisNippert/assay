@@ -131,6 +131,8 @@
     go.type = 'button';
     c.append(input, go);
     row.append(c);
+    window.ollamuiBrowseButton(input, { kind: 'folder', title: 'Choose a folder with models' });
+    input.addEventListener('picked', () => add());
     const add = () => {
       if (!input.value.trim()) return input.focus();
       run('', async () => {

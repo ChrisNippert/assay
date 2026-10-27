@@ -1354,3 +1354,54 @@ html:has(.content-chat) { overscroll-behavior: none; }
 @media (prefers-reduced-motion: reduce) {
   .sheet, .tune.sheet, .sidebar, .sheet-backdrop, .nav-backdrop, .appbar::before, .composer.column, .composer .btn#send { transition: none !important; }
 }
+
+/* ---- path chooser (ollamuiPick's in-app browser): a dialog on desktop,
+   a bottom sheet (.sheet) on the phone ---- */
+.pk-scrim { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, .4); }
+.pk {
+  position: fixed; z-index: 61; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: min(620px, calc(100vw - 32px)); height: min(560px, calc(100dvh - 48px));
+  display: flex; flex-direction: column; gap: var(--s3); padding: var(--s4);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 18px 60px rgba(0, 0, 0, .35);
+}
+.pk .pk-title { display: block; margin: 0; padding: 0; font-size: 16px; font-weight: 600; }
+.pk-bar { display: flex; gap: var(--s2); }
+.pk-up { flex: none; padding: 0 10px; display: inline-flex; align-items: center; }
+.pk-up:disabled { opacity: .4; cursor: default; }
+.pk-path { flex: 1; min-width: 0; padding: 7px 10px; font-size: var(--fs-sm); border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); }
+.pk-roots { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.pk-roots:empty { display: none; }
+.pk-root { font: inherit; font-size: var(--fs-sm); padding: 4px 12px; border: none; border-radius: 999px; background: var(--soft); color: var(--text-2); cursor: pointer; }
+.pk-root:hover { filter: brightness(.96); }
+.pk-root.on { background: var(--accent-soft); color: var(--accent-text); }
+.pk-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.pk-row { display: flex; align-items: center; gap: var(--s3); width: 100%; min-height: 44px; padding: 6px var(--s4); border: none; background: none; font: inherit; color: var(--text); text-align: left; cursor: pointer; }
+.pk-row:hover, .pk-row:focus-visible { background: var(--soft); outline: none; }
+.pk-icon { flex: none; display: inline-flex; color: var(--accent); }
+.pk-icon.file { color: var(--muted); }
+.pk-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pk-note { min-height: 1.3em; margin: 0; }
+.pk-note.bad { color: var(--bad); }
+.pk-foot { display: flex; align-items: center; gap: var(--s2); }
+.pk-hidden { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); cursor: pointer; }
+.pk-hidden input { accent-color: var(--accent); margin: 0; }
+.pk-spacer { flex: 1; }
+@media (max-width: 760px) {
+  .pk.sheet { height: min(85dvh, 640px); max-height: none; width: 100%; left: 0; top: auto; padding: 0 16px calc(12px + env(safe-area-inset-bottom)); gap: 10px; background: var(--bg); overflow: hidden; border-radius: 22px 22px 0 0; }
+  .pk.sheet { transform: translateY(105%); }
+  .pk.sheet.open { transform: none; }
+  .pk.sheet .pk-title { padding: 0 4px; font-size: 17px; }
+  .pk.sheet .sheet-grab { margin: 0 -16px; }
+  .pk-up { min-width: 44px; min-height: 44px; }
+  .pk-path { font-size: 16px; padding: 10px 12px; border-radius: 12px; }
+  .pk-root { padding: 8px 14px; }
+  .pk-row { min-height: 52px; font-size: 16px; }
+  .pk-foot .btn { min-height: 44px; padding: 0 16px; }
+  .pk-foot .primary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pk-scrim { display: none; }
+}
+@media (max-width: 760px) {
+  /* A path input with a Browse… button: the field on its own line, buttons below it */
+  .row-ctrl:has(> [data-browse]) { flex-wrap: wrap; justify-content: flex-end; }
+  .row .row-ctrl:has(> [data-browse]) > input[type="text"] { flex: 1 1 100%; width: 100%; min-width: 100%; box-sizing: border-box; }
+}

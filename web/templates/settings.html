@@ -20,7 +20,7 @@
     </div>
     <div class="row" id="lc-custom-row">
       <div class="row-text"><label class="row-title" for="lc-custom">Use a specific llama-server</label><span class="row-sub" id="lc-custom-sub">The path to a llama-server (or the folder it’s in), e.g. a build of your own or a fork. Its libraries are loaded from the same folder. Leave empty for the usual choice.</span></div>
-      <div class="row-ctrl"><input type="text" id="lc-custom" class="mono" placeholder="/path/to/llama-server" spellcheck="false" autocomplete="off"><button type="button" class="btn" id="lc-custom-use">Use</button><button type="button" class="btn subtle" id="lc-custom-clear" hidden>Clear</button></div>
+      <div class="row-ctrl"><input type="text" id="lc-custom" class="mono" placeholder="/path/to/llama-server" spellcheck="false" autocomplete="off"><button type="button" class="btn" data-browse="lc-custom" data-kind="file" data-title="Choose llama-server">Browse…</button><button type="button" class="btn" id="lc-custom-use">Use</button><button type="button" class="btn subtle" id="lc-custom-clear" hidden>Clear</button></div>
     </div>
     <script>
     (() => {
@@ -65,7 +65,7 @@
     <div id="mf-edit" hidden>
       <div class="row">
         <div class="row-text"><span class="row-title">Move the models to</span><span class="row-sub">A full path, like /mnt/games/models. Models are stopped first, then their files move; a new or empty folder works, and so does a folder that already holds ollamui’s models.</span></div>
-        <div class="row-ctrl"><input type="text" id="mf-input" placeholder="/mnt/disk/models" aria-label="New models folder" size="28" autocomplete="off" spellcheck="false"><button type="button" class="btn" id="mf-check">Check</button></div>
+        <div class="row-ctrl"><input type="text" id="mf-input" placeholder="/mnt/disk/models" aria-label="New models folder" size="28" autocomplete="off" spellcheck="false"><button type="button" class="btn" data-browse="mf-input" data-kind="folder" data-title="Choose the models folder">Browse…</button><button type="button" class="btn" id="mf-check">Check</button></div>
       </div>
       <div id="mf-mounts"></div>
       <div class="row" id="mf-plan" hidden>
@@ -348,6 +348,7 @@
   f('mf-change').addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
   f('mf-cur').addEventListener('click', toggle);
   f('mf-check').addEventListener('click', check);
+  f('mf-input').addEventListener('picked', check);
   f('mf-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') check(); });
   f('mf-input').addEventListener('input', () => { f('mf-plan').hidden = true; plan = null; });
   f('mf-mounts').addEventListener('click', (e) => {

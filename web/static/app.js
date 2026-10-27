@@ -1057,3 +1057,195 @@ window.ollamuiSheets = (() => {
 
 // The API address on the presets page.
 document.querySelectorAll('[data-api-url]').forEach((el) => { el.textContent = location.origin + '/v1'; });
+
+// Path pickers. ollamuiPick({kind: 'file'|'folder', title, start, filter})
+// resolves to a path on the server, or null if the user cancelled. From the
+// machine running ollamui it opens that machine's own chooser (POST
+// /api/pick); from anywhere else, or without a dialog tool there, it shows
+// an in-app browser over GET /api/fs (a bottom sheet on the phone).
+window.ollamuiPick = (() => {
+  let nativeP = null;
+  const isNative = () => nativeP ||= fetch('/api/pick').then((r) => (r.ok ? r.json() : {})).then((j) => !!j.native).catch(() => false);
+  const ICON = {
+    folder: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+    file: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>',
+    up: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 11l6-6 6 6"/></svg>',
+  };
+  const el = (tag, cls, text) => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  };
+
+  function browse(o) {
+    const kind = o.kind === 'file' ? 'file' : 'folder';
+    const sheets = window.ollamuiSheets;
+    return new Promise((resolve) => {
+      const scrim = el('div', 'pk-scrim');
+      const box = el('div', 'pk');
+      box.setAttribute('role', 'dialog');
+      box.setAttribute('aria-modal', 'true');
+      box.setAttribute('aria-label', o.title || 'Choose');
+      const title = el('h2', 'pk-title sheet-title', o.title || (kind === 'file' ? 'Choose a file' : 'Choose a folder'));
+      const bar = el('div', 'pk-bar');
+      const upBtn = el('button', 'btn pk-up'); upBtn.type = 'button'; upBtn.innerHTML = ICON.up; upBtn.title = 'Parent folder'; upBtn.setAttribute('aria-label', 'Parent folder');
+      const pathIn = el('input', 'pk-path mono'); pathIn.type = 'text'; pathIn.spellcheck = false; pathIn.autocomplete = 'off'; pathIn.setAttribute('aria-label', 'Path');
+      bar.append(upBtn, pathIn);
+      const roots = el('div', 'pk-roots');
+      const list = el('div', 'boxed-list pk-list');
+      const note = el('div', 'pk-note muted small');
+      const foot = el('div', 'pk-foot');
+      const hid = el('label', 'pk-hidden small');
+      const hidBox = document.createElement('input'); hidBox.type = 'checkbox';
+      hid.append(hidBox, ' Show hidden');
+      const cancel = el('button', 'btn', 'Cancel'); cancel.type = 'button';
+      const choose = el('button', 'btn primary', 'Choose this folder'); choose.type = 'button';
+      foot.append(hid, el('span', 'pk-spacer'), cancel);
+      if (kind === 'folder') foot.append(choose);
+      box.append(el('div', 'sheet-grab'), title, bar, roots, list, note, foot);
+
+      const phone = sheets?.phone.matches;
+      const prevFocus = document.activeElement;
+      let cur = '', done = false, seq = 0;
+
+      const finish = (val) => {
+        if (done) return;
+        done = true;
+        document.removeEventListener('keydown', onKey, true);
+        if (phone) {
+          sheets.track(box, false);
+          box.classList.remove('open');
+          setTimeout(() => box.remove(), 280);
+        } else {
+          box.remove();
+          scrim.remove();
+        }
+        prevFocus?.focus?.({ preventScroll: true });
+        resolve(val);
+      };
+      const onKey = (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(null); }
+        else if (e.key === 'Tab') { // keep focus inside
+          const f = [...box.querySelectorAll('button:not([disabled]), input')];
+          if (!f.length) return;
+          const first = f[0], last = f[f.length - 1];
+          if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+          else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        } else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && document.activeElement !== pathIn) {
+          const rows = [...list.querySelectorAll('.pk-row')];
+          const i = rows.indexOf(document.activeElement);
+          const next = rows[e.key === 'ArrowDown' ? Math.min(i + 1, rows.length - 1) : Math.max(i - 1, 0)];
+          if (next) { e.preventDefault(); next.focus(); }
+        }
+      };
+
+      async function go(path) {
+        const mine = ++seq;
+        const qs = new URLSearchParams({ path: path || '', kind });
+        if (o.filter) qs.set('filter', o.filter);
+        if (hidBox.checked) qs.set('hidden', '1');
+        let d;
+        try {
+          const res = await fetch('/api/fs?' + qs);
+          d = await res.json();
+          if (!res.ok) throw new Error(d.error || res.statusText);
+        } catch (err) {
+          if (mine === seq) { note.classList.add('bad'); note.textContent = 'Couldn’t read that: ' + err.message; }
+          return;
+        }
+        if (mine !== seq) return;
+        cur = d.path;
+        pathIn.value = cur;
+        upBtn.disabled = !d.parent;
+        upBtn.onclick = () => go(d.parent);
+        roots.replaceChildren();
+        for (const r of d.roots || []) {
+          const b = el('button', 'pk-root' + (r.path === cur ? ' on' : ''), r.name); b.type = 'button';
+          b.addEventListener('click', () => go(r.path));
+          roots.append(b);
+        }
+        list.replaceChildren();
+        for (const e of d.entries || []) {
+          const r = el('button', 'pk-row'); r.type = 'button';
+          const ic = el('span', 'pk-icon' + (e.dir ? '' : ' file')); ic.innerHTML = e.dir ? ICON.folder : ICON.file;
+          r.append(ic, el('span', 'pk-name', e.name));
+          r.addEventListener('click', () => (e.dir ? go(e.path) : finish(e.path)));
+          list.append(r);
+        }
+        note.classList.toggle('bad', !!d.error);
+        if (d.error) note.textContent = 'Couldn’t open this folder: ' + d.error;
+        else if (!d.entries?.length) note.textContent = kind === 'file' ? 'No matching files here.' : 'No folders here.';
+        else note.textContent = '';
+        choose.textContent = 'Choose “' + (cur.split(/[\\/]/).filter(Boolean).pop() || cur) + '”';
+        list.scrollTop = 0;
+      }
+
+      pathIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go(pathIn.value.trim()); } });
+      hidBox.addEventListener('change', () => go(cur));
+      cancel.addEventListener('click', () => finish(null));
+      choose.addEventListener('click', () => finish(cur));
+      scrim.addEventListener('click', () => finish(null));
+      document.addEventListener('keydown', onKey, true);
+
+      if (phone) {
+        box.classList.add('sheet');
+        document.body.append(box);
+        sheets.register(box, () => finish(null));
+        sheets.track(box, true);
+        void box.offsetWidth;
+        box.classList.add('open');
+      } else {
+        document.body.append(scrim, box);
+      }
+      // Start in the current value's folder; a file value opens beside it.
+      go(o.start || '').then(() => (phone ? box : pathIn).focus({ preventScroll: true }));
+    });
+  }
+
+  return async (o) => {
+    if (await isNative()) {
+      try {
+        const res = await fetch('/api/pick', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kind: o.kind, title: o.title || '', start: o.start || '', filter: o.filter || '' }),
+        });
+        if (res.ok) { const j = await res.json(); return j.cancelled ? null : j.path || null; }
+        if (res.status === 409) return null; // a dialog is already open
+      } catch { /* fall back to the in-app browser */ }
+    }
+    return browse(o);
+  };
+})();
+
+// Browse… buttons: <button data-browse="input-id" data-kind="file|folder"
+// data-title data-filter>. A choice fills the input and fires "input" and
+// "picked" on it; the page decides what else to do. found.js, which builds
+// its rows in script, makes its button with ollamuiBrowseButton.
+(() => {
+  const wire = (b) => b.addEventListener('click', async () => {
+    const input = document.getElementById(b.dataset.browse);
+    if (!input) return;
+    b.disabled = true;
+    try {
+      const p = await window.ollamuiPick({ kind: b.dataset.kind, title: b.dataset.title, filter: b.dataset.filter, start: input.value.trim() });
+      if (p) {
+        input.value = p;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('picked'));
+      }
+    } finally { b.disabled = false; }
+  });
+  document.querySelectorAll('[data-browse]').forEach(wire);
+  window.ollamuiBrowseButton = (input, { kind, title, filter }) => {
+    if (!input.id) input.id = 'pk-' + Math.random().toString(36).slice(2, 8);
+    const b = document.createElement('button');
+    b.className = 'btn';
+    b.textContent = 'Browse…';
+    b.type = 'button';
+    Object.assign(b.dataset, { browse: input.id, kind, title: title || '', filter: filter || '' });
+    wire(b);
+    input.after(b);
+    return b;
+  };
+})();
