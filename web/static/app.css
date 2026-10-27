@@ -1102,3 +1102,10 @@ a.tag-link:hover { border-color: var(--accent-line); color: var(--accent-text); 
 .switcher-fav { flex: none; opacity: 0; transition: opacity .15s; }
 .switcher-row:hover .switcher-fav, .switcher-row:focus-visible .switcher-fav, .switcher-fav[aria-pressed="true"] { opacity: 1; }
 @media (hover: none) { .switcher-fav { opacity: 1; } }
+
+/* A chat whose reply is still being written shows a pulsing dot. */
+.chat-row.running { position: relative; }
+.chat-row.running::before { content: ''; position: absolute; left: 3px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--accent); animation: chat-pulse 1.2s ease-in-out infinite; pointer-events: none; }
+.chat-row.running .chat-link { padding-left: 16px; }
+@keyframes chat-pulse { 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .chat-row.running::before { animation: none; } }

@@ -752,9 +752,19 @@
   const hasDraft = () => !!input.value.trim() || window.ollamuiAttach.count() > 0;
   // Stopping takes a second press (click or Esc) within a few seconds.
   let stopAsked = null;
+  // The reply runs on the server, so stopping asks the server; the stream
+  // then ends with a "stopped" event. Voice replies aren't kept in the
+  // background, so for those the request is just dropped.
+  async function stopRun() {
+    const c = controller;
+    try {
+      const res = chatId ? await fetch(`/api/chats/${chatId}/stop`, { method: 'POST' }) : null;
+      if (!res?.ok) c?.abort();
+    } catch { c?.abort(); }
+  }
   function askStop() {
     if (!controller) return;
-    if (stopAsked) { clearTimeout(stopAsked); stopAsked = null; controller.abort(); return; }
+    if (stopAsked) { clearTimeout(stopAsked); stopAsked = null; stopRun(); return; }
     sendBtn.textContent = 'Stop?';
     sendBtn.classList.add('confirm');
     sendBtn.title = 'Press again to stop the reply';
@@ -828,18 +838,21 @@
   // send streams a reply to text. fromUser (edit/regenerate) replaces that
   // user message, counted from 0, and everything after it. voice.js may ask
   // for a reply in spoken style and read it aloud as it streams.
-  async function send(text, fromUser, files = [], kept = []) {
+  async function send(text, fromUser, files = [], kept = [], resume = null) {
     const voice = window.ollamuiVoice?.turn() ?? {};
     document.getElementById('empty')?.remove();
+    // resume: attaching to a reply already running (its user message is on the page).
     const userMsg = el('div', 'msg user');
     const atts = [...kept, ...files];
-    if (atts.length) {
-      userMsg.dataset.att = JSON.stringify(atts.map(({ url, state, error, ...a }) => a));
-      userMsg.append(window.ollamuiAttach.render(atts, chatId));
+    if (!resume) {
+      if (atts.length) {
+        userMsg.dataset.att = JSON.stringify(atts.map(({ url, state, error, ...a }) => a));
+        userMsg.append(window.ollamuiAttach.render(atts, chatId));
+      }
+      userMsg.append(el('div', 'bubble', text));
+      addActions(userMsg);
+      list.append(userMsg);
     }
-    userMsg.append(el('div', 'bubble', text));
-    addActions(userMsg);
-    list.append(userMsg);
     const reply = el('div', 'msg assistant');
     // The reply is a run of segments (thinking, text), with a row for each
     // tool call between them; these are the current segment's elements.
@@ -876,7 +889,7 @@
     const running = new Map(); // tool call id -> its row, until the result is in
 
     try {
-      const res = await fetch('/api/chat', {
+      const res = resume || await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chatId, project: chatId ? undefined : project(), content: text, fromUser, attachments: files.map((f) => f.file), spoken: !!voice.spoken, ...tune.selection(), ...tune.settings() }),
@@ -900,6 +913,7 @@
               history.pushState({ chat: true }, '', `/chat/${chatId}`);
               addSidebarChat(chatId, text, project());
             }
+            window.ollamui.trackRunning(chatId);
             break;
           case 'attachments': {
             const cut = ev.attachments.filter((a) => a.cut).map((a) => a.name).join(', ');
@@ -966,6 +980,10 @@
             }
             if (ev.stats?.doneReason === 'length') reply.append(el('div', 'msg-warn', lengthNote(!content && !!thinking, ev.stats)));
             break;
+          case 'stopped':
+            outcome = 'stopped';
+            stats.textContent = 'Stopped';
+            break;
           case 'error':
             throw new Error(ev.message);
         }
@@ -994,11 +1012,20 @@
         else paintQueue(true);
       }
       voice.end?.();
+      if (chatId) window.ollamui.trackRunning(chatId, false);
       addActions(reply);
       input.focus();
       refreshLoaded(); // chatting loads the model, so the memory list may have changed
       window.ollamuiTune?.setChat({ messages: list.querySelectorAll(':scope > .msg').length });
     }
+  }
+
+  // Opening a chat whose reply is still being written (the page was left
+  // and come back to) shows it as it goes: the server replays what it has.
+  if (chatEl.dataset.running && chatId) {
+    fetch(`/api/chats/${chatId}/stream`).then((res) => {
+      if (res.status === 200) send('', undefined, [], [], res);
+    }).catch(() => {});
   }
 
   // The divider for a chat's summary sits before the message it stands
