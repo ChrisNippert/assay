@@ -144,6 +144,9 @@ type Server struct {
 	log      *slog.Logger
 	pages    map[string]*template.Template
 	handler  http.Handler
+	// runs are the replies being written, by chat id (see runs.go).
+	runsMu sync.Mutex
+	runs   map[string]*run
 }
 
 // New builds the server and its routes.
@@ -249,6 +252,9 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("POST /api/models/star", s.handleStar)
 	mux.HandleFunc("POST /api/models/delete", s.handleDeleteModel)
 	mux.HandleFunc("POST /api/chat", s.handleChatSend)
+	mux.HandleFunc("GET /api/chats/running", s.handleChatsRunning)
+	mux.HandleFunc("GET /api/chats/{id}/stream", s.handleChatStream)
+	mux.HandleFunc("POST /api/chats/{id}/stop", s.handleChatStop)
 	mux.HandleFunc("POST /api/attachments", s.handleAttachmentUpload)
 	mux.HandleFunc("GET /api/chats/{id}/files/{file}", s.handleChatFile)
 	mux.HandleFunc("GET /api/vision", s.handleVision)
@@ -337,6 +343,7 @@ type page struct {
 	ProjectID string
 	Projects  []*projects.Project
 	Chats     []chats.Summary
+	running   []string
 	Models    []ollama.Model
 	Loaded    []loadedModel
 	Presets   []*presets.Preset
@@ -364,6 +371,9 @@ func (p *page) LoadedNames() []string {
 	return out
 }
 
+// IsRunning reports whether the chat has a reply being written.
+func (p *page) IsRunning(id string) bool { return slices.Contains(p.running, id) }
+
 // IsLoaded reports whether a model is currently in memory.
 func (p *page) IsLoaded(name string) bool {
 	for _, m := range p.Loaded {
@@ -375,7 +385,7 @@ func (p *page) IsLoaded(name string) bool {
 }
 
 func (s *Server) basePage(ctx context.Context, active, title string) *page {
-	p := &page{Active: active, Title: title, memory: s.memory, bench: s.bench, Starred: s.chatSt.Get().DefaultModel}
+	p := &page{running: s.runningChats(), Active: active, Title: title, memory: s.memory, bench: s.bench, Starred: s.chatSt.Get().DefaultModel}
 	if list, err := s.chats.List(); err == nil {
 		p.Chats = list
 	} else {

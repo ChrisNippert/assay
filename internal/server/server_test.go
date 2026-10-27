@@ -35,6 +35,8 @@ type fakeOllama struct {
 	replies    []string // answers used first, one per request, before reply
 	caps       string   // /api/show's capabilities, if set
 	modelInfo  string   // /api/show's model_info, if set
+	// gate, if set, holds /api/chat after its first line until it is closed.
+	gate chan struct{}
 }
 
 func (f *fakeOllama) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -122,6 +124,19 @@ func (f *fakeOllama) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if len(f.replies) > 0 {
 			io.WriteString(w, f.replies[0])
 			f.replies = f.replies[1:]
+			return
+		}
+		if gate := f.gate; gate != nil {
+			first, rest, _ := strings.Cut(f.reply, "\n")
+			f.mu.Unlock()
+			io.WriteString(w, first+"\n")
+			w.(http.Flusher).Flush()
+			select {
+			case <-gate:
+			case <-r.Context().Done():
+			}
+			f.mu.Lock()
+			io.WriteString(w, rest)
 			return
 		}
 		io.WriteString(w, f.reply)

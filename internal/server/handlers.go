@@ -30,6 +30,8 @@ type chatPageData struct {
 	// Recent are the presets to offer on an empty chat: the last used
 	// first, then the rest, three at most.
 	Recent []*presets.Preset
+	// Running: a reply is being written in the background.
+	Running bool
 }
 
 // tuneState is this chat's own tweaks, handed to the Tune panel.
@@ -60,6 +62,7 @@ func (s *Server) handleChatPage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		data.Chat = c
+		data.Running = s.getRun(c.ID) != nil
 		data.Model = c.Model
 		data.Preset = c.Preset
 		data.Tune = tuneState{Options: c.Options, System: c.System, Think: c.Think, Compress: c.Compress, Tools: c.Tools, Compression: c.Compression, Messages: len(c.Messages)}
@@ -272,7 +275,7 @@ type sendRequest struct {
 
 // event is one line of the NDJSON stream sent back to the browser.
 type event struct {
-	Type    string         `json:"type"` // chat, sources, thinking, content, tool, toolresult, say, status, compressed, uncompressed, done, error
+	Type    string         `json:"type"` // chat, sources, thinking, content, tool, toolresult, say, status, compressed, uncompressed, done, stopped, error
 	ID      string         `json:"id,omitempty"`
 	Text    string         `json:"text,omitempty"`
 	Stats   *chats.Stats   `json:"stats,omitempty"`
@@ -291,38 +294,78 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	t, ok := s.prepareTurn(w, r, req)
-	if !ok {
+	const busy = "This chat is still writing a reply. Stop it or wait for it to finish."
+	// One reply per chat at a time. An existing chat is claimed before the
+	// user message is saved; a new chat can't have a run yet.
+	var ru *run
+	if req.ChatID != "" && !req.Voice {
+		if ru = s.beginRun(r, req.ChatID); ru == nil {
+			writeError(w, http.StatusConflict, busy)
+			return
+		}
+	} else if req.Voice && req.ChatID != "" && s.getRun(req.ChatID) != nil {
+		writeError(w, http.StatusConflict, busy)
 		return
 	}
+	t, ok := s.prepareTurn(w, r, req)
+	if !ok {
+		if ru != nil {
+			s.endRun(req.ChatID, ru, nil)
+		}
+		return
+	}
+	// Voice turns stay tied to the request (see voiceTurn).
 	if req.Voice {
 		s.voiceTurn(w, r, t, req.Talker)
 		return
 	}
-	emit := streamEvents(w)
-	if emit(event{Type: "chat", ID: t.chat.ID}) != nil {
-		return
+	if ru == nil {
+		if ru = s.beginRun(r, t.chat.ID); ru == nil {
+			writeError(w, http.StatusConflict, busy)
+			return
+		}
 	}
-	if len(t.cutFiles) > 0 && emit(event{Type: "attachments", Attachments: t.cutFiles}) != nil {
-		return
+	// The reply is written in the background; this request just follows it,
+	// so the browser leaving doesn't stop it.
+	go s.runTurn(ru, t)
+	ru.follow(r.Context(), streamEvents(w))
+}
+
+// runTurn generates the reply for t, publishing events on ru, saves it
+// exactly once and then removes the run.
+func (s *Server) runTurn(ru *run, t *turn) {
+	var last *event
+	defer func() {
+		if p := recover(); p != nil {
+			s.log.Error("reply panicked", "chat", t.chat.ID, "panic", p)
+			last = &event{Type: "error", Message: "the reply failed unexpectedly"}
+		}
+		s.endRun(t.chat.ID, ru, last)
+	}()
+	emit := ru.emit
+	emit(event{Type: "chat", ID: t.chat.ID})
+	if len(t.cutFiles) > 0 {
+		emit(event{Type: "attachments", Attachments: t.cutFiles})
 	}
-	if len(t.sources) > 0 && emit(event{Type: "sources", Sources: t.sources}) != nil {
-		return
+	if len(t.sources) > 0 {
+		emit(event{Type: "sources", Sources: t.sources})
 	}
-	s.compressTurn(r.Context(), t, emit)
-	content, thinking, stats, err := s.chatLoop(r.Context(), t, emit)
-	t.stopped = r.Context().Err() != nil || errors.Is(err, errLooping)
+	s.compressTurn(ru.ctx, t, emit)
+	content, thinking, stats, err := s.chatLoop(ru.ctx, t, emit)
+	cancelled := ru.ctx.Err() != nil
+	t.stopped = cancelled || errors.Is(err, errLooping)
 	s.saveReply(t, content, thinking, "", stats)
 	if err == nil {
 		s.noteThinking(t.req, thinking != "")
 	}
-	if err != nil {
-		if r.Context().Err() == nil {
-			emit(event{Type: "error", Message: err.Error()})
-		}
-		return
+	switch {
+	case cancelled:
+		last = &event{Type: "stopped"}
+	case err != nil:
+		last = &event{Type: "error", Message: err.Error()}
+	default:
+		last = &event{Type: "done", Stats: stats}
 	}
-	emit(event{Type: "done", Stats: stats})
 }
 
 // turn is one send, resolved: the chat with the new user message saved,

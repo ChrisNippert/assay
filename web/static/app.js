@@ -647,6 +647,25 @@
   }
   chatFilter?.addEventListener('input', applyChatFilter);
 
+  // Chats with a reply in progress show a dot. While any does, ask the
+  // server every few seconds which still run.
+  let runPoll = null;
+  function setRunning(ids) {
+    for (const row of document.querySelectorAll('.chat-row[data-chat]')) row.classList.toggle('running', ids.includes(row.dataset.chat));
+  }
+  function trackRunning(id, on = true) {
+    if (id) for (const row of document.querySelectorAll(`.chat-row[data-chat="${id}"]`)) row.classList.toggle('running', on);
+    if (runPoll || !document.querySelector('.chat-row.running')) return;
+    runPoll = setInterval(async () => {
+      try {
+        const res = await fetch('/api/chats/running');
+        if (res.ok) setRunning((await res.json()).running || []);
+      } catch { /* try again next time */ }
+      if (!document.querySelector('.chat-row.running')) { clearInterval(runPoll); runPoll = null; }
+    }, 3000);
+  }
+  trackRunning();
+
   // Adds a newly created chat to the top of the Today group (creating it if missing).
   function addSidebarChat(id, title, projectId) {
     if (!chatListEl) return;
@@ -882,7 +901,7 @@
     applyChatFilter();
   });
 
-  window.ollamui = { addSidebarChat, post, errorText, refreshLoaded, setLoadButton, el, fmtBytes, pollDownloads };
+  window.ollamui = { addSidebarChat, trackRunning, setRunning, post, errorText, refreshLoaded, setLoadButton, el, fmtBytes, pollDownloads };
 })();
 
 // Phone layout: the sidebar is a drawer opened from the app bar.
