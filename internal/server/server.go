@@ -284,6 +284,7 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("POST /api/llamacpp/install", s.handleLlamaInstall)
 	mux.HandleFunc("POST /api/llamacpp/cancel", s.handleLlamaCancel)
 	mux.HandleFunc("PUT /api/llamacpp/use", s.handleLlamaUse)
+	mux.HandleFunc("PUT /api/llamacpp/custom", s.handleLlamaCustom)
 
 	mux.HandleFunc("GET /api/presets", s.handlePresetList)
 	mux.HandleFunc("PUT /api/presets/{name}", s.handlePresetSave)

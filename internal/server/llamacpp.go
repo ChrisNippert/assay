@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"ollamui/internal/llamacpp"
@@ -110,4 +111,24 @@ func (s *Server) handleLlamaUse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleLlamaCustom uses a llama-server the user points at (a file, or a
+// folder holding one); an empty path goes back to the usual choice.
+func (s *Server) handleLlamaCustom(w http.ResponseWriter, r *http.Request) {
+	m := s.llamaOrNotFound(w)
+	if m == nil {
+		return
+	}
+	var req struct {
+		Path string `json:"path"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if err := m.SetCustom(strings.TrimSpace(req.Path)); err != nil {
+		writeError(w, http.StatusBadRequest, capitalize(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, m.Status(r.Context()))
 }

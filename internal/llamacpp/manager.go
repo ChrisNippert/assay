@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"errors"
 	"log/slog"
 	"os"
@@ -18,6 +19,7 @@ import (
 // Where the binary in use comes from.
 const (
 	SourceFlag    = "flag"    // -llama-server
+	SourceCustom  = "custom"  // a llama-server picked in Settings
 	SourceOwn     = "own"     // <data>/llama.cpp, the user's own build
 	SourceRelease = "release" // installed here from GitHub
 	SourcePath    = "path"    // found on PATH
@@ -67,6 +69,7 @@ type Probe struct {
 type Status struct {
 	Path      string `json:"path"`
 	Source    string `json:"source"`
+	Custom    string `json:"custom,omitempty"` // the llama-server picked in Settings
 	OwnPath   string `json:"ownPath,omitempty"`   // the user's own build, if there is one
 	Installed string `json:"installed,omitempty"` // tag of the installed release
 	// PreferRelease: use the installed release even though there is an own build.
@@ -140,21 +143,24 @@ func (m *Manager) ownBinary() string {
 
 func (m *Manager) prefsPath() string { return filepath.Join(m.Data, "llamacpp.json") }
 
-func (m *Manager) preferRelease() bool {
-	b, err := os.ReadFile(m.prefsPath())
-	if err != nil {
-		return false
-	}
-	var p struct {
-		PreferRelease bool `json:"preferRelease"`
-	}
-	return json.Unmarshal(b, &p) == nil && p.PreferRelease
+// prefs are the choices saved in llamacpp.json.
+type prefs struct {
+	PreferRelease bool `json:"preferRelease"`
+	// Custom is a llama-server the user picked; it comes before everything
+	// but the -llama-server flag.
+	Custom string `json:"custom,omitempty"`
 }
 
-// SetPreferRelease chooses the installed release over the user's own build
-// (or back), and points the engine at it.
-func (m *Manager) SetPreferRelease(v bool) error {
-	b, _ := json.Marshal(map[string]bool{"preferRelease": v})
+func (m *Manager) prefs() prefs {
+	var p prefs
+	if b, err := os.ReadFile(m.prefsPath()); err == nil {
+		json.Unmarshal(b, &p)
+	}
+	return p
+}
+
+func (m *Manager) savePrefs(p prefs) error {
+	b, _ := json.Marshal(p)
 	if err := os.MkdirAll(m.Data, 0o755); err != nil {
 		return err
 	}
@@ -165,6 +171,45 @@ func (m *Manager) SetPreferRelease(v bool) error {
 	return nil
 }
 
+func (m *Manager) preferRelease() bool { return m.prefs().PreferRelease }
+
+// SetPreferRelease chooses the installed release over the user's own build
+// (or back), and points the engine at it.
+func (m *Manager) SetPreferRelease(v bool) error {
+	p := m.prefs()
+	p.PreferRelease = v
+	return m.savePrefs(p)
+}
+
+// Custom is the llama-server picked in Settings, or "".
+func (m *Manager) Custom() string { return m.prefs().Custom }
+
+// SetCustom uses the llama-server at path (its libraries beside it), or
+// stops using one when path is "". It must be a file that runs.
+func (m *Manager) SetCustom(path string) error {
+	if path != "" {
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return err
+		}
+		info, err := os.Stat(abs)
+		if err != nil {
+			return fmt.Errorf("no file at %s", abs)
+		}
+		if info.IsDir() {
+			// A folder: the llama-server in it.
+			abs = filepath.Join(abs, m.Inst.exe())
+			if info, err = os.Stat(abs); err != nil || info.IsDir() {
+				return fmt.Errorf("no %s in that folder", m.Inst.exe())
+			}
+		}
+		path = abs
+	}
+	p := m.prefs()
+	p.Custom = path
+	return m.savePrefs(p)
+}
+
 // Resolve finds the llama-server to use: the flag, then the user's own
 // build in <data>/llama.cpp, then the installed release, then PATH. (A
 // saved preference puts the installed release before the user's build.)
@@ -172,6 +217,11 @@ func (m *Manager) Resolve() (path, source string) {
 	if p := m.Flag; p != "" {
 		if info, err := os.Stat(p); err == nil && !info.IsDir() {
 			return p, SourceFlag
+		}
+	}
+	if p := m.Custom(); p != "" {
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			return p, SourceCustom
 		}
 	}
 	own, rel := m.ownBinary(), m.Inst.Binary()
@@ -224,7 +274,7 @@ func (m *Manager) Status(ctx context.Context) Status {
 	path, source := m.Resolve()
 	goos, goarch := m.Inst.platform()
 	label := Label(goos, goarch)
-	st := Status{Path: path, Source: source, OwnPath: m.ownBinary(), Installed: m.Inst.Installed(), PreferRelease: m.preferRelease(), Supported: label != "", Label: label}
+	st := Status{Path: path, Source: source, Custom: m.Custom(), OwnPath: m.ownBinary(), Installed: m.Inst.Installed(), PreferRelease: m.preferRelease(), Supported: label != "", Label: label}
 	if m.Eng != nil {
 		st.Path = m.Eng.ServerPath()
 		if st.Path != path {

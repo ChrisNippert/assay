@@ -16,8 +16,37 @@
   <p class="muted small">Models run with llama.cpp, one at a time on the GPU. Context length, GPU layers, how long a model stays in memory, speculative decoding and its memory options are set per model: open <strong>Tune</strong> in a chat with it.</p>
   <div class="boxed-list">
     <div class="row">
-      <div class="row-text"><span class="row-title">llama.cpp{{with .Backend}} · {{.}}{{end}}</span><span class="row-sub">{{if .Server}}{{if .Version}}Build {{.Version}} · {{end}}{{.Server}}{{else}}No llama-server found. Models can't run until llama.cpp is installed.{{end}}{{if eq .Source "own"}} · Your own build{{else if eq .Source "release"}} · Downloaded release{{else if eq .Source "flag"}} · Set with -llama-server{{else if eq .Source "path"}} · Found on your PATH{{end}}</span></div>
+      <div class="row-text"><span class="row-title">llama.cpp{{with .Backend}} · {{.}}{{end}}</span><span class="row-sub">{{if .Server}}{{if .Version}}Build {{.Version}} · {{end}}{{.Server}}{{else}}No llama-server found. Models can't run until llama.cpp is installed.{{end}}{{if eq .Source "custom"}} · Picked below{{else if eq .Source "own"}} · Your own build{{else if eq .Source "release"}} · Downloaded release{{else if eq .Source "flag"}} · Set with -llama-server{{else if eq .Source "path"}} · Found on your PATH{{end}}</span></div>
     </div>
+    <div class="row" id="lc-custom-row">
+      <div class="row-text"><label class="row-title" for="lc-custom">Use a specific llama-server</label><span class="row-sub" id="lc-custom-sub">The path to a llama-server (or the folder it’s in), e.g. a build of your own or a fork. Its libraries are loaded from the same folder. Leave empty for the usual choice.</span></div>
+      <div class="row-ctrl"><input type="text" id="lc-custom" class="mono" placeholder="/path/to/llama-server" spellcheck="false" autocomplete="off"><button type="button" class="btn" id="lc-custom-use">Use</button><button type="button" class="btn subtle" id="lc-custom-clear" hidden>Clear</button></div>
+    </div>
+    <script>
+    (() => {
+      const input = document.getElementById('lc-custom');
+      const use = document.getElementById('lc-custom-use');
+      const clear = document.getElementById('lc-custom-clear');
+      const sub = document.getElementById('lc-custom-sub');
+      const show = (st) => { input.value = st.custom || ''; clear.hidden = !st.custom; };
+      fetch('/api/llamacpp').then((r) => (r.ok ? r.json() : null)).then((st) => st && show(st)).catch(() => {});
+      async function set(path) {
+        use.disabled = clear.disabled = true;
+        try {
+          const res = await fetch('/api/llamacpp/custom', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }) });
+          if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+          location.hash = 'models';
+          location.reload(); // the llama.cpp row above shows what's in use now
+        } catch (err) {
+          sub.textContent = 'Couldn’t use it: ' + err.message;
+          use.disabled = clear.disabled = false;
+        }
+      }
+      use.addEventListener('click', () => set(input.value.trim()));
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); set(input.value.trim()); } });
+      clear.addEventListener('click', () => set(''));
+    })();
+    </script>
     {{if .Install}}<div class="row lc-row" id="lc-row" hidden>
       <div class="row-text"><span class="row-title" id="lc-title"></span><span class="row-sub" id="lc-sub"></span><div class="lc-bar" id="lc-bar" hidden><span></span></div></div>
       <div class="row-ctrl"><span class="muted small" id="lc-state"></span><button type="button" class="btn subtle" id="lc-alt" hidden></button><button type="button" class="btn" id="lc-btn"></button></div>
