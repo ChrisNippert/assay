@@ -65,7 +65,22 @@ func (q Quant) Quality() string {
 var (
 	splitSuffix = regexp.MustCompile(`-\d{5}-of-\d{5}$`)
 	quantSuffix = regexp.MustCompile(`(?i)[-._]((?:UD-)?(?:[IPT]?Q\d(?:_[A-Z0-9]+)*|BF16|F16|F32|MXFP4(?:_[A-Z0-9]+)*))$`)
+	// quantInside finds a quant followed by more words, as in
+	// "Model-Q2_0-prism-fork-required"; the last one wins.
+	quantInside = regexp.MustCompile(`(?i)[-._]((?:UD-)?(?:[IPT]?Q\d(?:_[A-Z0-9]+)*|BF16|F16|F32|MXFP4))[-.]`)
 )
+
+// quantOf finds the quant in a file name (without .gguf): at the end, or
+// failing that, the last one with words after it.
+func quantOf(base string) string {
+	if m := quantSuffix.FindStringSubmatch(base); m != nil {
+		return m[1]
+	}
+	if all := quantInside.FindAllStringSubmatch(base, -1); len(all) > 0 {
+		return all[len(all)-1][1]
+	}
+	return ""
+}
 
 // draftPattern matches the names speculative-decoding draft models go by.
 var draftPattern = regexp.MustCompile(`(?i)(^|[^a-z])(dspark|dflash\d*|eagle\d+|drafter|draft)([^a-z]|$)`)
@@ -174,8 +189,8 @@ func Quants(repo string, files []File) (quants []Quant, hasVision bool) {
 		base = splitSuffix.ReplaceAllString(base, "")
 		draft := IsDraftFile(repo, f.Path)
 		var name string
-		if m := quantSuffix.FindStringSubmatch(base); m != nil {
-			name = strings.ToUpper(m[1])
+		if q := quantOf(base); q != "" {
+			name = strings.ToUpper(q)
 		} else if !draft {
 			continue
 		}

@@ -65,3 +65,15 @@ func TestDraftKinds(t *testing.T) {
 		t.Errorf("kinds = %v", kinds)
 	}
 }
+
+func TestQuantWithWordsAfter(t *testing.T) {
+	qs, _ := Quants("prism-ml/Ternary-Bonsai-2-27B-gguf-dev", []File{{Type: "file", Path: "Ternary-Bonsai-2-27B-Q2_0-prism-fork-required.gguf", Size: 7}})
+	if len(qs) != 1 || qs[0].Name != "Q2_0" {
+		t.Fatalf("quants = %+v", qs)
+	}
+	// A name ending in its quant still reads it from the end.
+	qs, _ = Quants("o/M-GGUF", []File{{Type: "file", Path: "M-Q8_0-v2-Q4_K_M.gguf", Size: 7}})
+	if len(qs) != 1 || qs[0].Name != "Q4_K_M" {
+		t.Fatalf("quants = %+v", qs)
+	}
+}
