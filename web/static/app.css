@@ -414,7 +414,7 @@ table.models { width: 100%; border-collapse: collapse; }
 @media (max-width: 1180px) {
   .discover.panel-open { height: auto; min-height: calc(100dvh - var(--appbar-h)); overflow: visible; }
   .discover.panel-open .results-pane { height: auto; max-width: none; flex-basis: auto; overflow: visible; }
-  .discover.panel-open .detail-panel { position: fixed; inset: 0 0 0 var(--sidebar-w, 220px); z-index: 20; height: auto; min-width: 0; }
+  .discover.panel-open .detail-panel { position: fixed; inset: 0 0 0 var(--sidebar-w, 220px); z-index: 20; height: auto; min-width: 0; align-self: stretch; }
   .discover.panel-open .filters { display: none; }
   .discover.panel-open.filters-open .filters {
     display: flex; position: absolute; left: 0; top: 0; bottom: 0; width: 240px; max-width: 240px; height: auto; overflow-y: auto;
