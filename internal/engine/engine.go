@@ -127,6 +127,9 @@ func (e *Engine) Store() *Store { return e.store }
 // DefaultCtx is the context a model loads with when nothing sets one.
 const DefaultCtx = 32768
 
+// EmbeddingCtx is an embedding model's context when nothing sets one.
+const EmbeddingCtx = 8192
+
 // cacheReuse is the shortest prompt chunk (tokens) llama-server tries to
 // move into place from the cache when it isn't at the same position.
 const cacheReuse = 256
@@ -333,6 +336,11 @@ func (e *Engine) args(m *Model, o loadOpts, port int) []string {
 	ctx := o.Ctx
 	if ctx == 0 {
 		ctx = DefaultCtx
+		if o.Embedding {
+			// Embeddings see one chunk at a time, a few hundred tokens; a
+			// 32k cache cost Qwen3-Embedding 0.6B ~4 GB of VRAM.
+			ctx = EmbeddingCtx
+		}
 	}
 	a = append(a, "-c", strconv.Itoa(ctx))
 	switch {
