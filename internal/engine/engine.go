@@ -153,6 +153,7 @@ type loadOpts struct {
 	Embedding   bool
 	DraftGPU    bool   // keep the whole draft (MTP head or draft model) on the GPU
 	NoMMProjGPU bool   // keep the vision projector in RAM
+	NoVision    bool   // don't load the vision projector at all
 	Draft       string // the draft model's name for speculative decoding, "": none
 	DraftMax    int    // tokens drafted at a time; 0: llama.cpp's default
 	NGramMax    int    // tokens n-gram guessing drafts at a time; 0: llama.cpp's default
@@ -221,6 +222,7 @@ func loadOptsFrom(o map[string]any) loadOpts {
 	}
 	lo.DraftGPU = o["draft_gpu"] == "always"
 	lo.NoMMProjGPU = o["mmproj_cpu"] == "on"
+	lo.NoVision = o["vision"] == "off"
 	lo.Speed, _ = o["speedup"].(string)
 	lo.NGram, _ = o["spec_ngram"].(string)
 	if v, _ := o["cache_type"].(string); CacheTypes[v] {
@@ -373,7 +375,7 @@ func (e *Engine) args(m *Model, o loadOpts, port int) []string {
 	if o.Embedding {
 		a = append(a, "--embedding", "-b", "2048", "-ub", "2048")
 	} else {
-		if m.Projector != "" {
+		if m.Projector != "" && !o.NoVision {
 			a = append(a, "--mmproj", e.store.Blob(m.Projector))
 			if o.NoMMProjGPU {
 				a = append(a, "--no-mmproj-offload")
@@ -959,7 +961,12 @@ func (e *Engine) Show(ctx context.Context, name string) (*ollama.ShowResponse, e
 		if strings.Contains(tpl, "enable_thinking") || strings.Contains(tpl, "<think>") || strings.Contains(tpl, "reasoning") || strings.Contains(tpl, "thinking") {
 			s.Capabilities = append(s.Capabilities, "thinking")
 		}
-		if m.Projector != "" {
+		switch {
+		case m.Projector != "" && m.options(nil)["vision"] == "off":
+			// Turned off in its settings: it can't see images, but the
+			// setting to turn it back on stays.
+			s.Capabilities = append(s.Capabilities, "vision-off")
+		case m.Projector != "":
 			s.Capabilities = append(s.Capabilities, "vision")
 		}
 	}

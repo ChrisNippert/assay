@@ -143,3 +143,12 @@ func TestMMProjCPUArg(t *testing.T) {
 		t.Errorf("no projector: %s", a)
 	}
 }
+
+func TestVisionOffArg(t *testing.T) {
+	e, m := limitEngine(t, limits.Limits{})
+	vm := *m
+	vm.Projector = "proj.gguf"
+	if a := strings.Join(argsFor(e, &vm, map[string]any{"vision": "off", "mmproj_cpu": "on"}), " "); strings.Contains(a, "mmproj") {
+		t.Errorf("vision off still loads the projector: %s", a)
+	}
+}

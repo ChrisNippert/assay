@@ -212,7 +212,7 @@ func (s *Server) handleModelDefaults(w http.ResponseWriter, r *http.Request) {
 		Tools:         show.HasCapability("tools"),
 		Layers:        show.Layers(),
 		MoE:           show.MoE(),
-		Vision:        show.HasCapability("vision"),
+		Vision:        show.HasCapability("vision") || show.HasCapability("vision-off"),
 	}
 	if ms, ok := s.ollama.(modelSettings); ok {
 		d.Saved, _ = ms.Settings(name)

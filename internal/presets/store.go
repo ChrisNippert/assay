@@ -167,6 +167,7 @@ var (
 		// whether to guess from the conversation ("on" is ngram-mod).
 		"draft_gpu":  func(v string) bool { return v == "auto" || v == "always" },
 		"mmproj_cpu": func(v string) bool { return v == "on" || v == "off" },
+		"vision":     func(v string) bool { return v == "on" || v == "off" },
 		"speedup":    func(v string) bool { return v == "auto" || v == "off" || v == "mtp" },
 		"spec_ngram": func(v string) bool {
 			switch v {

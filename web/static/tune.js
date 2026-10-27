@@ -110,8 +110,13 @@
       help: 'Keeps the whole draft (MTP head or draft model) on the GPU and puts more of the main model in RAM; best when the main model doesn’t fit anyway',
       choices: [['always', 'Always']],
       off: () => (speedPlan().some((p) => p === 'MTP head' || p === 'draft model') ? '' : 'No MTP head or draft model is in use') },
+    { key: 'vision', label: 'Vision (image reading)', kind: 'choice', scope: 'model', engine: true, none: 'On',
+      when: () => !!defaults.vision,
+      help: 'Off skips loading the image reader: saves its VRAM and load time; the model can’t see attached images',
+      choices: [['off', 'Off']] },
     { key: 'mmproj_cpu', label: 'Vision on CPU', kind: 'choice', scope: 'model', engine: true, none: 'Off',
       when: () => !!defaults.vision,
+      off: () => (effective('vision') === 'off' ? 'Vision is off' : ''),
       help: 'Keeps the image reader in RAM instead of the GPU: saves about 1–4 GB of VRAM; image reading gets slower',
       choices: [['on', 'On']] },
   ];
