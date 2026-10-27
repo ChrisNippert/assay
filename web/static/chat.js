@@ -561,6 +561,21 @@
     if (!card.hidden && !e.target.closest('.switcher')) openSwitcher(false);
   });
 
+  // A new chat starts on the model picked last (in this browser), unless
+  // the link names one: picking shouldn't be undone by visiting another page.
+  const PICK_KEY = 'chat:lastModel';
+  if (!chatId && !new URLSearchParams(location.search).has('model')) {
+    let last = null;
+    try { last = localStorage.getItem(PICK_KEY); } catch {}
+    if (last && last !== select.value && [...select.options].some((o) => o.value === last)) {
+      select.value = last;
+      // After every script (Tune too) is listening.
+      setTimeout(() => select.dispatchEvent(new Event('change')));
+    }
+  }
+  select.addEventListener('change', () => {
+    try { localStorage.setItem(PICK_KEY, select.value); } catch {}
+  });
   select.addEventListener('change', syncPicker);
   document.addEventListener('star-changed', (e) => {
     for (const o of select.querySelectorAll('option')) o.toggleAttribute('data-starred', !!e.detail && o.value === e.detail);
