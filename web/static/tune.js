@@ -310,6 +310,7 @@
         }
       });
       ctrl.append(sel);
+      if (def.key === 'draft_model') row.classList.add('wide-ctrl'); // model names are long
       r.select = sel;
     } else {
       const spin = el('div', 'spin');
