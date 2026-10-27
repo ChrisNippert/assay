@@ -104,7 +104,7 @@
       help: 'Drafts by copying runs of text already in the chat; great for code edits, costs nothing',
       choices: [['on', 'On'], ['off', 'Off']] },
     { key: 'spec_ngram_max', label: 'N-gram: tokens ahead', kind: 'spin', min: 1, max: 128, step: 1, int: true, scope: 'model',
-      placeholder: 'Auto (up to 64)', help: 'Most tokens copied from the chat per step; llama.cpp allows up to 64',
+      placeholder: 'Auto', help: 'Most tokens copied from the chat per step; llama.cpp allows up to 64',
       off: () => (speedPlan().includes('n-gram guessing') ? '' : 'N-gram guessing is off') },
     { key: 'draft_gpu', label: 'Draft on GPU', kind: 'choice', scope: 'model', engine: true, none: 'Auto',
       help: 'Keeps the whole draft (MTP head or draft model) on the GPU and puts more of the main model in RAM; best when the main model doesn’t fit anyway',
@@ -233,10 +233,22 @@
   function rowShell(def) {
     const row = el('div', 'row');
     const text = el('div', 'row-text');
+    const head = el('div', 'row-head');
     const title = el('label', 'row-title', def.label);
     title.htmlFor = 'tp-' + def.key;
+    // The explanation sits behind an ⓘ (hover, focus or tap), so the line
+    // under the name stays short: just where the value comes from.
+    const info = el('button', 'info-btn', 'i');
+    info.type = 'button';
+    info.hidden = true;
+    info.setAttribute('aria-label', `About ${def.label}`);
+    const tip = el('div', 'row-tip');
+    tip.setAttribute('role', 'tooltip');
+    info.addEventListener('click', (e) => { e.stopPropagation(); row.classList.toggle('tip-open'); });
+    info.addEventListener('blur', () => row.classList.remove('tip-open'));
+    head.append(title, info);
     const sub = el('div', 'row-sub');
-    text.append(title, sub);
+    text.append(head, sub, tip);
     const ctrl = el('div', 'row-ctrl');
     const reset = el('button', 'icon-btn row-reset');
     reset.type = 'button';
@@ -297,7 +309,6 @@
           setOption(def, parse(def, sel.value));
         }
       });
-      if (def.dyn) sel.style.maxWidth = '9.5rem'; // model names are long
       ctrl.append(sel);
       r.select = sel;
     } else {
@@ -800,7 +811,20 @@
       r.row.classList.toggle('off', !!off);
       r.row.querySelectorAll('input, select').forEach((c) => { if (off) c.disabled = true; else if (r.def.kind !== 'tools') c.disabled = false; });
       if (off) { r.sub.textContent = off; }
-      if (r.sub.textContent) r.row.title = r.sub.textContent; // the line is clipped to one row
+      // The help goes behind the ⓘ; the line keeps the rest.
+      const help = r.def.help;
+      const info = r.row.querySelector(':scope .info-btn');
+      if (info) {
+        const t = r.sub.textContent;
+        if (help && !off && t.endsWith(help)) r.sub.textContent = t.slice(0, -help.length).replace(/\s*·\s*$/, '');
+        // A status line too long for the row is shown whole in the tip too.
+        const clipped = r.sub.scrollWidth > r.sub.clientWidth + 1 ? r.sub.textContent : '';
+        const tip = [clipped, off ? '' : help].filter(Boolean).join('\n\n');
+        info.hidden = !tip;
+        r.row.querySelector(':scope .row-tip').textContent = tip;
+        if (tip) r.row.removeAttribute('title');
+      }
+      if (r.sub.textContent && (!help || !info)) r.row.title = r.sub.textContent; // the line is clipped to one row
     }
     const samplingChanged = SAMPLING.filter((d) => d.key in state.options).length;
     sampling.sub.textContent = samplingChanged ? `${samplingChanged} changed` : 'Top P, top K, penalties, seed';

@@ -1109,3 +1109,16 @@ a.tag-link:hover { border-color: var(--accent-line); color: var(--accent-text); 
 .chat-row.running .chat-link { padding-left: 16px; }
 @keyframes chat-pulse { 50% { opacity: 0.25; } }
 @media (prefers-reduced-motion: reduce) { .chat-row.running::before { animation: none; } }
+
+/* ---- Tune: ⓘ help and roomier dropdowns ---- */
+.tune .row { position: relative; }
+.tune .row-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.info-btn { flex: none; width: 18px; height: 18px; padding: 0; border: 1.5px solid var(--muted); border-radius: 50%; background: none; color: var(--muted); font: italic 600 11px/1 Georgia, serif; cursor: help; display: inline-grid; place-items: center; }
+.info-btn:hover, .info-btn:focus-visible, .row.tip-open .info-btn { border-color: var(--accent); color: var(--accent); }
+.row-tip { display: none; white-space: pre-line; position: absolute; left: 8px; right: 8px; top: calc(100% - 4px); z-index: 20; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text-2); font-size: var(--fs-sm); line-height: 1.45; box-shadow: 0 6px 24px rgb(0 0 0 / .18); }
+.row:has(.info-btn:hover) .row-tip, .row:has(.info-btn:focus-visible) .row-tip, .row.tip-open .row-tip { display: block; }
+/* A dropdown gets the whole width under the name, so long choices fit. */
+.tune .row:has(> .row-ctrl select) { flex-wrap: wrap; }
+.tune .row:has(> .row-ctrl select) > .row-text { flex: 1 1 auto; }
+.tune .row:has(> .row-ctrl select) > .row-ctrl { flex: 1 1 100%; }
+.tune .row-ctrl select { flex: 1; min-width: 0; max-width: none; }
