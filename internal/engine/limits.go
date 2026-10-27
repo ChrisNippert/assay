@@ -10,7 +10,7 @@ import (
 
 const (
 	defaultFitTarget = 1024 // MiB llama.cpp keeps free per device by default
-	draftComputeMiB  = 512  // room for a draft's context and compute buffers
+	draftComputeMiB  = 1024 // room for a draft's context and compute buffers
 	gentleUbatch     = 256
 	mib              = 1 << 20
 )
@@ -72,7 +72,11 @@ func (e *Engine) fitTarget(m *Model, o loadOpts) (int64, bool) {
 			set = true
 		}
 	}
-	if o.DraftGPU {
+	// llama.cpp's fit can't measure an MTP head or draft model ("fitting
+	// without it"), so it fills the GPU with the main model and the draft
+	// is squeezed in after: a Gemma 4 26B with its MTP head was left with
+	// 360 MiB free and stalled. Leave the draft's room whenever one is used.
+	if !o.Embedding {
 		if f := e.draftFile(m, o); f != "" {
 			if st, err := os.Stat(f); err == nil {
 				target += st.Size()/mib + draftComputeMiB

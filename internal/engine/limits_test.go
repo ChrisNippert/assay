@@ -46,7 +46,7 @@ func limitEngine(t *testing.T, l limits.Limits) (*Engine, *Model) {
 
 func TestNoLimitsChangesNothing(t *testing.T) {
 	e, m := limitEngine(t, limits.Limits{})
-	a := argsFor(e, m, nil)
+	a := argsFor(e, m, noSpec)
 	for _, bad := range []string{"--fit-target", "--prio", "--spec-draft-ngl", "-ub"} {
 		if slices.Contains(a, bad) {
 			t.Errorf("unexpected %s in %v", bad, a)
@@ -57,18 +57,18 @@ func TestNoLimitsChangesNothing(t *testing.T) {
 func TestVRAMLimitMargin(t *testing.T) {
 	// 10 GiB free, limit 3 GiB, nothing else loaded: leave 7 GiB free.
 	e, m := limitEngine(t, limits.Limits{MaxVRAMGB: 3})
-	if got := flagVal(argsFor(e, m, nil), "--fit-target"); got != "7168" {
+	if got := flagVal(argsFor(e, m, noSpec), "--fit-target"); got != "7168" {
 		t.Errorf("fit-target = %q, want 7168", got)
 	}
 	// Another loaded model already holds 1 GiB: only 2 GiB for this one.
 	e.procs = map[string]*proc{"other": {model: &Model{Name: "other"}, vram: 1 << 30}}
-	if got := flagVal(argsFor(e, m, nil), "--fit-target"); got != "8192" {
+	if got := flagVal(argsFor(e, m, noSpec), "--fit-target"); got != "8192" {
 		t.Errorf("with another model: %q, want 8192", got)
 	}
 	// A limit above what is free keeps the default margin.
 	e.procs = nil
 	e.Limits.Set(limits.Limits{MaxVRAMGB: 11})
-	if got := flagVal(argsFor(e, m, nil), "--fit-target"); got != "1024" {
+	if got := flagVal(argsFor(e, m, noSpec), "--fit-target"); got != "1024" {
 		t.Errorf("big limit: %q, want 1024", got)
 	}
 	// Hand-set layers: fit is off, nothing to pass.
@@ -78,7 +78,7 @@ func TestVRAMLimitMargin(t *testing.T) {
 	}
 	// Unknown VRAM: skipped.
 	e.Live = func() hw.Live { return hw.Live{} }
-	if a := argsFor(e, m, nil); slices.Contains(a, "--fit-target") {
+	if a := argsFor(e, m, noSpec); slices.Contains(a, "--fit-target") {
 		t.Errorf("fit-target without VRAM info: %v", a)
 	}
 }
@@ -89,14 +89,14 @@ func TestDraftGPUArgs(t *testing.T) {
 	if flagVal(a, "--spec-draft-ngl") != "all" {
 		t.Errorf("no --spec-draft-ngl all: %v", a)
 	}
-	// 1024 + 200 MiB head + 512 for its buffers.
-	if got := flagVal(a, "--fit-target"); got != "1736" {
-		t.Errorf("fit-target = %q, want 1736", got)
+	// 1024 + 200 MiB head + 1024 for its buffers.
+	if got := flagVal(a, "--fit-target"); got != "2248" {
+		t.Errorf("fit-target = %q, want 2248", got)
 	}
 	// Combined with a VRAM limit of 3 GiB (7168 margin).
 	e.Limits.Set(limits.Limits{MaxVRAMGB: 3})
-	if got := flagVal(argsFor(e, m, map[string]any{"draft_gpu": "always"}), "--fit-target"); got != "7880" {
-		t.Errorf("combined = %q, want 7880", got)
+	if got := flagVal(argsFor(e, m, map[string]any{"draft_gpu": "always"}), "--fit-target"); got != "8392" {
+		t.Errorf("combined = %q, want 8392", got)
 	}
 	// Hand-set layers: the flag stays, fit-target doesn't.
 	a = argsFor(e, m, map[string]any{"draft_gpu": "always", "num_gpu": 5.0})
@@ -152,3 +152,18 @@ func TestVisionOffArg(t *testing.T) {
 		t.Errorf("vision off still loads the projector: %s", a)
 	}
 }
+
+func TestDraftRoomWithoutDraftGPU(t *testing.T) {
+	e, m := limitEngine(t, limits.Limits{})
+	// The MTP head is used on Auto: its room is kept even without "always".
+	a := argsFor(e, m, nil)
+	if got := flagVal(a, "--fit-target"); got != "2248" {
+		t.Errorf("fit-target = %q, want 2248 (%v)", got, a)
+	}
+	if flagVal(a, "--spec-draft-ngl") != "" {
+		t.Errorf("draft pinned without asking: %v", a)
+	}
+}
+
+// noSpec turns speculative decoding off, so a test sees only the limits.
+var noSpec = map[string]any{"speedup": "off", "spec_ngram": "off"}

@@ -264,6 +264,8 @@ type proc struct {
 	oom     string        // the first out-of-memory line it printed, if any
 	logDone chan struct{} // closed once its output has all been read
 	fitted  bool          // asked for a layer count that didn't fit; --fit chose
+	ready   bool          // it finished loading
+	quit    bool          // ollamui stopped it
 }
 
 // beginChat says which chat the slot now serves and how many tokens it
@@ -585,8 +587,19 @@ func (e *Engine) start(ctx context.Context, m *Model, o loadOpts) (*proc, error)
 		err := cmd.Wait()
 		p.mu.Lock()
 		p.err = err
+		crashed := p.ready && !p.quit
 		p.mu.Unlock()
 		close(p.done)
+		if crashed {
+			// Say why in the log: the reply it was writing just broke off.
+			<-p.logDone
+			e.opt.Log.Warn("llama-server stopped unexpectedly", "model", m.Name, "err", err, "last", p.lastLines())
+			e.mu.Lock()
+			if e.procs[m.Name] == p {
+				delete(e.procs, m.Name)
+			}
+			e.mu.Unlock()
+		}
 	}()
 
 	// Wait until it answers /health (503 while loading).
@@ -641,6 +654,9 @@ func (e *Engine) start(ctx context.Context, m *Model, o loadOpts) (*proc, error)
 		}
 	}
 	p.touch(0, e.opt.KeepAlive)
+	p.mu.Lock()
+	p.ready = true
+	p.mu.Unlock()
 	e.mu.Lock()
 	e.procs[m.Name] = p
 	e.mu.Unlock()
@@ -764,6 +780,9 @@ func (e *Engine) stop(p *proc) {
 		return
 	}
 	e.saveSlot(p)
+	p.mu.Lock()
+	p.quit = true
+	p.mu.Unlock()
 	stopProcess(p.cmd)
 	select {
 	case <-p.done:
