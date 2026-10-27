@@ -210,3 +210,26 @@ func TestStoppedReplyStaysInContext(t *testing.T) {
 		t.Fatalf("thinking-only stopped reply = %q", got)
 	}
 }
+
+func TestLoopCheck(t *testing.T) {
+	l := newLoopCheck()
+	line := "Actually, I think the correct approach is to use the lens equation.\n"
+	for i := 0; i < loopRepeats-1; i++ {
+		if l.add("Some new thought number " + strings.Repeat("x", i) + " that goes on for a while.\n") {
+			t.Fatal("distinct lines taken for a loop")
+		}
+		// Split mid-line, as a stream does.
+		if l.add(line[:20]) || l.add(line[20:]) {
+			t.Fatalf("loop found after %d repeats", i+1)
+		}
+	}
+	if !l.add(line) {
+		t.Fatal("loop not found")
+	}
+	short := newLoopCheck()
+	for i := 0; i < 50; i++ {
+		if short.add("Wait.\n") {
+			t.Fatal("short line taken for a loop")
+		}
+	}
+}

@@ -974,6 +974,8 @@
 
   // ---- API for chat.js ----
   window.ollamuiTune = {
+    // The context the model runs with, as far as Tune knows (0 if not).
+    contextSize: () => +effective('num_ctx') || 0,
     selection() {
       const p = currentPreset();
       return p ? { preset: p.name } : { model: select.value };

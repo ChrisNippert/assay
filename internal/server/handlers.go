@@ -311,7 +311,7 @@ func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {
 	}
 	s.compressTurn(r.Context(), t, emit)
 	content, thinking, stats, err := s.chatLoop(r.Context(), t, emit)
-	t.stopped = r.Context().Err() != nil
+	t.stopped = r.Context().Err() != nil || errors.Is(err, errLooping)
 	s.saveReply(t, content, thinking, "", stats)
 	if err == nil {
 		s.noteThinking(t.req, thinking != "")

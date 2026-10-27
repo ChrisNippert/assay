@@ -630,6 +630,7 @@
   function showContext(used, max) {
     if (used != null) ctxUsed = used;
     if (max) ctxMax = max;
+    if (!ctxMax) ctxMax = window.ollamuiTune?.contextSize?.() || 0; // before the first reply says
     if (!meter) return;
     meter.hidden = !ctxUsed;
     const pct = ctxMax ? Math.min(100, (ctxUsed * 100) / ctxMax) : 0;
@@ -865,6 +866,8 @@
 
     controller = new AbortController();
     syncSendBtn();
+    let streamed = 0;
+    const ctxStart = ctxUsed + Math.round(text.length / 3.8);
     let outcome = 'done';
     // If the reply has to load the model first, the memory list shows it.
     const loadCheck = isLoaded(selectedOption()) ? null : setTimeout(() => refreshLoaded(true), 500);
@@ -882,7 +885,12 @@
       if (!res.ok) throw new Error(await errorText(res));
       await readNDJSON(res.body, (ev) => {
         voice.onEvent?.(ev);
-        if (ev.type === 'content' || ev.type === 'thinking') showContext(ctxUsed + 1);
+        // A chunk can hold several tokens: estimate from the text (~3.8
+        // characters a token) until the reply's own count arrives.
+        if (ev.type === 'content' || ev.type === 'thinking') {
+          streamed += ev.text.length;
+          showContext(ctxStart + Math.round(streamed / 3.8));
+        }
         switch (ev.type) {
           case 'chat':
             if (!chatId) {
@@ -912,7 +920,7 @@
             break;
           case 'tool': {
             // End this segment: keep what was written as part of the transcript.
-            if (thinking) thinkBox.querySelector('summary').textContent = 'Thinking';
+            if (thinking) thinkBox.querySelector('summary').textContent = `Thinking · ~${kfmt(Math.round(thinking.length / 3.8))} tokens`;
             if (thinking && !content) thinkBox.open = false;
             if (content) { md.classList.add('said'); thinkBox.open = false; } else md.remove();
             if (!thinking) thinkBox.remove();
@@ -935,6 +943,8 @@
             if (!thinking) { thinkBox.hidden = false; thinkBox.open = true; stats.textContent = ''; }
             thinking += ev.text;
             thinkText.textContent = thinking;
+            // A long think shows it's still going, even folded up.
+            thinkBox.querySelector('summary').textContent = `Thinking… ~${kfmt(Math.round(thinking.length / 3.8))} tokens`;
             break;
           case 'say':
             spoken.hidden = false;
@@ -944,7 +954,7 @@
           case 'content':
             if (!content) {
               stats.textContent = '';
-              if (thinking) { thinkBox.open = false; thinkBox.querySelector('summary').textContent = 'Thinking'; }
+              if (thinking) { thinkBox.open = false; thinkBox.querySelector('summary').textContent = `Thinking · ~${kfmt(Math.round(thinking.length / 3.8))} tokens`; }
             }
             content += ev.text;
             setMarkdown(md, content);
@@ -970,7 +980,7 @@
         reply.append(el('div', 'msg-error', err.message));
       }
     } finally {
-      if (thinking) thinkBox.querySelector('summary').textContent = 'Thinking';
+      if (thinking) thinkBox.querySelector('summary').textContent = `Thinking · ~${kfmt(Math.round(thinking.length / 3.8))} tokens`;
       for (const row of running.values()) { // stopped mid-call
         row.classList.remove('pending');
         row.querySelector('summary').textContent = 'Stopped before the call finished';

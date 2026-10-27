@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"encoding/json"
 	"net/http"
 	"slices"
@@ -126,9 +127,13 @@ func (s *Server) chatLoop(ctx context.Context, t *turn, emit func(event) error) 
 		}
 		var c, th strings.Builder
 		var final ollama.ChatResponse
+		loop := newLoopCheck()
 		err = s.ollama.Chat(ctx, req, func(resp ollama.ChatResponse) error {
 			if x := resp.Message.Thinking; x != "" {
 				th.WriteString(x)
+				if loop.add(x) {
+					return errLooping
+				}
 				if err := emit(event{Type: "thinking", Text: x}); err != nil {
 					return err
 				}
@@ -226,4 +231,46 @@ func toolMessages(m chats.Message) []ollama.Message {
 		out = append(out, results...)
 	}
 	return out
+}
+
+// errLooping stops a reply whose thinking goes round in circles: small
+// reasoning models can repeat the same few lines until the context is full
+// (K2 Horizon spent 32k tokens, 5 minutes, saying the same thing 30 times).
+var errLooping = errors.New("the model was going in circles in its thinking, so ollamui stopped it. Try again, turn Thinking off, or raise the repeat penalty in Tune")
+
+// loopCheck counts the long lines of a stream; one seen loopRepeats times
+// is a loop. Short lines ("Wait.", "}") repeat honestly.
+type loopCheck struct {
+	seen    map[string]int
+	partial strings.Builder
+}
+
+const (
+	loopLineMin = 40
+	loopRepeats = 8
+)
+
+func newLoopCheck() *loopCheck { return &loopCheck{seen: map[string]int{}} }
+
+// add takes the next piece of the stream and reports a loop.
+func (l *loopCheck) add(x string) bool {
+	l.partial.WriteString(x)
+	text := l.partial.String()
+	i := strings.LastIndexByte(text, '\n')
+	if i < 0 {
+		return false
+	}
+	l.partial.Reset()
+	l.partial.WriteString(text[i+1:])
+	for _, line := range strings.Split(text[:i], "\n") {
+		line = strings.TrimSpace(line)
+		if len(line) < loopLineMin {
+			continue
+		}
+		l.seen[line]++
+		if l.seen[line] >= loopRepeats {
+			return true
+		}
+	}
+	return false
 }
