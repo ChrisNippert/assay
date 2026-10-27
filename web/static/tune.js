@@ -164,7 +164,12 @@
     const v = select.value;
     return v.startsWith('preset:') ? presets.find((p) => p.name === v.slice(7)) || null : null;
   };
-  const baseModel = () => select.selectedOptions[0]?.dataset.base || '';
+  const chatModel = () => select.selectedOptions[0]?.dataset.base || '';
+  // Tune can show another model than the chat's (one loaded, or any
+  // installed): then only what's saved for that model is shown and changed.
+  let tuneTarget = '';
+  const other = () => !!tuneTarget && tuneTarget !== chatModel();
+  const baseModel = () => (other() ? tuneTarget : chatModel());
   const savedHere = (def) => def.scope === 'model' && perModel();
 
   // The value that applies when the row's own value isn't set. For a
@@ -193,6 +198,7 @@
   // A chat or preset can still override a model row ("over").
   function layers(def) {
     if (!savedHere(def)) return { own: state.options[def.key], inh: inherited(def.key, def) };
+    if (other()) return { own: saved[def.key], inh: inherited(def.key, def), over: null };
     const p = currentPreset();
     let over = null;
     if (def.key in state.options) over = { value: state.options[def.key], from: 'chat' };
@@ -207,7 +213,7 @@
   let saveTimer = null;
   function setModelOption(def, v) {
     // Changing it here also drops this chat's own value, which would hide it.
-    delete state.options[def.key];
+    if (!other()) delete state.options[def.key];
     if (v === null || v === '' || Number.isNaN(v)) delete saved[def.key];
     else saved[def.key] = v;
     render();
@@ -689,8 +695,9 @@
     const same = sel.options.length === opts.length && [...sel.options].every((o, i) => o.value === opts[i][0] && o.text === opts[i][1]);
     if (!same) sel.replaceChildren(...opts.map(([v, t]) => new Option(t, v)));
     sel.value = val != null ? String(val) : '';
-    const help = def.empty && !choices.length && val == null ? def.empty : def.help;
-    r.sub.textContent = val != null ? `${origin(def)} · ${help}` : help;
+    // The help is behind the ⓘ; the line says where the value comes from,
+    // or why there's nothing to pick.
+    r.sub.textContent = def.empty && !choices.length && val == null ? def.empty : val != null ? origin(def) : '';
     if (def.key === 'speedup') addMTPGet(r.sub);
     return over?.from === 'chat' || own != null;
   }
@@ -802,7 +809,7 @@
   function render() {
     const preset = currentPreset();
     for (const r of rows) {
-      r.row.hidden = (!!r.def.engine && !perModel()) || (r.def.when && !r.def.when());
+      r.row.hidden = (!!r.def.engine && !perModel()) || (r.def.when && !r.def.when()) || (other() && !savedHere(r.def));
       const off = r.def.off ? r.def.off() : '';
       const k = r.def.kind;
       const changed = k === 'format' ? renderFormat(r) : k === 'combo' ? renderCombo(r) : k === 'think' ? renderThink(r) : k === 'compress' ? renderCompress(r) : k === 'tools' ? renderTools(r) : k === 'choice' ? renderChoice(r) : renderNumber(r);
@@ -870,7 +877,37 @@
     openBtn.classList.toggle('has-changes', n > 0);
   }
 
+  // ---- which model is tuned ----
+  const targetSel = document.getElementById('tune-model');
+  let loadedNow = [];
+  function fillTargets() {
+    if (!targetSel) return;
+    const chat = chatModel();
+    const models = [...select.querySelectorAll('option[data-names]')];
+    const loaded = models.filter((o) => o.dataset.names.split(' ').some((n) => loadedNow.includes(n)));
+    const opts = [new Option(chat ? `This chat’s model (${chat.split('/').pop()})` : 'This chat’s model', '')];
+    const group = (label, list) => {
+      const g = document.createElement('optgroup');
+      g.label = label;
+      for (const o of list) if (o.dataset.base !== chat) g.append(new Option(o.textContent, o.dataset.base));
+      if (g.children.length) opts.push(g);
+    };
+    group('Loaded', loaded);
+    group('Installed', models.filter((o) => !loaded.includes(o)));
+    targetSel.replaceChildren(...opts);
+    targetSel.value = other() ? tuneTarget : '';
+  }
+  targetSel?.addEventListener('change', () => {
+    tuneTarget = targetSel.value;
+    loadDefaults();
+  });
+  document.addEventListener('loaded-changed', (e) => { loadedNow = e.detail.map((m) => m.name); fillTargets(); });
+  select.addEventListener('change', () => { if (tuneTarget === chatModel()) tuneTarget = ''; fillTargets(); });
+
   async function loadDefaults() {
+    fillTargets();
+    document.getElementById('tune-other-note').hidden = !other();
+    panel.classList.toggle('tuning-other', other());
     const base = baseModel();
     defaults = { options: {}, system: '', contextLength: 0, thinking: false, tools: false };
     if (base) {

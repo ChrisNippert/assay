@@ -128,6 +128,11 @@
         </button>
       </div>
       <div class="tune-body">
+        <div class="tune-target">
+          <label for="tune-model" class="muted small">Tuning</label>
+          <select id="tune-model" class="combo" title="Which model's settings Tune shows: this chat's, or any loaded or installed model"></select>
+        </div>
+        <p class="muted small tune-other-note" id="tune-other-note" hidden>Showing what’s saved for this model; it applies the next time it loads. This chat’s own settings are for its model, so they’re hidden here.</p>
         <details class="tsec" id="tsec-reply" open data-default="1">
           <summary><span class="tsec-title">Reply style</span><span class="tsec-sub" id="tsec-reply-sub"></span><span class="chevron" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></span></summary>
           <div class="tsec-body">

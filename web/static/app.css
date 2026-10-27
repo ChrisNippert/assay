@@ -1121,7 +1121,19 @@ a.tag-link:hover { border-color: var(--accent-line); color: var(--accent-text); 
 .row:has(.info-btn:hover) .row-tip, .row:has(.info-btn:focus-visible) .row-tip, .row.tip-open .row-tip { display: block; }
 /* Dropdowns sit beside the name, with room for their longer choices;
    one listing model names gets the row's width under the name. */
-.tune .row-ctrl select { max-width: 13rem; min-width: 0; }
+.tune .row-ctrl select { max-width: min(13rem, 48vw, 100%); min-width: 0; }
+.tune .row > .row-ctrl:has(select) { max-width: 52%; }
+.tune .row.wide-ctrl > .row-ctrl { max-width: none; }
+.tune .row-sub button { white-space: normal; text-align: left; }
 .tune .row.wide-ctrl { flex-wrap: wrap; }
-.tune .row.wide-ctrl > .row-ctrl { flex: 1 1 100%; }
-.tune .row.wide-ctrl .row-ctrl select { flex: 1; max-width: none; }
+.tune .row.wide-ctrl > .row-ctrl { flex: 1 1 100%; min-width: 0; }
+.tune .row.wide-ctrl .row-ctrl select { flex: 1 1 0; width: 0; max-width: none; }
+.tune .row-sub:has(button) { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+
+/* ---- Tune: which model ---- */
+.tune-target { display: flex; align-items: center; gap: var(--s2); margin: 0 0 var(--s3); }
+.tune-target select { flex: 1; min-width: 0; }
+.tune-other-note { margin: 0 0 var(--s3); }
+/* Tuning another model: only what's saved for it. */
+.tuning-other #tsec-reply, .tuning-other #tsec-sampling, .tuning-other .tune-foot,
+.tuning-other #tsec-context .row:has(> .row-ctrl > .btn) { display: none; }
