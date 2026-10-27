@@ -58,9 +58,9 @@ code, pre, .mono { font-family: "IBM Plex Mono", ui-monospace, "JetBrains Mono",
 .good { color: var(--good); }
 
 /* ---- shell ---- */
-.shell { display: flex; min-height: 100vh; }
+.shell { display: flex; min-height: 100dvh; }
 .sidebar {
-  flex: none; width: var(--sidebar-w, 220px); height: 100vh; position: sticky; top: 0;
+  flex: none; width: var(--sidebar-w, 220px); height: 100dvh; position: sticky; top: 0;
   display: flex; flex-direction: column; gap: 2px; padding: var(--s3) var(--s2);
   background: var(--surface); border-right: 1px solid var(--border); overflow-y: auto;
 }
@@ -109,7 +109,7 @@ select, textarea, input { font: inherit; color: var(--text); }
 .empty pre { display: inline-block; padding: 6px 10px; background: var(--soft); border-radius: 4px; color: var(--text); }
 
 /* ---- chat ---- */
-.chat { display: flex; flex-direction: column; height: calc(100vh - var(--appbar-h)); }
+.chat { display: flex; flex-direction: column; height: calc(100dvh - var(--appbar-h)); }
 .chat-body { flex: 1; min-height: 0; display: flex; }
 .chat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .messages { flex: 1; overflow-y: auto; }
@@ -294,7 +294,7 @@ table.models { width: 100%; border-collapse: collapse; }
 .dl-row .link-btn, .dl-row .row-link.small { flex: none; font-size: var(--fs-xs); }
 
 /* ---- discover ---- */
-.discover { display: flex; flex-wrap: wrap; min-height: calc(100vh - var(--appbar-h)); position: relative; }
+.discover { display: flex; flex-wrap: wrap; min-height: calc(100dvh - var(--appbar-h)); position: relative; }
 .filters {
   flex: 0 0 240px; max-width: 240px; background: var(--surface); border-right: 1px solid var(--border);
   padding: var(--s4); display: flex; flex-direction: column; gap: var(--s5);
@@ -382,7 +382,7 @@ table.models { width: 100%; border-collapse: collapse; }
 .detail-panel[hidden] { display: none; }
 .detail-panel {
   flex: 1 1 480px; min-width: 480px; position: sticky; top: 0; align-self: flex-start;
-  height: calc(100vh - var(--appbar-h)); overflow-y: auto; background: var(--surface); border-left: 1px solid var(--border);
+  height: calc(100dvh - var(--appbar-h)); overflow-y: auto; background: var(--surface); border-left: 1px solid var(--border);
   padding: var(--s5); padding-top: var(--s5);
 }
 #detail-body { display: flex; flex-direction: column; gap: var(--s4); max-width: 760px; }
@@ -403,16 +403,16 @@ table.models { width: 100%; border-collapse: collapse; }
 .panel-close { position: absolute; top: var(--s3); right: var(--s3); font-size: 22px; line-height: 1; width: 32px; height: 32px; justify-content: center; align-items: center; }
 .panel-loading { margin: 0; }
 /* Panel open on wide screens: three independent full-height columns. */
-.discover.panel-open { flex-wrap: nowrap; height: calc(100vh - var(--appbar-h)); min-height: 0; overflow: hidden; }
-.discover.panel-open .filters { overflow-y: auto; height: calc(100vh - var(--appbar-h)); }
-.discover.panel-open .results-pane { flex: 1 1 400px; min-width: 340px; max-width: 440px; overflow-y: auto; height: calc(100vh - var(--appbar-h)); }
-.discover.panel-open .detail-panel { flex: 1 1 480px; min-width: 440px; position: static; height: calc(100vh - var(--appbar-h)); }
+.discover.panel-open { flex-wrap: nowrap; height: calc(100dvh - var(--appbar-h)); min-height: 0; overflow: hidden; }
+.discover.panel-open .filters { overflow-y: auto; height: calc(100dvh - var(--appbar-h)); }
+.discover.panel-open .results-pane { flex: 1 1 400px; min-width: 340px; max-width: 440px; overflow-y: auto; height: calc(100dvh - var(--appbar-h)); }
+.discover.panel-open .detail-panel { flex: 1 1 480px; min-width: 440px; position: static; height: calc(100dvh - var(--appbar-h)); }
 .discover.panel-open .result-row { flex-wrap: wrap; gap: var(--s2) var(--s4); }
 .discover.panel-open .r-side { width: auto; text-align: left; flex-basis: 100%; flex-direction: row; gap: var(--s3); }
 #filters-toggle { display: none; }
 /* Too narrow for three columns: the panel overlays; filters tuck behind a toggle. */
 @media (max-width: 1180px) {
-  .discover.panel-open { height: auto; min-height: calc(100vh - var(--appbar-h)); overflow: visible; }
+  .discover.panel-open { height: auto; min-height: calc(100dvh - var(--appbar-h)); overflow: visible; }
   .discover.panel-open .results-pane { height: auto; max-width: none; flex-basis: auto; overflow: visible; }
   .discover.panel-open .detail-panel { position: fixed; inset: 0 0 0 var(--sidebar-w, 220px); z-index: 20; height: auto; min-width: 0; }
   .discover.panel-open .filters { display: none; }
@@ -1137,3 +1137,22 @@ a.tag-link:hover { border-color: var(--accent-line); color: var(--accent-text); 
 /* Tuning another model: only what's saved for it. */
 .tuning-other #tsec-reply, .tuning-other #tsec-sampling, .tuning-other .tune-foot,
 .tuning-other #tsec-context .row:has(> .row-ctrl > .btn) { display: none; }
+
+/* ---- phone scrolling ---- */
+/* A box that scrolls keeps its scroll: reaching its end doesn't drag the page. */
+.detail-panel, .tune-body, #messages, .sidebar, #mem-pop, .switcher-options, .filters { overscroll-behavior: contain; }
+/* The chat page fills the screen exactly: no bounce, no pull-to-refresh. */
+html:has(.content-chat) { overscroll-behavior: none; }
+@media (max-width: 1180px) {
+  /* The details overlay covers the list: the list stays put behind it. */
+  html:has(.discover.panel-open), html:has(.discover.panel-open) body { overflow: hidden; }
+}
+@media (max-width: 760px) {
+  /* Discover results: compact cards, the facts on one wrapping line. */
+  .discover .result-row { flex-wrap: wrap; gap: var(--s1) var(--s3); padding: var(--s3); }
+  .discover .result-row .tags { gap: 4px; }
+  .discover .result-row .tag, .discover .result-row .tag-btn { font-size: 12px; padding: 1px 6px; }
+  .discover .r-side { width: auto; flex: 1 1 100%; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 2px var(--s3); text-align: left; }
+  .discover .r-score { justify-content: flex-start; }
+  .discover .results-pane { gap: var(--s2); }
+}
