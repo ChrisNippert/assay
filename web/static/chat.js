@@ -971,6 +971,26 @@
     let content = '';
     let thinking = '';
     const running = new Map(); // tool call id -> its row, until the result is in
+    // Text is drawn at most once a frame. A resumed reply arrives as one
+    // burst of thousands of tokens; redrawing the markdown for each one
+    // froze the page for seconds.
+    let frame = 0, drawnThinking = 0, drawnContent = 0;
+    const draw = () => {
+      cancelAnimationFrame(frame);
+      frame = 0;
+      if (thinking.length !== drawnThinking) {
+        drawnThinking = thinking.length;
+        thinkText.textContent = thinking;
+        // A long think shows it's still going, even folded up.
+        if (!content) thinkBox.querySelector('summary').textContent = `Thinking… ~${kfmt(Math.round(thinking.length / 3.8))} tokens`;
+      }
+      if (content.length !== drawnContent) {
+        drawnContent = content.length;
+        setMarkdown(md, content);
+      }
+      if (follow) scrollDown();
+    };
+    const drawSoon = () => { if (!frame) frame = requestAnimationFrame(draw); };
 
     try {
       const res = resume || await fetch('/api/chat', {
@@ -987,7 +1007,7 @@
         if (ev.type === 'content' || ev.type === 'thinking') {
           streamed += ev.text.length;
           showContext(ctxStart + Math.round(streamed / 3.8));
-        }
+        } else if (frame) draw(); // anything else lands after the text so far
         switch (ev.type) {
           case 'chat':
             if (!chatId) {
@@ -1026,6 +1046,7 @@
             running.set(ev.call.id, row);
             stats.before(row);
             content = thinking = '';
+            drawnContent = drawnThinking = 0;
             newSegment();
             stats.before(thinkBox, md);
             stats.textContent = '';
@@ -1040,9 +1061,7 @@
           case 'thinking':
             if (!thinking) { thinkBox.hidden = false; thinkBox.open = true; stats.textContent = ''; }
             thinking += ev.text;
-            thinkText.textContent = thinking;
-            // A long think shows it's still going, even folded up.
-            thinkBox.querySelector('summary').textContent = `Thinking… ~${kfmt(Math.round(thinking.length / 3.8))} tokens`;
+            drawSoon();
             break;
           case 'say':
             spoken.hidden = false;
@@ -1055,7 +1074,7 @@
               if (thinking) { thinkBox.open = false; thinkBox.querySelector('summary').textContent = `Thinking · ~${kfmt(Math.round(thinking.length / 3.8))} tokens`; }
             }
             content += ev.text;
-            setMarkdown(md, content);
+            drawSoon();
             break;
           case 'done':
             if (ev.stats) {
@@ -1071,7 +1090,7 @@
           case 'error':
             throw new Error(ev.message);
         }
-        if (follow) scrollDown();
+        if (follow && !frame) scrollDown(); // text scrolls when drawn
       });
     } catch (err) {
       outcome = err.name === 'AbortError' ? 'stopped' : 'error';
@@ -1082,6 +1101,7 @@
         reply.append(el('div', 'msg-error', err.message));
       }
     } finally {
+      draw();
       if (thinking) thinkBox.querySelector('summary').textContent = `Thinking · ~${kfmt(Math.round(thinking.length / 3.8))} tokens`;
       for (const row of running.values()) { // stopped mid-call
         row.classList.remove('pending');
