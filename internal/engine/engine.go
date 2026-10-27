@@ -60,9 +60,12 @@ type Engine struct {
 	OllamaDir string
 	// Limits are the app-wide resource limits (nil: none); Live reads GPU
 	// memory use (nil: the real reader).
-	Limits     *limits.Store
-	Live       func() hw.Live
-	lastImport time.Time
+	Limits *limits.Store
+	Live   func() hw.Live
+	// ListDevices replaces the `--list-devices` run in tests.
+	ListDevices func() []Device
+	devCache    map[string][]Device // by llama-server path
+	lastImport  time.Time
 	// Finder looks for models in other apps; nil gets a default.
 	Finder *Finder
 	// HF downloads models (Pull); nil turns downloads off.
@@ -157,6 +160,8 @@ type loadOpts struct {
 	DraftGPU    bool   // keep the whole draft (MTP head or draft model) on the GPU
 	NoMMProjGPU bool   // keep the vision projector in RAM
 	NoVision    bool   // don't load the vision projector at all
+	Devices     string // comma list of --device names; "": all GPUs
+	SplitRows   bool   // --split-mode row instead of the default layer
 	Draft       string // the draft model's name for speculative decoding, "": none
 	DraftMax    int    // tokens drafted at a time; 0: llama.cpp's default
 	NGramMax    int    // tokens n-gram guessing drafts at a time; 0: llama.cpp's default
@@ -226,6 +231,8 @@ func loadOptsFrom(o map[string]any) loadOpts {
 	lo.DraftGPU = o["draft_gpu"] == "always"
 	lo.NoMMProjGPU = o["mmproj_cpu"] == "on"
 	lo.NoVision = o["vision"] == "off"
+	lo.Devices, _ = o["gpu_devices"].(string)
+	lo.SplitRows = o["split_mode"] == "row"
 	lo.Speed, _ = o["speedup"].(string)
 	lo.NGram, _ = o["spec_ngram"].(string)
 	if v, _ := o["cache_type"].(string); CacheTypes[v] {
@@ -365,6 +372,12 @@ func (e *Engine) args(m *Model, o loadOpts, port int) []string {
 		a = append(a, "-t", strconv.Itoa(gentleThreads()))
 	}
 	a = append(a, e.gentleArgs(o)...)
+	if d := e.deviceFlag(o.Devices); d != "" {
+		a = append(a, "--device", d)
+	}
+	if o.SplitRows {
+		a = append(a, "--split-mode", "row")
+	}
 	if t, ok := e.fitTarget(m, o); ok {
 		a = append(a, "--fit-target", strconv.FormatInt(t, 10))
 	}

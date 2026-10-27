@@ -117,6 +117,9 @@ type modelDefaults struct {
 	// Speed is what the model has to speed it up (an MTP head).
 	Speed *engine.SpeedInfo `json:"speed,omitempty"`
 	CPUs  int               `json:"cpus,omitempty"`
+	// GPUs are llama-server's devices when there is more than one (the
+	// Tune panel offers a choice of them); absent otherwise.
+	GPUs []engine.Device `json:"gpus,omitempty"`
 }
 
 type engineDefaults struct {
@@ -230,6 +233,11 @@ func (s *Server) handleModelDefaults(w http.ResponseWriter, r *http.Request) {
 		}); ok {
 			if si, err := sp.Speed(name); err == nil {
 				d.Speed = &si
+			}
+		}
+		if dv, ok := s.ollama.(interface{ Devices() []engine.Device }); ok {
+			if devs := dv.Devices(); len(devs) > 1 {
+				d.GPUs = devs
 			}
 		}
 		d.Engine = &engineDefaults{CacheType: ms.CacheType(), FlashAttn: ms.FlashAttn(), KeepAlive: ms.KeepAlive().String()}

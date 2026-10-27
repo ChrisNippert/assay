@@ -255,8 +255,29 @@ window.ollamuiSheets = (() => {
       });
       for (const c of have.values()) c.remove();
     }
+    // With several cards, a small bar for each under the total.
+    set('mem-cards', (n) => {
+      const cards = hasV && gpu.cards && gpu.cards.length > 1 ? gpu.cards : [];
+      n.hidden = !cards.length;
+      const rowsOld = [...n.children];
+      cards.forEach((c, i) => {
+        let row = rowsOld[i];
+        if (!row) {
+          row = el('div', 'mem-card');
+          row.append(el('div', 'mem-card-head'), el('div', 'bar'));
+          row.lastChild.append(el('span'));
+          n.append(row);
+        }
+        const [head, bar] = row.children;
+        const pct = c.total > 0 ? Math.min(100, (c.used * 100) / c.total) : 0;
+        head.replaceChildren(el('span', '', c.name), el('span', '', `${fmtBytes(c.used)} / ${fmtBytes(c.total)}`));
+        bar.firstChild.style.width = pct + '%';
+        row.title = `GPU ${i}: ${c.name}${c.busy >= 0 ? ' · ' + c.busy + '% busy' : ''}`;
+      });
+      rowsOld.slice(cards.length).forEach((r) => r.remove());
+    });
     if (hasB) {
-      set('mem-gpu-text', (n) => { n.textContent = gpu.gpuBusy + '%'; });
+      set('mem-gpu-text', (n) => { n.textContent = gpu.gpuBusy + '%' + (gpu.cards && gpu.cards.length > 1 ? ' (busiest)' : ''); });
       const svg = document.getElementById('mem-spark');
       const pts = busyHist.map((v, i) => `${((60 - busyHist.length + i) * 120) / 59},${26 - (v * 24) / 100}`);
       svg.replaceChildren();

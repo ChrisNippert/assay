@@ -152,6 +152,9 @@ func (s *Store) Delete(name string) error {
 	}
 }
 
+// deviceList matches names like "CUDA0,CUDA2".
+var deviceList = regexp.MustCompile(`^\w+(,\w+)*$`)
+
 // Option kinds Ollama accepts that the UI exposes.
 var (
 	intOptions   = map[string]bool{"top_k": true, "num_ctx": true, "num_predict": true, "seed": true, "repeat_last_n": true, "num_gpu": true, "num_thread": true, "draft_max": true, "spec_ngram_max": true}
@@ -168,7 +171,11 @@ var (
 		"draft_gpu":  func(v string) bool { return v == "auto" || v == "always" },
 		"mmproj_cpu": func(v string) bool { return v == "on" || v == "off" },
 		"vision":     func(v string) bool { return v == "on" || v == "off" },
-		"speedup":    func(v string) bool { return v == "auto" || v == "off" || v == "mtp" },
+		// Which GPUs to run on (llama-server --device names, comma list) and
+		// how to split a model across them.
+		"gpu_devices": func(v string) bool { return deviceList.MatchString(v) },
+		"split_mode":  func(v string) bool { return v == "layer" || v == "row" },
+		"speedup":     func(v string) bool { return v == "auto" || v == "off" || v == "mtp" },
 		"spec_ngram": func(v string) bool {
 			switch v {
 			case "on", "off", "ngram-mod", "ngram-cache", "ngram-simple", "ngram-map-k", "ngram-map-k4v":

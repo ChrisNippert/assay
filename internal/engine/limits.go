@@ -4,6 +4,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 
 	"ollamui/internal/hw"
 )
@@ -68,7 +69,14 @@ func (e *Engine) fitTarget(m *Model, o loadOpts) (int64, bool) {
 			e.mu.Unlock()
 			free := live.VRAMTotal - live.VRAMUsed
 			allowed := int64(lim.MaxVRAMGB*float64(1<<30)) - other
-			target = max(defaultFitTarget, (free-allowed)/mib)
+			// --fit-target is a margin per device, so the memory to hold back
+			// is spread over the cards in use. With a subset of cards the
+			// free memory still counts all of them, so the limit is looser.
+			cards := int64(max(1, len(live.Cards)))
+			if d := e.deviceFlag(o.Devices); d != "" {
+				cards = int64(strings.Count(d, ",") + 1)
+			}
+			target = max(defaultFitTarget, (free-allowed)/cards/mib)
 			set = true
 		}
 	}

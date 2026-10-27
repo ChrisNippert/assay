@@ -2,14 +2,10 @@ package hw
 
 import (
 	"bufio"
-	"context"
 	"io"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // Live is a point-in-time reading of GPU and system memory use. Zero totals
@@ -17,19 +13,33 @@ import (
 type Live struct {
 	VRAMUsed  int64 `json:"vramUsed"`
 	VRAMTotal int64 `json:"vramTotal"`
-	GPUBusy   int   `json:"gpuBusy"` // percent, -1 if unknown
+	GPUBusy   int   `json:"gpuBusy"` // percent, -1 if unknown; the busiest card's
 	RAMUsed   int64 `json:"ramUsed"`
 	RAMTotal  int64 `json:"ramTotal"`
+	// Cards is each GPU's own reading, only with more than one.
+	Cards []LiveCard `json:"cards,omitempty"`
 }
 
-// ReadLive reads current usage: AMD via sysfs, else NVIDIA via nvidia-smi;
-// RAM from /proc/meminfo (unknown elsewhere).
+// liveCards reads every GPU: AMD via sysfs, else NVIDIA via nvidia-smi.
+func liveCards() []LiveCard {
+	if fake := FakeGPUs(); fake != nil {
+		return fake
+	}
+	if c := amdLiveCards("/sys/class/drm"); len(c) > 0 {
+		return c
+	}
+	return nvidiaLiveCards()
+}
+
+// ReadLive reads current usage: the GPUs' memory summed, GPUBusy the busiest
+// card's; RAM from /proc/meminfo (unknown elsewhere).
 func ReadLive() Live {
 	l := Live{GPUBusy: -1}
-	if used, total, busy, ok := amdLive("/sys/class/drm"); ok {
-		l.VRAMUsed, l.VRAMTotal, l.GPUBusy = used, total, busy
-	} else if used, total, busy, ok := nvidiaLive(); ok {
-		l.VRAMUsed, l.VRAMTotal, l.GPUBusy = used, total, busy
+	if cards := liveCards(); len(cards) > 0 {
+		l.VRAMUsed, l.VRAMTotal, l.GPUBusy = sumCards(cards)
+		if len(cards) > 1 {
+			l.Cards = cards
+		}
 	}
 	if f, err := os.Open("/proc/meminfo"); err == nil {
 		defer f.Close()
@@ -70,54 +80,23 @@ func readIntOK(path string) (int64, bool) {
 	return n, err == nil
 }
 
-// amdLive reads the card with the most VRAM.
+// amdLive sums the cards.
 func amdLive(drmDir string) (used, total int64, busy int, ok bool) {
-	paths, _ := filepath.Glob(filepath.Join(drmDir, "card*", "device", "mem_info_vram_total"))
-	for _, p := range paths {
-		t, tok := readIntOK(p)
-		if !tok || t <= total {
-			continue
-		}
-		dir := filepath.Dir(p)
-		u, uok := readIntOK(filepath.Join(dir, "mem_info_vram_used"))
-		if !uok {
-			continue
-		}
-		b, bok := readIntOK(filepath.Join(dir, "gpu_busy_percent"))
-		if !bok {
-			b = -1
-		}
-		used, total, busy, ok = u, t, int(b), true
+	cards := amdLiveCards(drmDir)
+	if len(cards) == 0 {
+		return 0, 0, 0, false
 	}
-	return
+	used, total, busy = sumCards(cards)
+	return used, total, busy, true
 }
 
-// parseNvidiaSMI parses "used, total, util" in MiB and percent.
+// parseNvidiaSMI parses "used, total, util" lines in MiB and percent,
+// summing the cards.
 func parseNvidiaSMI(out string) (used, total int64, busy int, ok bool) {
-	line, _, _ := strings.Cut(strings.TrimSpace(out), "\n")
-	f := strings.Split(line, ",")
-	if len(f) < 3 {
+	cards := parseNvidiaLive(out)
+	if len(cards) == 0 {
 		return 0, 0, 0, false
 	}
-	u, e1 := strconv.ParseInt(strings.TrimSpace(f[0]), 10, 64)
-	t, e2 := strconv.ParseInt(strings.TrimSpace(f[1]), 10, 64)
-	b, e3 := strconv.Atoi(strings.TrimSpace(f[2]))
-	if e1 != nil || e2 != nil || t <= 0 {
-		return 0, 0, 0, false
-	}
-	if e3 != nil {
-		b = -1
-	}
-	return u << 20, t << 20, b, true
-}
-
-func nvidiaLive() (used, total int64, busy int, ok bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, "nvidia-smi",
-		"--query-gpu=memory.used,memory.total,utilization.gpu", "--format=csv,noheader,nounits").Output()
-	if err != nil {
-		return 0, 0, 0, false
-	}
-	return parseNvidiaSMI(string(out))
+	used, total, busy = sumCards(cards)
+	return used, total, busy, true
 }

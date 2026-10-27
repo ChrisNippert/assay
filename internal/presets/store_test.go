@@ -156,3 +156,14 @@ func TestExpertOptions(t *testing.T) {
 		}
 	}
 }
+
+func TestGPUOptions(t *testing.T) {
+	if _, err := CleanOptions(map[string]any{"gpu_devices": "CUDA0,Vulkan1", "split_mode": "row"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []map[string]any{{"gpu_devices": "CUDA0,"}, {"gpu_devices": "a b"}, {"gpu_devices": "--x;"}, {"split_mode": "none"}} {
+		if _, err := CleanOptions(bad); err == nil {
+			t.Errorf("accepted %v", bad)
+		}
+	}
+}

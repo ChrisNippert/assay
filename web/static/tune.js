@@ -142,6 +142,15 @@
       when: () => !!defaults.moe,
       help: 'How the model file is read into memory; mostly changes load time',
       choices: [['mmap', 'Memory-mapped'], ['none', 'Read into RAM'], ['mlock', 'Locked in RAM']] },
+    // Only with more than one GPU. The value is a comma list of llama-server
+    // device names (CUDA0,CUDA2); no value means all of them.
+    { key: 'gpu_devices', label: 'GPUs to use', kind: 'devices', scope: 'model', engine: true,
+      when: () => (defaults.gpus || []).length > 1,
+      help: 'Which graphics cards run this model; the default is all of them. Fewer cards means less to coordinate but less memory. The VRAM limit in Settings is measured against all cards, so it is looser with a subset' },
+    { key: 'split_mode', label: 'Split across GPUs', kind: 'choice', scope: 'model', engine: true, none: 'Layers',
+      when: () => (defaults.gpus || []).length > 1,
+      help: 'Layers gives each card a run of layers (least traffic between cards, works everywhere). Rows splits every layer across the cards, which can be faster with fast links between identical cards and is usually slower over PCIe',
+      choices: [['row', 'Rows']] },
   ];
   // Fallbacks when nothing else sets a value, by engine.
   const OLLAMA_DEFAULTS = { temperature: 0.8, top_p: 0.9, top_k: 40, min_p: 0, repeat_penalty: 1.1, num_predict: -1,
@@ -318,6 +327,17 @@
       ctrl.append(sel);
       if (def.key === 'draft_model') row.classList.add('wide-ctrl'); // model names are long
       r.select = sel;
+    } else if (def.kind === 'devices') {
+      const box = el('div', 'gpu-checks');
+      box.id = 'tp-' + def.key;
+      box.addEventListener('change', () => {
+        const ids = [...box.querySelectorAll('input')].filter((c) => c.checked).map((c) => c.value);
+        if (!ids.length) return render(); // at least one stays on
+        setOption(def, ids.length === box.querySelectorAll('input').length ? null : ids.join(','));
+      });
+      ctrl.append(box);
+      row.classList.add('has-checks');
+      r.box = box;
     } else {
       const spin = el('div', 'spin');
       const num = el('input', 'spin-input');
@@ -702,6 +722,30 @@
     return over?.from === 'chat' || own != null;
   }
 
+  // One checkbox per GPU; all ticked is the default.
+  function renderDevices(r) {
+    const { def, box } = r;
+    const devs = defaults.gpus || [];
+    const { own, over } = layers(def);
+    const val = over ? over.value : own;
+    const key = devs.map((d) => d.id).join();
+    if (box.dataset.key !== key) {
+      box.dataset.key = key;
+      box.replaceChildren(...devs.map((d) => {
+        const label = el('label', 'gpu-check');
+        const cb = el('input');
+        Object.assign(cb, { type: 'checkbox', value: d.id });
+        label.append(cb, el('span', '', `${d.name.replace(/^NVIDIA /, '')} · ${gb(d.total)}`));
+        label.title = d.id;
+        return label;
+      }));
+    }
+    const chosen = new Set(val ? String(val).split(',') : devs.map((d) => d.id));
+    box.querySelectorAll('input').forEach((c) => { c.checked = chosen.has(c.value); });
+    r.sub.textContent = val != null ? origin(def) : '';
+    return over?.from === 'chat' || own != null;
+  }
+
   // What the speculative decoding settings amount to, in words.
   function speedPlan() {
     const own = (k) => state.options[k] ?? saved[k];
@@ -812,7 +856,7 @@
       r.row.hidden = (!!r.def.engine && !perModel()) || (r.def.when && !r.def.when()) || (other() && !savedHere(r.def));
       const off = r.def.off ? r.def.off() : '';
       const k = r.def.kind;
-      const changed = k === 'format' ? renderFormat(r) : k === 'combo' ? renderCombo(r) : k === 'think' ? renderThink(r) : k === 'compress' ? renderCompress(r) : k === 'tools' ? renderTools(r) : k === 'choice' ? renderChoice(r) : renderNumber(r);
+      const changed = k === 'format' ? renderFormat(r) : k === 'combo' ? renderCombo(r) : k === 'think' ? renderThink(r) : k === 'compress' ? renderCompress(r) : k === 'tools' ? renderTools(r) : k === 'choice' ? renderChoice(r) : k === 'devices' ? renderDevices(r) : renderNumber(r);
       r.row.classList.toggle('changed', changed);
       r.reset.hidden = !changed;
       // A row that doesn't apply right now stays visible, greyed, with the reason.

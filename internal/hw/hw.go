@@ -3,35 +3,56 @@ package hw
 
 import (
 	"bufio"
-	"context"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // Memory is what's available to run models.
 type Memory struct {
-	GPU  string `json:"gpu"`  // vendor/name, empty if none found
-	VRAM int64  `json:"vram"` // bytes, 0 if no GPU found
+	GPU  string `json:"gpu"`  // vendor/name, empty if none found; "4 GPUs (...)" for several
+	VRAM int64  `json:"vram"` // bytes across all cards, 0 if no GPU found
 	RAM  int64  `json:"ram"`  // bytes
+	// Cards lists each GPU found (one entry for a single card).
+	Cards []Card `json:"cards,omitempty"`
 }
 
-// Detect finds the largest GPU's memory (AMD via sysfs, NVIDIA via
-// nvidia-smi, any vendor via the registry on Windows) and total system RAM.
-// Missing pieces are left as zero.
+// Detect finds every GPU's memory (AMD via sysfs, NVIDIA via nvidia-smi,
+// any vendor via the registry on Windows) and total system RAM. VRAM is the
+// total across cards. Missing pieces are left as zero.
 func Detect() Memory {
 	m := Memory{RAM: totalRAM()}
-	if v := amdVRAM("/sys/class/drm"); v > 0 {
-		m.GPU, m.VRAM = "AMD GPU", v
-	} else if name, v := nvidiaVRAM(); v > 0 {
-		m.GPU, m.VRAM = name, v
-	} else if name, v := windowsVRAM(); v > 0 {
-		m.GPU, m.VRAM = name, v
+	cards := detectCards()
+	if len(cards) == 0 {
+		return m
 	}
+	names := make([]string, len(cards))
+	for i, c := range cards {
+		names[i] = c.Name
+		m.VRAM += c.Total
+	}
+	m.GPU, m.Cards = GroupName(names), cards
 	return m
+}
+
+func detectCards() []Card {
+	if fake := FakeGPUs(); fake != nil {
+		var out []Card
+		for _, f := range fake {
+			out = append(out, Card{f.Name, f.Total})
+		}
+		return out
+	}
+	if c := amdDetect("/sys/class/drm"); len(c) > 0 {
+		return c
+	}
+	if c := nvidiaDetect(); len(c) > 0 {
+		return c
+	}
+	if name, v := windowsVRAM(); v > 0 {
+		return []Card{{name, v}}
+	}
+	return nil
 }
 
 func memTotal(path string) int64 {
@@ -51,81 +72,19 @@ func memTotal(path string) int64 {
 	return 0
 }
 
-// amdVRAM reads the amdgpu driver's VRAM size for each card and returns the largest.
+// amdVRAM totals the amdgpu driver's VRAM over the cards.
 func amdVRAM(drmDir string) int64 {
-	paths, _ := filepath.Glob(filepath.Join(drmDir, "card*", "device", "mem_info_vram_total"))
-	var best int64
-	for _, p := range paths {
-		b, err := os.ReadFile(p)
-		if err != nil {
-			continue
-		}
-		if v, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64); err == nil && v > best {
-			best = v
-		}
+	var sum int64
+	for _, c := range amdCards(drmDir) {
+		sum += c.total
 	}
-	return best
+	return sum
 }
 
-func nvidiaVRAM() (string, int64) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, "nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits").Output()
-	if err != nil {
-		return "", 0
-	}
-	var name string
-	var best int64
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		n, mib, ok := strings.Cut(line, ",")
-		if !ok {
-			continue
-		}
-		if v, err := strconv.ParseInt(strings.TrimSpace(mib), 10, 64); err == nil && v*1024*1024 > best {
-			name, best = strings.TrimSpace(n), v*1024*1024
-		}
-	}
-	return name, best
-}
-
-// VRAMUsed returns how much of the GPU's memory is in use right now by
+// VRAMUsed returns how much of the GPUs' memory is in use right now by
 // everything (desktop, browser, loaded models), or 0 if it can't tell.
 func VRAMUsed() int64 {
-	if v := amdVRAMUsed("/sys/class/drm"); v > 0 {
-		return v
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, "nvidia-smi", "--query-gpu=memory.total,memory.used", "--format=csv,noheader,nounits").Output()
-	if err != nil {
-		return 0
-	}
-	var bestTotal, used int64
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		t, u, ok := strings.Cut(line, ",")
-		if !ok {
-			continue
-		}
-		tv, err1 := strconv.ParseInt(strings.TrimSpace(t), 10, 64)
-		uv, err2 := strconv.ParseInt(strings.TrimSpace(u), 10, 64)
-		if err1 == nil && err2 == nil && tv > bestTotal {
-			bestTotal, used = tv, uv*1024*1024
-		}
-	}
-	return used
-}
-
-// amdVRAMUsed reads the in-use VRAM of the card with the most VRAM, the
-// same card amdVRAM reports.
-func amdVRAMUsed(drmDir string) int64 {
-	paths, _ := filepath.Glob(filepath.Join(drmDir, "card*", "device", "mem_info_vram_total"))
-	var bestTotal, used int64
-	for _, p := range paths {
-		total := readInt(p)
-		if total > bestTotal {
-			bestTotal, used = total, readInt(filepath.Join(filepath.Dir(p), "mem_info_vram_used"))
-		}
-	}
+	used, _, _ := sumCards(liveCards())
 	return used
 }
 
@@ -179,6 +138,11 @@ func EstimateKV(fileSize, params int64, ctx int, moe bool, kvFactor float64) int
 // Classify compares an estimate with the machine's memory.
 func Classify(need int64, m Memory) Fit {
 	f := Fit{Need: need}
+	vram := m.VRAM
+	if n := int64(len(m.Cards)); n > 1 {
+		// Each extra card needs its own compute buffer.
+		vram = max(0, vram-(n-1)*ExtraCardOverhead)
+	}
 	pct := func(of int64) int {
 		if of <= 0 {
 			return 100
@@ -190,11 +154,11 @@ func Classify(need int64, m Memory) Fit {
 		f.Level, f.Label, f.Percent = FitCPU, "CPU only", pct(m.RAM)
 	case m.VRAM == 0:
 		f.Level, f.Label, f.Percent = FitNone, "Too big", 100
-	case need <= m.VRAM*9/10:
-		f.Level, f.Label, f.Percent = FitGPU, "Fits on GPU", pct(m.VRAM)
-	case need <= m.VRAM:
-		f.Level, f.Label, f.Percent = FitTight, "Tight", pct(m.VRAM)
-	case need <= m.VRAM+m.RAM*7/10:
+	case need <= vram*9/10:
+		f.Level, f.Label, f.Percent = FitGPU, "Fits on GPU", pct(vram)
+	case need <= vram:
+		f.Level, f.Label, f.Percent = FitTight, "Tight", pct(vram)
+	case need <= vram+m.RAM*7/10:
 		f.Level, f.Label, f.Percent = FitPartial, "Spills to RAM", 100
 	default:
 		f.Level, f.Label, f.Percent = FitNone, "Too big", 100
