@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{{.Title}} · ollamui</title>
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
@@ -26,6 +26,7 @@
 <div class="shell">
 <nav class="sidebar" id="sidebar" aria-label="Main">
   <div class="brand">ollamui</div>
+  <a href="/chat" class="side-new">{{template "icon-plus"}}New chat</a>
   <a href="/chat" class="nav-item{{if eq .Active "chat"}} active{{end}}">{{template "icon-chat"}}Chat</a>
   <a href="/library" class="nav-item{{if eq .Active "library"}} active{{end}}">{{template "icon-library"}}Library<span class="grow"></span><span class="count">{{len .ModelGroups}}</span></a>
   <a href="/discover" class="nav-item{{if eq .Active "discover"}} active{{end}}">{{template "icon-search"}}Discover</a>
@@ -79,7 +80,8 @@
         <span class="mem-meter" hidden><span></span></span>
         <span class="mem-label">{{if not .Loaded}}No model loaded{{else if eq (len .Loaded) 1}}{{(index .Loaded 0).Name}}{{else}}{{len .Loaded}} models{{end}}</span>
       </button>
-      <div class="mem-pop" id="mem-pop" role="dialog" aria-label="Models in memory" hidden>
+      <div class="mem-pop sheet" id="mem-pop" role="dialog" aria-label="Models in memory" hidden>
+        <div class="sheet-grab" aria-hidden="true"></div>
         <div class="mem-gpu" id="mem-gpu" hidden>
           <div class="mem-stat" id="mem-vram"><div class="mem-stat-head"><span>VRAM</span><span id="mem-vram-text"></span></div><div class="bar mem-vram-bar" id="mem-vram-bar"></div></div>
           <div class="mem-stat" id="mem-gpubusy"><div class="mem-stat-head"><span>GPU</span><span id="mem-gpu-text"></span></div><svg class="mem-spark" id="mem-spark" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true"></svg></div>
@@ -94,6 +96,7 @@
     {{block "appbar-end" .}}{{end}}
   </header>
   {{if .ModelsErr}}<div class="banner error" role="alert">Couldn't read the installed models. <span class="muted">({{.ModelsErr}})</span></div>{{end}}
+  {{if or (eq .Active "library") (eq .Active "settings") (eq .Active "presets") (eq .Active "compare") (eq .Title "Discover")}}<h1 class="large-title">{{.Title}}</h1>{{end}}
   {{template "content" .}}
 </main>
 </div>

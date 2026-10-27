@@ -1,3 +1,75 @@
+// Phone bottom sheets (model picker, chat options, memory, Tune): one place
+// for the page lock, the dimmed backdrop and drag-down-to-close. Each sheet
+// opens and closes itself; it tells this file with track(), and registers how
+// to close it (register) for the backdrop, the back button and the drag.
+window.ollamuiSheets = (() => {
+  const root = document.documentElement;
+  const phone = matchMedia('(max-width: 760px)');
+  const active = new Set();
+  const closers = new WeakMap();
+  const backdrop = document.createElement('div');
+  backdrop.className = 'sheet-backdrop';
+  document.body.append(backdrop);
+  const sync = () => root.classList.toggle('sheet-open', active.size > 0);
+  const closeOne = (s) => (closers.get(s) || (() => close(s)))();
+  const closeAll = () => [...active].forEach(closeOne);
+  const track = (s, on) => {
+    if (on && !phone.matches) return;
+    if (on) active.add(s); else active.delete(s);
+    sync();
+  };
+  const register = (s, fn) => closers.set(s, fn);
+  // For sheets that are only [hidden] plus .open (no component of their own).
+  const open = (s) => {
+    clearTimeout(s._hideT);
+    s.hidden = false;
+    s.inert = false;
+    void s.offsetWidth;
+    s.classList.add('open');
+    track(s, true);
+  };
+  const close = (s) => {
+    s.classList.remove('open');
+    track(s, false);
+    clearTimeout(s._hideT);
+    s._hideT = setTimeout(() => { if (!s.classList.contains('open')) s.hidden = true; }, 280);
+  };
+  backdrop.addEventListener('click', closeAll);
+  // The app bar sits above the backdrop while a sheet opens from it; its own
+  // dimming layer is the bar itself.
+  document.addEventListener('click', (e) => {
+    if (e.target.classList?.contains('appbar') && active.size) closeAll();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && active.size) closeAll(); });
+
+  // Drag the grab handle down to dismiss; a short drag springs back.
+  for (const grab of document.querySelectorAll('.sheet-grab')) {
+    const sheet = grab.parentElement;
+    let y0 = null, dy = 0, t0 = 0;
+    grab.addEventListener('pointerdown', (e) => {
+      y0 = e.clientY; dy = 0; t0 = Date.now();
+      grab.setPointerCapture(e.pointerId);
+      sheet.style.transition = 'none';
+    });
+    grab.addEventListener('pointermove', (e) => {
+      if (y0 == null) return;
+      dy = Math.max(0, e.clientY - y0);
+      sheet.style.transform = `translateY(${dy}px)`;
+    });
+    const end = () => {
+      if (y0 == null) return;
+      const fast = dy / Math.max(1, Date.now() - t0) > 0.6;
+      y0 = null;
+      sheet.style.transition = '';
+      sheet.style.transform = '';
+      if (dy > 90 || (fast && dy > 24)) closeOne(sheet);
+    };
+    grab.addEventListener('pointerup', end);
+    grab.addEventListener('pointercancel', end);
+  }
+  return { track, register, open, close, closeAll, phone };
+})();
+
 // Shared behavior: theme toggle, load/eject/delete buttons, the "In memory" list.
 (() => {
   const root = document.documentElement;
@@ -221,15 +293,18 @@
       memPop.hidden = false;
       void memPop.offsetWidth;
       memPop.classList.add('open');
+      window.ollamuiSheets.track(memPop, true);
       sampleGpu();
       scheduleSample();
     } else {
       memPop.classList.remove('open');
-      memCloseT = setTimeout(() => { memPop.hidden = true; }, 180);
+      window.ollamuiSheets.track(memPop, false);
+      memCloseT = setTimeout(() => { memPop.hidden = true; }, 280);
       scheduleSample();
     }
   }
   if (memBtn) {
+    window.ollamuiSheets.register(memPop, () => setMemOpen(false));
     memBtn.addEventListener('click', () => setMemOpen(!memPop.classList.contains('open')));
     document.addEventListener('pointerdown', (e) => {
       if (memPop.classList.contains('open') && !memWrap.contains(e.target)) setMemOpen(false);
@@ -919,7 +994,7 @@
 
   // On phones the menu and Tune act like pages: opening one adds a history
   // entry, so the back button closes it instead of leaving.
-  const overlayOpen = () => root.classList.contains('nav-open') || !!tune?.classList.contains('open');
+  const overlayOpen = () => root.classList.contains('nav-open') || root.classList.contains('sheet-open') || !!tune?.classList.contains('open');
   let popping = false;
   const syncHistory = () => {
     if (!phone.matches || popping) return;
@@ -932,12 +1007,13 @@
     if (history.state?.overlay || !overlayOpen()) return;
     popping = true;
     set(false);
+    window.ollamuiSheets.closeAll();
     if (tune?.classList.contains('open')) document.getElementById('tune-close')?.click();
     setTimeout(() => { popping = false; });
   });
 
-  // Swipes: right opens the menu (or closes Tune), left closes the menu (or
-  // opens Tune on the chat page). Ignored on fields and scrollable code.
+  // Swipes: right opens the menu, left closes it. Ignored on fields and
+  // scrollable code. (Tune is a bottom sheet: dragged down, not swiped.)
   let start = null;
   document.addEventListener('touchstart', (e) => {
     const t = e.touches[0];
@@ -952,12 +1028,9 @@
     start = null;
     if (!quick || Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
     const navOpen = root.classList.contains('nav-open');
-    const tuneOpen = tune?.classList.contains('open');
-    if (dx > 0) {
-      if (tuneOpen) document.getElementById('tune-close')?.click();
-      else if (!navOpen && phone.matches) set(true);
-    } else if (navOpen) set(false);
-    else if (tune && !tuneOpen) document.getElementById('tune-btn')?.click();
+    if (root.classList.contains('sheet-open')) return;
+    if (dx > 0) { if (!navOpen && phone.matches) set(true); }
+    else if (navOpen) set(false);
   }, { passive: true });
 })();
 

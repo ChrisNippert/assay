@@ -15,6 +15,7 @@
   // The long hint doesn't fit one line on a phone and its second line is clipped.
   if (input && window.matchMedia('(max-width: 760px)').matches) input.placeholder = 'Message';
   const sendBtn = document.getElementById('send');
+  const sendLabel = sendBtn.querySelector('.send-label');
   let chatId = chatEl.dataset.chatId || '';
 
   // Back from a saved chat goes to an empty one; back from there leaves.
@@ -526,15 +527,30 @@
     if (!options.children.length) options.append(el('div', 'switcher-none', q ? 'Nothing matches.' : 'No models installed.'));
   }
 
+  // On a phone the card is a bottom sheet: it slides, so [hidden] waits for
+  // the exit. `open` (not hidden) is the state.
+  const sheets = window.ollamuiSheets;
+  const isPhone = () => sheets.phone.matches;
+  const switcherOpen = () => card.classList.contains('open');
+  let switcherT = null;
   function openSwitcher(open) {
-    card.hidden = !open;
+    clearTimeout(switcherT);
     switcherBtn.setAttribute('aria-expanded', String(open));
+    sheets.track(card, open);
     if (open) {
+      card.hidden = false;
+      void card.offsetWidth;
+      card.classList.add('open');
       filter.value = '';
       renderSwitcher();
-      filter.focus();
+      if (!isPhone()) filter.focus(); // the keyboard would cover the sheet
+    } else {
+      card.classList.remove('open');
+      if (isPhone()) switcherT = setTimeout(() => { if (!switcherOpen()) card.hidden = true; }, 280);
+      else card.hidden = true;
     }
   }
+  sheets.register(card, () => openSwitcher(false));
 
   function pick(value) {
     select.value = value;
@@ -543,7 +559,7 @@
     switcherBtn.focus();
   }
 
-  switcherBtn.addEventListener('click', () => openSwitcher(card.hidden));
+  switcherBtn.addEventListener('click', () => openSwitcher(!switcherOpen()));
   filter.addEventListener('input', renderSwitcher);
   options.addEventListener('click', (e) => {
     const row = e.target.closest('.switcher-row');
@@ -558,7 +574,7 @@
     else if (e.key === 'Enter' && document.activeElement === filter && rows.length) { e.preventDefault(); pick(rows[0].dataset.value); }
   });
   document.addEventListener('click', (e) => {
-    if (!card.hidden && !e.target.closest('.switcher')) openSwitcher(false);
+    if (switcherOpen() && !e.target.closest('.switcher')) openSwitcher(false);
   });
 
   // A new chat starts on the model picked last (in this browser), unless
@@ -579,7 +595,7 @@
   select.addEventListener('change', syncPicker);
   document.addEventListener('star-changed', (e) => {
     for (const o of select.querySelectorAll('option')) o.toggleAttribute('data-starred', !!e.detail && o.value === e.detail);
-    if (!card.hidden) renderSwitcher();
+    if (switcherOpen()) renderSwitcher();
   });
   document.addEventListener('loaded-changed', (e) => {
     loadedNames = new Set(e.detail.map((m) => m.name));
@@ -608,12 +624,50 @@
   });
 
   // ---- delete chat ----
-  document.getElementById('delete-chat')?.addEventListener('click', async () => {
+  async function deleteChat() {
     if (!confirm('Delete this chat?')) return;
     const res = await fetch(`/api/chats/${encodeURIComponent(chatId)}`, { method: 'DELETE' });
     if (res.ok) location.href = '/chat';
     else alert(`Couldn't delete chat: ${await errorText(res)}`);
-  });
+  }
+  document.getElementById('delete-chat')?.addEventListener('click', deleteChat);
+
+  // ---- phone: the "⋯" sheet (Tune, load/eject, memory, delete) ----
+  const moreSheet = document.getElementById('more-sheet');
+  const moreBtn = document.getElementById('more-btn');
+  if (moreSheet) {
+    const $m = (id) => document.getElementById(id);
+    const loadedAs = () => {
+      const opt = selectedOption();
+      return (opt?.dataset.names || baseOf(opt)).split(' ').find((n) => loadedNames.has(n)) || '';
+    };
+    const setMore = (open) => {
+      if (open) {
+        const base = baseOf(selectedOption());
+        const as = loadedAs();
+        $m('more-load').hidden = !base;
+        $m('more-load-title').textContent = as ? 'Eject model' : 'Load model';
+        $m('more-load-sub').textContent = as || base;
+        $m('more-tune-sub').textContent = $m('tune-summary')?.textContent.trim() || 'Reply style, sampling, context';
+        $m('more-mem-sub').textContent = document.querySelector('#mem-btn .mem-label')?.textContent.trim() || '';
+        sheets.open(moreSheet);
+      } else {
+        sheets.close(moreSheet);
+      }
+      moreBtn.setAttribute('aria-expanded', String(open));
+    };
+    sheets.register(moreSheet, () => setMore(false));
+    moreBtn.addEventListener('click', () => setMore(!moreSheet.classList.contains('open')));
+    const after = (fn) => () => { setMore(false); setTimeout(fn, 60); };
+    $m('more-tune').addEventListener('click', after(() => document.getElementById('tune-btn').click()));
+    $m('more-mem').addEventListener('click', after(() => document.getElementById('mem-btn').click()));
+    $m('more-load').addEventListener('click', after(() => {
+      const as = loadedAs();
+      if (as) document.querySelector(`.mem-eject[data-eject="${CSS.escape(as)}"]`)?.click();
+      else if (!loadBtn.hidden) loadBtn.click();
+    }));
+    $m('more-delete')?.addEventListener('click', after(deleteChat));
+  }
 
   // ---- sending ----
   input.addEventListener('keydown', (e) => {
@@ -780,7 +834,9 @@
   function askStop() {
     if (!controller) return;
     if (stopAsked) { clearTimeout(stopAsked); stopAsked = null; stopRun(); return; }
-    sendBtn.textContent = 'Stop?';
+    sendLabel.textContent = 'Stop?';
+    sendBtn.dataset.state = 'stop';
+    sendBtn.setAttribute('aria-label', 'Stop? Press again to stop the reply');
     sendBtn.classList.add('confirm');
     sendBtn.title = 'Press again to stop the reply';
     stopAsked = setTimeout(() => { stopAsked = null; syncSendBtn(); }, 3000);
@@ -790,10 +846,22 @@
     clearTimeout(stopAsked);
     stopAsked = null;
     sendBtn.classList.remove('confirm');
-    sendBtn.textContent = !controller ? 'Send' : hasDraft() ? 'Queue' : 'Stop';
+    const state = !controller ? 'send' : hasDraft() ? 'queue' : 'stop';
+    sendLabel.textContent = { send: 'Send', queue: 'Queue', stop: 'Stop' }[state];
+    sendBtn.dataset.state = state;
+    sendBtn.classList.toggle('idle', state === 'send' && !hasDraft());
+    sendBtn.setAttribute('aria-label', sendLabel.textContent);
+    fitInput();
     sendBtn.title = controller && hasDraft() ? 'Send this after the reply finishes (Esc stops the reply)' : '';
   }
   input.addEventListener('input', syncSendBtn);
+  // On a phone the box grows with the text (up to about six lines).
+  function fitInput() {
+    if (!isPhone()) { input.style.height = ''; return; }
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight + 2, 152) + 'px';
+  }
+  sheets.phone.addEventListener('change', fitInput);
   // Attaching a file also makes a draft.
   new MutationObserver(syncSendBtn).observe(document.getElementById('att-row'), { childList: true, subtree: true });
   input.addEventListener('keydown', (e) => {
@@ -841,6 +909,7 @@
     if ((!text && !att.count()) || !select.value || att.busy()) return;
     if (await att.blockedImage()) return; // the chip says the model can't see it
     input.value = '';
+    fitInput();
     if (controller) {
       queue.push({ text, files: att.take() });
       paintQueue();

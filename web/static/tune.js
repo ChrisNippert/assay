@@ -929,8 +929,12 @@
     panel.inert = !open;
     openBtn.setAttribute('aria-expanded', String(open));
     try { localStorage.setItem('tuneOpen', open ? '1' : ''); } catch {}
-    if (open) panel.querySelector('select, input, textarea')?.focus({ preventScroll: true });
+    // On a phone Tune is a bottom sheet: it locks the page, and focusing a
+    // field would only raise the keyboard.
+    window.ollamuiSheets?.track(panel, open);
+    if (open && !window.ollamuiSheets?.phone.matches) panel.querySelector('select, input, textarea')?.focus({ preventScroll: true });
   }
+  window.ollamuiSheets?.register(panel, () => setOpen(false));
   openBtn.addEventListener('click', () => setOpen(!panel.classList.contains('open')));
   $('tune-close').addEventListener('click', () => { setOpen(false); openBtn.focus(); });
   document.addEventListener('keydown', (e) => {
