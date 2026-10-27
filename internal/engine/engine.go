@@ -28,6 +28,8 @@ import (
 	"time"
 
 	"ollamui/internal/gguf"
+	"ollamui/internal/hw"
+	"ollamui/internal/limits"
 	"ollamui/internal/ollama"
 	"ollamui/internal/presets"
 )
@@ -55,7 +57,11 @@ type Options struct {
 type Engine struct {
 	// OllamaDir, if set, is an Ollama models folder whose new models are
 	// imported now and then (models pulled through Ollama show up here).
-	OllamaDir  string
+	OllamaDir string
+	// Limits are the app-wide resource limits (nil: none); Live reads GPU
+	// memory use (nil: the real reader).
+	Limits     *limits.Store
+	Live       func() hw.Live
 	lastImport time.Time
 	// Finder looks for models in other apps; nil gets a default.
 	Finder *Finder
@@ -137,18 +143,20 @@ const (
 
 // loadOpts are the request options that need a (re)start to change.
 type loadOpts struct {
-	Ctx       int    // 0: let llama.cpp fit the largest that fits
-	GPULayers int    // -1: let llama.cpp decide
-	CPUMoE    int    // cpuMoEUnset, cpuMoEAll, or how many layers keep their experts on the CPU
-	LoadMode  string // --load-mode; "": llama.cpp's default (mmap)
-	Threads   int    // 0: default
-	CacheType string // "": the engine's default
-	FlashAttn string // "": the engine's default
-	Embedding bool
-	Draft     string // the draft model's name for speculative decoding, "": none
-	DraftMax  int    // tokens drafted at a time; 0: llama.cpp's default
-	NGramMax  int    // tokens n-gram guessing drafts at a time; 0: llama.cpp's default
-	LoRA      []presets.LoRA
+	Ctx         int    // 0: let llama.cpp fit the largest that fits
+	GPULayers   int    // -1: let llama.cpp decide
+	CPUMoE      int    // cpuMoEUnset, cpuMoEAll, or how many layers keep their experts on the CPU
+	LoadMode    string // --load-mode; "": llama.cpp's default (mmap)
+	Threads     int    // 0: default
+	CacheType   string // "": the engine's default
+	FlashAttn   string // "": the engine's default
+	Embedding   bool
+	DraftGPU    bool   // keep the whole draft (MTP head or draft model) on the GPU
+	NoMMProjGPU bool   // keep the vision projector in RAM
+	Draft       string // the draft model's name for speculative decoding, "": none
+	DraftMax    int    // tokens drafted at a time; 0: llama.cpp's default
+	NGramMax    int    // tokens n-gram guessing drafts at a time; 0: llama.cpp's default
+	LoRA        []presets.LoRA
 	// Speed and NGram are the speed-up settings as asked; planSpeed turns
 	// them into MTP, Draft and NGram (the n-gram type, "": none) before a
 	// server starts, so what runs is what compares.
@@ -211,6 +219,8 @@ func loadOptsFrom(o map[string]any) loadOpts {
 	if v, ok := num(o["draft_max"]); ok && v > 0 {
 		lo.DraftMax = int(v)
 	}
+	lo.DraftGPU = o["draft_gpu"] == "always"
+	lo.NoMMProjGPU = o["mmproj_cpu"] == "on"
 	lo.Speed, _ = o["speedup"].(string)
 	lo.NGram, _ = o["spec_ngram"].(string)
 	if v, _ := o["cache_type"].(string); CacheTypes[v] {
@@ -339,6 +349,12 @@ func (e *Engine) args(m *Model, o loadOpts, port int) []string {
 	}
 	if o.Threads > 0 {
 		a = append(a, "-t", strconv.Itoa(o.Threads))
+	} else if e.Limits.Get().Gentle {
+		a = append(a, "-t", strconv.Itoa(gentleThreads()))
+	}
+	a = append(a, e.gentleArgs(o)...)
+	if t, ok := e.fitTarget(m, o); ok {
+		a = append(a, "--fit-target", strconv.FormatInt(t, 10))
 	}
 	if !o.Embedding {
 		// Each adapter is numbered in the order it's given (setScales relies on it).
@@ -359,6 +375,9 @@ func (e *Engine) args(m *Model, o loadOpts, port int) []string {
 	} else {
 		if m.Projector != "" {
 			a = append(a, "--mmproj", e.store.Blob(m.Projector))
+			if o.NoMMProjGPU {
+				a = append(a, "--no-mmproj-offload")
+			}
 		}
 		fa, ct := cmp.Or(o.FlashAttn, e.opt.FlashAttn), cmp.Or(o.CacheType, e.opt.CacheType)
 		if ct != "f16" && fa == "off" {

@@ -11,6 +11,7 @@ import (
 
 	"ollamui/internal/engine"
 	"ollamui/internal/hw"
+	"ollamui/internal/limits"
 )
 
 // kvFactor scales f16 cache estimates to the engine's default K/V cache
@@ -32,6 +33,7 @@ type settingsData struct {
 	// CompressAuto is the default for chats' "Compress automatically".
 	CompressAuto bool
 	Tools        toolsPage
+	Limits       limits.Limits
 }
 
 // enginePage is the Models section with llama.cpp.
@@ -165,6 +167,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	d.Voice = s.voicePage(ctx)
 	d.Knowledge = s.knowledgePage(ctx, r.URL.Query().Get("pulled"))
 	d.Tools = s.toolsPage()
+	d.Limits = s.limitSt.Get()
 	p.Data = d
 	s.render(w, "settings", p)
 }

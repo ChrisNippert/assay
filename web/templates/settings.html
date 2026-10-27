@@ -6,6 +6,7 @@
     {{if .Data.Knowledge}}<a href="#knowledge">Knowledge</a>{{end}}
     <a href="#chats">Chats</a>
     <a href="#tools">Tools</a>
+    <a href="#limits">Resource limits</a>
     {{if .Data.Voice}}<a href="#voice">Voice</a>{{end}}
     <a href="#machine">This machine</a>
   </nav>
@@ -151,6 +152,20 @@
   </div>
   <p class="small muted" id="tl-note" role="status"></p>
   {{end}}
+
+  <h2 class="group-title" id="limits">Resource limits</h2>
+  <p class="muted small">Limits apply the next time a model loads; models already running aren't restarted. Changes save right away.</p>
+  <div class="boxed-list" id="lm-list" data-settings="{{json .Data.Limits}}">
+    <div class="row">
+      <div class="row-text"><span class="row-title">Max VRAM for models</span><span class="row-sub">In GB; empty means no limit. Works through automatic GPU fitting, so it doesn't apply to a model whose GPU layers (or MoE experts in RAM) are set by hand in Tune. It also counts the other models ollamui has loaded, and can't see other apps' use beyond what is free right now.</span></div>
+      <div class="row-ctrl"><input type="number" id="lm-vram" min="0.5" step="0.5" placeholder="No limit" aria-label="Max VRAM for models in GB" style="width:6rem" autocomplete="off"></div>
+    </div>
+    <label class="row">
+      <div class="row-text"><span class="row-title">Leave the GPU some room</span><span class="row-sub">Can't hard-cap GPU use: AMD and ROCm have no per-app limit. It just makes models yield more: lower process priority, smaller GPU work chunks, and half the CPU threads unless the model sets its own.</span></div>
+      <div class="row-ctrl"><input type="checkbox" id="lm-gentle" aria-label="Leave the GPU some room"></div>
+    </label>
+  </div>
+  <p class="small muted" id="lm-note" role="status"></p>
 
   {{with .Data.Voice}}
   <h2 class="group-title" id="voice">Voice</h2>
@@ -437,6 +452,25 @@
   }
   list.addEventListener('change', save);
   })();
+})();
+(() => {
+  // ---- resource limits ----
+  const list = document.getElementById('lm-list');
+  if (!list) return;
+  const cur = JSON.parse(list.dataset.settings);
+  const vram = document.getElementById('lm-vram'), gentle = document.getElementById('lm-gentle'), note = document.getElementById('lm-note');
+  vram.value = cur.maxVramGb > 0 ? cur.maxVramGb : '';
+  gentle.checked = !!cur.gentle;
+  async function save() {
+    const v = vram.value.trim() === '' ? 0 : Number(vram.value);
+    note.textContent = 'Saving…';
+    try {
+      const res = await fetch('/api/limits', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ maxVramGb: v, gentle: gentle.checked }) });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+      note.textContent = 'Saved. Applies the next time a model loads.';
+    } catch (err) { note.textContent = `Couldn’t save: ${err.message}`; }
+  }
+  list.addEventListener('change', save);
 })();
 (() => {
   // ---- knowledge ----

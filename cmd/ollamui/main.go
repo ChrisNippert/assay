@@ -23,6 +23,7 @@ import (
 	"ollamui/internal/engine"
 	"ollamui/internal/hf"
 	"ollamui/internal/hw"
+	"ollamui/internal/limits"
 	"ollamui/internal/llamacpp"
 	"ollamui/internal/ollama"
 	"ollamui/internal/presets"
@@ -123,6 +124,10 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("chat settings: %w", err)
 	}
+	limitStore, err := limits.Open(filepath.Join(*configDir, "limits.json"))
+	if err != nil {
+		return fmt.Errorf("resource limits: %w", err)
+	}
 	toolSettings, err := tools.OpenStore(filepath.Join(*configDir, "tools.json"))
 	if err != nil {
 		return fmt.Errorf("tool settings: %w", err)
@@ -160,6 +165,7 @@ func run() error {
 	eng := engine.New(modelStore, engine.Options{Server: bin, CacheType: *cacheType, FlashAttn: "on", KVDir: filepath.Join(*dataDir, "kvcache"), Log: log})
 	llama.Eng = eng
 	eng.OllamaDir = *ollamaModels
+	eng.Limits = limitStore
 	eng.Folder = folder
 	eng.Finder = engine.NewFinder(filepath.Join(*configDir, "sources.json"))
 	eng.HF = hfClient
@@ -171,6 +177,7 @@ func run() error {
 		Projects:      projectStore,
 		RAGSettings:   ragSettings,
 		Tools:         toolSettings,
+		Limits:        limitStore,
 		HF:            hfClient,
 		Pulls:         pulls.New(enginePuller{eng}, log),
 		LlamaCpp:      llama,

@@ -82,6 +82,9 @@ func (e *Engine) specArgs(m *Model, o loadOpts) []string {
 		a = append(a, "-md", e.store.Blob(d.Files[0]))
 		types = append(types, DraftType(d.Draft))
 	}
+	if len(a) > 0 && o.DraftGPU {
+		a = append(a, "--spec-draft-ngl", "all")
+	}
 	if len(a) > 0 && o.DraftMax > 0 {
 		a = append(a, "--spec-draft-n-max", strconv.Itoa(o.DraftMax))
 	}

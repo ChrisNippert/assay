@@ -74,7 +74,7 @@
     { key: 'num_ctx', label: 'Context length', kind: 'combo', int: true, scope: 'model',
       help: 'Tokens the model can hold in mind at once; the prompt, thinking and reply all share it' },
     { key: 'num_gpu', label: 'GPU layers', kind: 'scale', min: 0, max: 99, step: 1, int: true, placeholder: 'All', scope: 'model',
-      help: 'How many of the model’s layers run on the GPU; the rest run on the CPU, slower' },
+      help: 'How many of the model’s layers run on the GPU; the rest run on the CPU, slower. Setting this by hand turns automatic fitting off, so the VRAM limit in Settings can’t apply' },
     { key: 'keep_alive', label: 'Keep in memory', kind: 'choice', scope: 'model', engine: true,
       help: 'How long the model stays loaded after the last message',
       choices: [['5m', '5 minutes'], ['30m', '30 minutes'], ['1h', '1 hour'], ['4h', '4 hours'], ['-1', 'Until unloaded']] },
@@ -106,6 +106,14 @@
     { key: 'spec_ngram_max', label: 'N-gram: tokens ahead', kind: 'spin', min: 1, max: 128, step: 1, int: true, scope: 'model',
       placeholder: 'Auto (up to 64)', help: 'Most tokens copied from the chat per step; llama.cpp allows up to 64',
       off: () => (speedPlan().includes('n-gram guessing') ? '' : 'N-gram guessing is off') },
+    { key: 'draft_gpu', label: 'Draft on GPU', kind: 'choice', scope: 'model', engine: true, none: 'Auto',
+      help: 'Keeps the whole draft (MTP head or draft model) on the GPU and puts more of the main model in RAM; best when the main model doesn’t fit anyway',
+      choices: [['always', 'Always']],
+      off: () => (speedPlan().some((p) => p === 'MTP head' || p === 'draft model') ? '' : 'No MTP head or draft model is in use') },
+    { key: 'mmproj_cpu', label: 'Vision on CPU', kind: 'choice', scope: 'model', engine: true, none: 'Off',
+      when: () => !!defaults.vision,
+      help: 'Keeps the image reader in RAM instead of the GPU: saves about 1–4 GB of VRAM; image reading gets slower',
+      choices: [['on', 'On']] },
   ];
   const MEMORY = [
     { key: 'cache_type', label: 'KV cache precision', kind: 'choice', scope: 'model', engine: true,

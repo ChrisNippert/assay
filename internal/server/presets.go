@@ -104,6 +104,7 @@ type modelDefaults struct {
 	Tools         bool           `json:"tools"`
 	Layers        int            `json:"layers,omitempty"` // what num_gpu counts; 0 if unknown
 	MoE           bool           `json:"moe,omitempty"`    // has experts, so load_mode and n_cpu_moe apply
+	Vision        bool           `json:"vision,omitempty"` // has an image projector
 	// Saved are the user's own settings for the model, and Engine what
 	// applies when neither they nor a chat set one; both only with an
 	// engine that keeps settings per model.
@@ -211,6 +212,7 @@ func (s *Server) handleModelDefaults(w http.ResponseWriter, r *http.Request) {
 		Tools:         show.HasCapability("tools"),
 		Layers:        show.Layers(),
 		MoE:           show.MoE(),
+		Vision:        show.HasCapability("vision"),
 	}
 	if ms, ok := s.ollama.(modelSettings); ok {
 		d.Saved, _ = ms.Settings(name)

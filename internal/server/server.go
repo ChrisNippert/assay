@@ -24,6 +24,7 @@ import (
 	"ollamui/internal/chats"
 	"ollamui/internal/hf"
 	"ollamui/internal/hw"
+	"ollamui/internal/limits"
 	"ollamui/internal/llamacpp"
 	"ollamui/internal/ollama"
 	"ollamui/internal/presets"
@@ -87,6 +88,8 @@ type Options struct {
 	RAGSettings *projects.SettingsStore
 	// Tools holds the tool settings; nil keeps them in memory.
 	Tools *tools.Store
+	// Limits holds the resource limits; nil keeps them in memory.
+	Limits *limits.Store
 	// Voice is the speech service for voice mode; nil turns it off.
 	Voice *voice.Client
 	// VoiceSettings are voice mode's preferences. Required.
@@ -118,6 +121,7 @@ type Server struct {
 	indexQueue chan indexJob
 	// toolSt holds the tool settings; fetcher and searcher run web tools.
 	toolSt   *tools.Store
+	limitSt  *limits.Store
 	fetcher  *tools.Fetcher
 	searcher *tools.Searcher
 	voice    *voice.Client
@@ -146,7 +150,7 @@ type Server struct {
 func New(opts Options) (*Server, error) {
 	s := &Server{
 		ollama: opts.Ollama, chats: opts.Chats, chatSt: opts.ChatSettings, presets: opts.Presets,
-		hf: opts.HF, pulls: opts.Pulls, llama: opts.LlamaCpp, scores: opts.Scores, bench: opts.Bench, projects: opts.Projects, ragSt: opts.RAGSettings, toolSt: opts.Tools, indexQueue: make(chan indexJob, 256), voice: opts.Voice, voiceSt: opts.VoiceSettings, speech: opts.VoiceLauncher, memory: opts.Memory, log: opts.Logger,
+		hf: opts.HF, pulls: opts.Pulls, llama: opts.LlamaCpp, scores: opts.Scores, bench: opts.Bench, projects: opts.Projects, ragSt: opts.RAGSettings, toolSt: opts.Tools, limitSt: opts.Limits, indexQueue: make(chan indexJob, 256), voice: opts.Voice, voiceSt: opts.VoiceSettings, speech: opts.VoiceLauncher, memory: opts.Memory, log: opts.Logger,
 		vramUsed: hw.VRAMUsed,
 	}
 	if s.bench == nil {
@@ -163,6 +167,9 @@ func New(opts Options) (*Server, error) {
 	}
 	if s.ragSt == nil {
 		s.ragSt, _ = projects.OpenSettings("")
+	}
+	if s.limitSt == nil {
+		s.limitSt, _ = limits.Open("")
 	}
 	if s.toolSt == nil {
 		s.toolSt, _ = tools.OpenStore("")
@@ -219,6 +226,8 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("PUT /api/knowledge/settings", s.handleRAGSettingsSave)
 	mux.HandleFunc("GET /api/tools/settings", s.handleToolSettings)
 	mux.HandleFunc("PUT /api/tools/settings", s.handleToolSettingsSave)
+	mux.HandleFunc("GET /api/limits", s.handleLimits)
+	mux.HandleFunc("PUT /api/limits", s.handleLimitsSave)
 	mux.HandleFunc("POST /api/bench", s.handleBench)
 
 	mux.HandleFunc("GET /api/loaded", s.handleLoaded)
@@ -334,7 +343,7 @@ type page struct {
 	ModelsErr string // couldn't list the models
 	// Starred is the default model (see chats.Settings.DefaultModel).
 	Starred string
-	Data      any
+	Data    any
 
 	// For ModelGroups' fit and speed.
 	memory hw.Memory
