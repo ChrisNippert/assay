@@ -773,7 +773,7 @@
       const mine = (l || []).find((m) => !m.loading && (m.name === model || m.name === selectedOption()?.value)) || (l || []).find((m) => !m.loading);
       const used = mine ? (mine.sizeVram || 0) : 0;
       if (g?.vramTotal > 0) gpuNums = { used: gb(used), total: gb(g.vramTotal), cpu: !!mine && mine.size > 0 && !used };
-      if (mine?.context && !ctxMax) ctxMax = mine.context;
+      if (mine?.context) ctxMax = mine.context; // what the loaded model really runs with
     } catch {}
     paintSoon();
   }
