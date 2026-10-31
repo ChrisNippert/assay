@@ -222,3 +222,12 @@ func TestFake(t *testing.T) {
 		t.Fatal("uninstall")
 	}
 }
+
+func TestAbsPaths(t *testing.T) {
+	wd, _ := os.Getwd()
+	got := absPaths([]string{"-listen", "0.0.0.0:8484", "-data", "x", "--config=c", "-models", "/abs", "-voice", ""})
+	want := []string{"-listen", "0.0.0.0:8484", "-data", filepath.Join(wd, "x"), "--config=" + filepath.Join(wd, "c"), "-models", "/abs", "-voice", ""}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("absPaths = %q, want %q", got, want)
+	}
+}

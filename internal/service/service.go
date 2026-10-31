@@ -135,6 +135,7 @@ func (m *Manager) env() [][2]string {
 
 // Install implements Service.
 func (m *Manager) Install(ctx context.Context, args []string, startNow bool) ([]string, error) {
+	args = absPaths(args)
 	switch m.GOOS {
 	case "linux":
 		return m.installLinux(ctx, args, startNow)
@@ -448,4 +449,35 @@ func (f *Fake) Status(context.Context) Status {
 		st.Command = f.command
 	}
 	return st
+}
+
+// pathFlags take a file or folder.
+var pathFlags = map[string]bool{"data": true, "config": true, "models": true, "ollama-models": true, "llama-server": true}
+
+// absPaths makes the path flags' values absolute: a service starts in
+// another folder, where "-data ./x" would mean something else.
+func absPaths(args []string) []string {
+	out := append([]string(nil), args...)
+	fix := func(v string) string {
+		if v == "" || filepath.IsAbs(v) || strings.HasPrefix(v, "~") {
+			return v
+		}
+		if a, err := filepath.Abs(v); err == nil {
+			return a
+		}
+		return v
+	}
+	for i := 0; i < len(out); i++ {
+		name, val, hasVal := strings.Cut(strings.TrimLeft(out[i], "-"), "=")
+		if !strings.HasPrefix(out[i], "-") || !pathFlags[name] {
+			continue
+		}
+		if hasVal {
+			out[i] = out[i][:len(out[i])-len(val)] + fix(val)
+		} else if i+1 < len(out) {
+			out[i+1] = fix(out[i+1])
+			i++
+		}
+	}
+	return out
 }
