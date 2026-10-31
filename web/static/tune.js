@@ -919,6 +919,7 @@
     const n = changedCount();
     summary.textContent = ['Tune', ...parts, n ? `${n} changed` : ''].filter(Boolean).join(' · ');
     openBtn.classList.toggle('has-changes', n > 0);
+    openBtn.title = summary.textContent;
     document.dispatchEvent(new Event('tune-changed'));
   }
 

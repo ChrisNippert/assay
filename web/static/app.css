@@ -1695,6 +1695,132 @@ html:has(.content-chat) { overscroll-behavior: none; }
   .ctx-bar { width: 44px; }
 }
 
+/* ---- chat, redesign D: model chip, composer card, messages ---- */
+/* App bar: the model chip carries the state; Tune and the memory chip are quiet. */
+.content-chat .switcher { min-width: 0; }
+.content-chat .switcher-btn { background: transparent; height: 34px; padding: 0 10px 0 8px; gap: 8px; border-radius: var(--radius); }
+.content-chat .switcher-btn:hover, .content-chat .switcher-btn[aria-expanded="true"] { background: var(--raised); }
+.content-chat .switcher-name { font-weight: 600; }
+.content-chat .switcher-meta { font-size: var(--fs-xs); color: var(--muted); }
+.switcher-btn .switcher-dot, .switcher-state .switcher-dot { background: none; box-shadow: inset 0 0 0 1.5px var(--muted); transition: background var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease); }
+.switcher-btn .switcher-dot.on, .switcher-state .switcher-dot.on { background: var(--good); box-shadow: none; }
+.switcher-state { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); border-top: 1px solid var(--border); font-size: var(--fs-sm); color: var(--muted); }
+.switcher-state[hidden] { display: none; }
+.switcher-state-text { flex: 1; min-width: 0; }
+.switcher-state .btn { height: 28px; min-height: 28px; padding: 0 10px; }
+.content-chat .switcher-row .row-sub { font-size: var(--fs-xs); color: var(--muted); }
+.load-btn { width: auto; height: 30px; padding: 0 12px 0 10px; gap: 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-text); font-size: var(--fs-sm); font-weight: 500; flex: none; display: inline-flex; align-items: center; }
+.load-btn:hover { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); color: var(--accent-text); }
+.load-btn[hidden] { display: none; }
+.load-btn svg { width: 14px; height: 14px; }
+.btn.quiet { background: none; color: var(--text-2); box-shadow: none; }
+.btn.quiet:hover { background: var(--raised); color: var(--text); }
+.content-chat .tune-btn { height: 32px; min-height: 32px; padding: 0 10px; gap: 6px; font-weight: 400; }
+.content-chat .tune-btn[aria-expanded="true"] { background: var(--raised); color: var(--text); }
+.content-chat .tune-btn.has-changes::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+/* The memory chip is an icon plus its meter here; the loaded model's name lives in the model chip. */
+.content-chat .mem-chip { background: transparent; padding: 0 10px; color: var(--text-2); }
+.content-chat .mem-chip:hover, .content-chat .mem-chip[aria-expanded="true"] { background: var(--raised); }
+.content-chat .mem-chip::before {
+  content: ""; flex: none; width: 16px; height: 16px; background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='5' y='7' width='14' height='10' rx='2'/%3E%3Cpath d='M9 7V4M15 7V4M9 20v-3M15 20v-3'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='5' y='7' width='14' height='10' rx='2'/%3E%3Cpath d='M9 7V4M15 7V4M9 20v-3M15 20v-3'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.content-chat .mem-chip:not(.loading) .mem-label { display: none; }
+.content-chat .mem-chip .mem-meter { width: 28px; }
+
+/* Numbers strip when the model isn't loaded. */
+.num-gpu .gpu-off { display: none; }
+.num-gpu.off .gpu-on { display: none; }
+.num-gpu.off .gpu-off { display: inline; }
+.num-gpu.off:hover { color: var(--accent-text); }
+.num-ctx-wrap.no-used .ctx-used-part, .num-ctx-wrap.no-used .ctx-bar { display: none; }
+
+/* Messages: a soft bubble for you, plain text for the model. */
+.msg.user .bubble { background: var(--raised); border-radius: 18px 18px 6px 18px; padding: 10px 16px; line-height: 1.5; }
+.msg.user { max-width: 80%; }
+.thinking summary, .compress-divider > summary {
+  list-style: none; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: var(--fs-sm); color: var(--muted);
+  transition: color var(--dur-1) var(--ease);
+}
+.thinking summary::-webkit-details-marker { display: none; }
+.thinking summary::before {
+  content: ""; width: 12px; height: 12px; flex: none; background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M9 6l6 6-6 6'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M9 6l6 6-6 6'/%3E%3C/svg%3E") center / contain no-repeat;
+  transition: transform var(--dur-2) var(--ease);
+}
+.thinking[open] > summary::before { transform: rotate(90deg); }
+.thinking summary:hover { color: var(--text); }
+.thinking-text { border-left-color: var(--border-strong); }
+.md pre, .md .code { background: var(--code-bg); border-radius: var(--radius); }
+.md .code pre { border-radius: 0; }
+.msg-error { background: var(--bad-soft); padding: 6px 10px; border-radius: var(--radius); }
+
+/* Composer: one rounded card, text on top, controls in a row below. */
+.composer.column { display: block; padding-top: 0; }
+.composer-card {
+  display: flex; flex-direction: column; gap: 2px; padding: 12px 10px 8px 16px; border-radius: var(--radius-lg); background: var(--panel);
+  box-shadow: 0 0 0 1px var(--border-strong), 0 6px 20px rgba(0, 0, 0, .07);
+  transition: box-shadow var(--dur-2) var(--ease);
+}
+.composer-card:focus-within { box-shadow: 0 0 0 1px var(--accent-line), 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent), 0 6px 20px rgba(0, 0, 0, .07); }
+.composer .composer-card textarea,
+.composer .composer-card textarea:focus {
+  width: 100%; flex: none; border: 0; box-shadow: none; outline: none; background: transparent; border-radius: 0; padding: 0 6px 0 0;
+  min-height: 48px; height: 48px; max-height: 240px; line-height: 1.5; overflow-y: auto;
+}
+.composer-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.composer .composer-row .icon-btn { width: 32px; height: 32px; min-height: 0; min-width: 0; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--muted); justify-content: center; align-items: center; flex: none; }
+.composer .composer-row .icon-btn:hover { background: var(--raised); color: var(--text); }
+.composer .composer-row .mic-btn[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+.composer-row .proj-chip { height: 28px; max-width: 45%; }
+.composer .composer-row .btn#send {
+  width: 32px; height: 32px; min-height: 0; padding: 0; border-radius: 50%; flex: none; justify-content: center; align-items: center;
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease), opacity var(--dur-1) var(--ease);
+}
+.composer .composer-row .btn#send:active { transform: scale(.92); }
+.composer-row #send .send-label { display: none; }
+.composer-row #send .send-ico { display: none; }
+.composer-row #send[data-state="send"] .ico-up, .composer-row #send[data-state="queue"] .ico-up, .composer-row #send[data-state="stop"] .ico-stop { display: block; }
+.composer-row #send.idle { background: var(--raised); color: var(--muted); }
+.composer-row #send.confirm { background: var(--bad); color: var(--bg); }
+.proj-chip { display: inline-flex; align-items: center; gap: 6px; position: relative; padding: 0 10px; border-radius: 999px; background: var(--raised); color: var(--muted); font-size: var(--fs-xs); cursor: pointer; transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+.proj-chip.on { background: var(--accent-soft); color: var(--accent-text); }
+.proj-chip select { appearance: none; border: 0; background: none; color: inherit; font: inherit; padding: 0; min-width: 0; max-width: 100%; cursor: pointer; text-overflow: ellipsis; }
+.proj-chip select:focus-visible { outline: none; }
+.proj-chip:focus-within { box-shadow: 0 0 0 2px var(--accent-line); }
+
+/* Empty chat. */
+.suggestion { background: var(--sunk); border: none; border-radius: var(--radius-lg); min-width: 0; transition: background var(--dur-1) var(--ease), transform var(--dur-1) var(--ease); }
+.suggestion:hover { background: var(--raised); }
+.suggestion:active { transform: scale(.985); }
+.suggestion-title, .suggestion-sub { overflow-wrap: anywhere; min-width: 0; }
+.preset-start { background: var(--sunk); border: none; }
+.preset-start:hover { background: var(--raised); }
+.welcome { max-width: 100%; box-sizing: border-box; }
+.welcome-title { font-weight: 600; letter-spacing: -.01em; }
+
+@media (prefers-reduced-motion: reduce) {
+  .thinking summary::before, .composer-card, .suggestion, .composer .composer-row .btn#send { transition: none; }
+}
+@media (max-width: 760px) {
+  .content-chat .switcher-btn { background: none; }
+  .content-chat .switcher-btn:active, .content-chat .switcher-btn[aria-expanded="true"] { background: var(--soft); }
+  .composer.column {
+    width: calc(100% - 20px); max-width: 720px; padding: 0; margin: 0 auto 8px; background: none; border: 0; box-shadow: none; border-radius: 0; display: block;
+  }
+  .composer-card { padding: 10px 8px 6px 12px; border-radius: 20px; }
+  .composer .composer-card textarea, .composer .composer-card textarea:focus { padding: 0 4px 0 0; min-height: 40px; height: 40px; max-height: 152px; font-size: 16px; }
+  .composer .composer-row .icon-btn, .composer .composer-row .btn#send { width: 40px; height: 40px; border-radius: 50%; }
+  .composer-row .proj-chip { height: 32px; }
+  /* One column rather than the sideways carousel: nothing to clip or scroll. */
+  .suggestions { display: grid; grid-template-columns: minmax(0, 1fr); align-self: stretch; width: auto; max-width: none; margin: 0; padding: 0; gap: var(--s2); overflow: visible; }
+  .suggestion { flex: none; padding: 12px 16px; border-radius: var(--radius-lg); }
+  .welcome { padding-top: 8vh; }
+  .msg.user { max-width: 88%; }
+}
+
 /* =====================================================================
    D · Calm numbers: shared surfaces and controls. This block comes last so it
    restyles the older shared classes above in one place; page-specific layout

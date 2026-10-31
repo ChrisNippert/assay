@@ -72,3 +72,17 @@ func prettyWord(tok, low string) string {
 	}
 	return strings.ToUpper(tok[:1]) + tok[1:]
 }
+
+// Pretty is the group's readable name for the UI ("Gemma 4 12B"); the raw
+// Primary.Name stays the identifier. An hf.co primary has no short alias, so
+// its repo name is what reads best.
+func (g modelGroup) Pretty() string {
+	title, _ := prettyModel(g.Primary.Name)
+	if g.HFRepo != "" && g.PrimaryOwner() != "" {
+		title, _ = prettyModel(g.ShortName())
+	}
+	return title
+}
+
+// Quant is the quantization as the model's tag spells it.
+func (g modelGroup) Quant() string { return quantOf(g) }
