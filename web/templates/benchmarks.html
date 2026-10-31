@@ -56,6 +56,7 @@
         <fieldset class="bm-pick"><legend>Sets</legend><div id="bm-run-sets" class="bm-checks"></div></fieldset>
       </div>
       <label class="bm-field bm-judge" id="bm-judge-row" hidden><span>Judge for proofs <span class="muted small">grades each proof against a reference after the answers are in; pick your strongest model</span></span><select id="bm-run-judge"></select></label>
+      <div class="bm-lean-need" id="bm-lean-need" hidden></div>
       <p class="muted small" id="bm-code-note" hidden>Code sets run the model's code on this computer with Python, in a temporary folder with time and memory limits, and without network access where Linux allows it. It isn't a full sandbox.</p>
       <label class="bm-check"><input type="checkbox" id="bm-run-redo"> Run again where there's a finished result</label>
       <p class="muted small" id="bm-run-note"></p>
@@ -91,6 +92,7 @@
             <li><b>choice</b>: give <code>choices</code>; the answer is a letter. They're shown as A, B, C….</li>
             <li><b>contains</b>: the reply contains this text. <b>regex</b>: the whole reply matches this pattern. Add <code>not = true</code> to fail a match instead.</li>
             <li><b>code</b>: the model writes Python; its last code block is run, then your <code>tests</code> (Python, usually <code>assert</code>s). It passes if the tests finish without an error. No <code>answer</code> needed.</li>
+            <li><b>lean</b>: a proof checked by the Lean prover. Give the <code>statement</code> (a Lean proposition) and any definitions in <code>preamble</code>; the model must write <code>theorem goal : statement</code>. <code>answer</code> may hold a reference proof, never shown to the model.</li>
             <li><b>judge</b>: for proofs and open answers. <code>answer</code> is a reference solution; a judge model you pick when running compares the reply with it and says pass or fail.</li>
           </ul>
           <p>For number, exact and choice the model is asked to end with a line “Answer: …”. Thinking is not graded.</p>

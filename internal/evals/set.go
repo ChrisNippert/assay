@@ -31,10 +31,11 @@ const (
 	CheckRegex    = "regex"    // the whole reply matches this regular expression
 	CheckCode     = "code"     // the reply's last Python code block passes Tests
 	CheckJudge    = "judge"    // a judge model compares the reply with Answer (a reference solution)
+	CheckLean     = "lean"     // the reply's Lean code proves Statement, checked by Lean
 )
 
 // Checks lists every check, for the UI.
-var Checks = []string{CheckNumber, CheckExact, CheckChoice, CheckContains, CheckRegex, CheckCode, CheckJudge}
+var Checks = []string{CheckNumber, CheckExact, CheckChoice, CheckContains, CheckRegex, CheckCode, CheckLean, CheckJudge}
 
 // Question is one item of a set.
 type Question struct {
@@ -55,6 +56,11 @@ type Question struct {
 	// Tests, for the code check, is Python run after the model's code
 	// (usually asserts); passing means it exits without an error.
 	Tests string `toml:"tests,omitempty" json:"tests,omitempty"`
+	// Statement, for the lean check, is the proposition `theorem goal`
+	// must prove; Preamble holds definitions it uses, given to the model.
+	// Answer may hold a reference proof (never shown to the model).
+	Statement string `toml:"statement,omitempty" json:"statement,omitempty"`
+	Preamble  string `toml:"preamble,omitempty" json:"preamble,omitempty"`
 }
 
 // Set is one benchmark.
@@ -79,6 +85,11 @@ type Set struct {
 // NeedsJudge says some question is graded by a judge model.
 func (s *Set) NeedsJudge() bool {
 	return slices.ContainsFunc(s.Questions, func(q Question) bool { return s.CheckOf(q) == CheckJudge })
+}
+
+// NeedsLean says some question is checked by Lean.
+func (s *Set) NeedsLean() bool {
+	return slices.ContainsFunc(s.Questions, func(q Question) bool { return s.CheckOf(q) == CheckLean })
 }
 
 // NeedsCode says some question runs the model's code.
@@ -142,13 +153,17 @@ func (s *Set) Validate() error {
 			return fmt.Errorf("%s has no prompt", n)
 		}
 		c := s.CheckOf(*q)
-		if q.Answer == "" && c != CheckCode {
+		if q.Answer == "" && c != CheckCode && c != CheckLean {
 			return fmt.Errorf("%s has no answer", n)
 		}
 		switch c {
 		case CheckCode:
 			if strings.TrimSpace(q.Tests) == "" {
 				return fmt.Errorf("%s needs tests", n)
+			}
+		case CheckLean:
+			if strings.TrimSpace(q.Statement) == "" {
+				return fmt.Errorf("%s needs a statement", n)
 			}
 		case CheckNumber:
 			for _, a := range append([]string{q.Answer}, q.Accept...) {
@@ -180,7 +195,7 @@ func (s *Set) hash() string {
 	h := sha256.New()
 	fmt.Fprintf(h, "%s\x00%s\x00", s.Check, s.System)
 	for _, q := range s.Questions {
-		fmt.Fprintf(h, "%s\x00%s\x00%s\x00%q\x00%s\x00%q\x00%g\x00%v\x00%s\x01", q.ID, q.Prompt, q.Answer, q.Accept, q.Check, q.Choices, q.Tolerance, q.Not, q.Tests)
+		fmt.Fprintf(h, "%s\x00%s\x00%s\x00%q\x00%s\x00%q\x00%g\x00%v\x00%s\x00%s\x00%s\x01", q.ID, q.Prompt, q.Answer, q.Accept, q.Check, q.Choices, q.Tolerance, q.Not, q.Tests, q.Statement, q.Preamble)
 	}
 	return hex.EncodeToString(h.Sum(nil))[:12]
 }

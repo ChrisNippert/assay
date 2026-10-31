@@ -6,6 +6,7 @@
   const init = window.assayBench || {};
   let data = init.results || { sets: [], rows: [], suite: [], fit: {} };
   let run = init.run || { running: false, items: [] };
+  let leanSt = init.lean || {};
   const params = new URLSearchParams(location.search);
   let think = params.get('think') || '';
   const store = {
@@ -237,6 +238,7 @@
       const title = el('div', 'row-title', s.name);
       if (s.builtIn) title.append(' ', el('span', 'tag', 'built in'));
       if (s.code) title.append(' ', el('span', 'tag', 'runs code'));
+      if (s.lean) title.append(' ', el('span', 'tag', 'checked by Lean'));
       if (s.judge) title.append(' ', el('span', 'tag', 'judged'));
       t.append(title, el('div', 'row-sub', `${s.questions} questions${s.check ? ' · ' + s.check : ''}${s.description ? ' · ' + s.description : ''}`));
       const ctrl = el('div', 'row-ctrl');
@@ -249,6 +251,7 @@
       copy.onclick = () => openEditor(s.id, true);
       ctrl.append(copy, open);
       row.append(t, ctrl);
+      if (s.lean && !leanReady()) t.append(leanBox());
       list.append(row);
     }
     fetch('/api/evals/sets').then((r) => r.json()).then((j) => {
@@ -327,8 +330,13 @@
     const picked = data.sets.filter((s) => ss.includes(s.id));
     $('bm-judge-row').hidden = !picked.some((s) => s.judge);
     $('bm-code-note').hidden = !picked.some((s) => s.code);
+    const needLean = picked.some((s) => s.lean) && !leanReady();
+    const ln = $('bm-lean-need');
+    ln.hidden = !needLean;
+    ln.innerHTML = '';
+    if (needLean) ln.append(leanBox());
     const q = ss.reduce((n, id) => n + (data.sets.find((s) => s.id === id) || { questions: 0 }).questions, 0);
-    $('bm-run-go').disabled = !ms.length || !ss.length;
+    $('bm-run-go').disabled = !ms.length || !ss.length || needLean;
     $('bm-run-note').textContent = ms.length && ss.length
       ? `Up to ${ms.length * q} questions, ${think === 'off' ? 'thinking off' : 'thinking as each model does by default'}. Sets already finished are skipped unless you tick the box above. It runs in the background; you can leave this page.`
       : 'Pick at least one model and one set.';
@@ -426,6 +434,7 @@
         d.append(el('summary', null, 'Question'), el('pre', 'bm-pre', qq.prompt + (qq.choices ? '\n\n' + qq.choices.map((c, i) => String.fromCharCode(65 + i) + '. ' + c).join('\n') : '')));
         if (chk === 'regex') d.append(el('div', 'muted small', 'Must match: ' + qq.answer));
         if (chk === 'judge' && qq.answer) { d.append(el('div', 'muted small', 'Reference:'), el('pre', 'bm-pre muted', qq.answer)); }
+        if (chk === 'lean') { d.append(el('div', 'muted small', 'Must prove:'), el('pre', 'bm-pre bm-out', 'theorem goal : ' + qq.statement + (qq.preamble ? '\n\n-- given:\n' + qq.preamble : ''))); }
         if (chk === 'code' && qq.tests) { d.append(el('div', 'muted small', 'Tests:'), el('pre', 'bm-pre bm-out', qq.tests)); }
         item.append(d);
       }
@@ -438,7 +447,7 @@
       if (a.output) {
         const d = el('details', 'bm-ans-q');
         d.open = !a.correct;
-        d.append(el('summary', null, 'Test output'), el('pre', 'bm-pre bm-out', a.output));
+        d.append(el('summary', null, chk === 'lean' ? "Lean's verdict" : 'Test output'), el('pre', 'bm-pre bm-out', a.output));
         item.append(d);
       }
       if (a.pending) item.append(el('div', 'muted small', 'Waiting for a judge.'));
@@ -534,6 +543,59 @@ answer = "7.5"
     editDlg.close();
     reload();
   };
+
+  // ---- Lean ----
+  const leanReady = () => !!(leanSt.installed || leanSt.onPath);
+  const leanBoxes = new Set();
+  function leanBox() {
+    const box = el('div', 'bm-lean');
+    leanBoxes.add(box);
+    paintLean(box);
+    return box;
+  }
+  function paintLean(box) {
+    box.innerHTML = '';
+    if (leanReady()) {
+      box.append(el('span', 'muted small', `Lean ${leanSt.installed || ''} is ready.`));
+      return;
+    }
+    if (leanSt.busy) {
+      const p = leanSt.progress || {};
+      const mb = (n) => Math.round(n / 1e6);
+      box.append(el('span', 'lib-spin'), el('span', 'small', p.phase === 'Downloading' && p.total ? `Downloading Lean ${p.version || ''}: ${mb(p.done)} of ${mb(p.total)} MB` : p.phase === 'Unpacking' && p.total ? `Unpacking: ${Math.round((p.done / p.total) * 100)}%` : (p.phase || 'Starting') + '…'));
+      const c = el('button', 'lib-linkbtn small', 'Cancel');
+      c.type = 'button';
+      c.onclick = () => api('DELETE', '/api/lean/install').then((st) => { leanSt = st; paintAllLean(); });
+      box.append(c);
+      return;
+    }
+    const b = el('button', 'btn', 'Install Lean');
+    b.type = 'button';
+    b.onclick = async () => {
+      b.disabled = true;
+      try { leanSt = await api('POST', '/api/lean/install'); } catch (e) { leanSt.error = e.message; }
+      paintAllLean();
+      pollLean();
+    };
+    box.append(b, el('span', 'muted small', `These proofs are checked by the Lean prover, which isn't installed. About 0.9 GB to download, 3.2 GB on disk, in Assay's data folder.${leanSt.error ? ' Last try: ' + leanSt.error : ''}`));
+  }
+  function paintAllLean() {
+    for (const b of leanBoxes) {
+      if (!b.isConnected) leanBoxes.delete(b);
+      else paintLean(b);
+    }
+    if (!runDlg.open) return;
+    updateRunNote();
+  }
+  let leanTimer = 0;
+  async function pollLean() {
+    clearTimeout(leanTimer);
+    try { leanSt = await api('GET', '/api/lean'); } catch {}
+    paintAllLean();
+    if (leanSt.busy) leanTimer = setTimeout(pollLean, 1000);
+    else if (leanReady()) renderSets();
+  }
+  if (leanSt.busy) pollLean();
 
   // ---- shared ----
   document.querySelectorAll('.bm-dialog [data-close]').forEach((b) => { b.onclick = () => b.closest('dialog').close(); });

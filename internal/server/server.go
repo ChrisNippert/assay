@@ -25,6 +25,7 @@ import (
 	"assay/internal/evals"
 	"assay/internal/hf"
 	"assay/internal/hw"
+	"assay/internal/lean"
 	"assay/internal/limits"
 	"assay/internal/llamacpp"
 	"assay/internal/ollama"
@@ -89,6 +90,9 @@ type Options struct {
 	// the built-in sets and no results.
 	Evals       *evals.Library
 	EvalResults *evals.Results
+	// Lean installs and finds the Lean prover for proof sets; nil: only a
+	// lean on PATH is used.
+	Lean *lean.Installer
 	// Projects and RAGSettings hold projects, their files and the RAG
 	// preferences. Nil keeps them in a temporary folder / in memory.
 	Projects    *projects.Store
@@ -164,11 +168,12 @@ type Server struct {
 	measure measureJob
 	// evalLib, evalRes and evalJob are the benchmarks (see evals.go);
 	// evalFn runs one model × set (nil: runEvalItem; tests swap it).
-	evalLib *evals.Library
-	evalRes *evals.Results
-	evalJob evalJob
-	evalFn  func(ctx context.Context, item int, redo bool) error
-	benchFn func(ctx context.Context, name string, keepPinned bool) (bench.Result, error)
+	evalLib  *evals.Library
+	evalRes  *evals.Results
+	evalJob  evalJob
+	leanInst *lean.Installer
+	evalFn   func(ctx context.Context, item int, redo bool) error
+	benchFn  func(ctx context.Context, name string, keepPinned bool) (bench.Result, error)
 	// otherVRAM is the last measured VRAM used outside Ollama (desktop etc.).
 	otherVRAM atomic.Int64
 	// vramUsed reports GPU memory in use; swapped out in tests.
@@ -206,6 +211,9 @@ func New(opts Options) (*Server, error) {
 	}
 	if s.evalRes == nil {
 		s.evalRes = evals.OpenResults("")
+	}
+	if s.leanInst = opts.Lean; s.leanInst == nil {
+		s.leanInst = &lean.Installer{}
 	}
 	if s.projects == nil {
 		dir, err := os.MkdirTemp("", "assay-projects-")
@@ -283,6 +291,9 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("GET /api/evals/run", s.handleEvalRunState)
 	mux.HandleFunc("POST /api/evals/run", s.handleEvalRunStart)
 	mux.HandleFunc("DELETE /api/evals/run", s.handleEvalRunCancel)
+	mux.HandleFunc("GET /api/lean", s.handleLeanStatus)
+	mux.HandleFunc("POST /api/lean/install", s.handleLeanInstall)
+	mux.HandleFunc("DELETE /api/lean/install", s.handleLeanCancel)
 	mux.HandleFunc("GET /projects/{id}", s.handleProjectPage)
 	mux.HandleFunc("POST /api/projects", s.handleProjectCreate)
 	mux.HandleFunc("GET /api/projects/{id}", s.handleProjectGet)

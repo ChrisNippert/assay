@@ -24,6 +24,7 @@ import (
 	"assay/internal/evals"
 	"assay/internal/hf"
 	"assay/internal/hw"
+	"assay/internal/lean"
 	"assay/internal/limits"
 	"assay/internal/llamacpp"
 	"assay/internal/ollama"
@@ -199,6 +200,7 @@ func run() error {
 		Bench:         bench.Open(filepath.Join(*dataDir, "bench")),
 		Evals:         evalLib,
 		EvalResults:   evals.OpenResults(filepath.Join(*dataDir, "evals", "results")),
+		Lean:          &lean.Installer{Dir: filepath.Join(*dataDir, "lean")},
 		Voice:         speech,
 		VoiceLauncher: launcher,
 		VoiceSettings: voiceSettings,

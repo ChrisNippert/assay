@@ -3,10 +3,14 @@ package evals
 import (
 	"context"
 	"math"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"assay/internal/lean"
 )
 
 func TestBuiltinSetsLoad(t *testing.T) {
@@ -50,7 +54,7 @@ func TestBuiltinAnswersGrade(t *testing.T) {
 	}
 	for _, s := range sets {
 		for _, q := range s.Questions {
-			if c := s.CheckOf(q); c == CheckCode || c == CheckJudge {
+			if c := s.CheckOf(q); c == CheckCode || c == CheckJudge || c == CheckLean {
 				continue // see TestCodeRuns and TestParseVerdict
 			}
 			reply := "Let me think.\n\nAnswer: " + q.Answer
@@ -302,5 +306,35 @@ func TestParseVerdict(t *testing.T) {
 	sys, user := JudgeMessages(Question{Prompt: "Prove X.", Answer: "Because Y."}, "<think>hmm</think>Proof: Z.")
 	if !strings.Contains(sys, "Verdict: PASS") || !strings.Contains(user, "Because Y.") || !strings.Contains(user, "Proof: Z.") || strings.Contains(user, "hmm") {
 		t.Errorf("judge prompt: %s", user)
+	}
+}
+
+// Every built-in Lean question's reference proof passes the checker.
+func TestBuiltinLeanReferences(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	bin := os.Getenv("ASSAY_LEAN")
+	if bin == "" {
+		bin = (&lean.Installer{Dir: filepath.Join(home, ".local/share/assay/lean")}).Binary()
+	}
+	if bin == "" {
+		t.Skip("Lean isn't installed")
+	}
+	l, _ := OpenLibrary("")
+	sets, _ := l.List()
+	n := 0
+	for _, s := range sets {
+		for _, q := range s.Questions {
+			if s.CheckOf(q) != CheckLean {
+				continue
+			}
+			n++
+			r, err := lean.Check(context.Background(), bin, q.Preamble, q.Statement, q.Answer)
+			if err != nil || !r.OK {
+				t.Errorf("%s/%s: %v\n%s", s.ID, q.ID, err, r.Output)
+			}
+		}
+	}
+	if n == 0 {
+		t.Error("no Lean questions")
 	}
 }

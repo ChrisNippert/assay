@@ -28,6 +28,12 @@ func (s *Set) Messages(q Question) (system, user string) {
 		b.WriteString("\n\nWrite it in Python 3, using only the standard library. Put the complete solution in one ```python code block; it will be run against hidden tests.")
 	case CheckJudge:
 		b.WriteString("\n\nWrite a complete, rigorous proof.")
+	case CheckLean:
+		b.WriteString("\n\nProve it in Lean 4, with the core library only: there is no Mathlib, so tactics like `ring`, `linarith`, `nlinarith` and `norm_num` and Mathlib lemma names aren't available; `simp`, `omega`, `decide`, `induction`, `cases`, `rcases`, `grind` and core lemmas are.")
+		if p := strings.TrimSpace(q.Preamble); p != "" {
+			b.WriteString(" These definitions are already in scope (don't repeat them):\n\n```lean\n" + p + "\n```\n")
+		}
+		b.WriteString("\n\nYour code must define exactly this theorem, named `goal`:\n\n```lean\ntheorem goal : " + strings.TrimSpace(q.Statement) + " := by\n  ...\n```\n\nHelper lemmas before it are fine. `sorry`, `axiom` and `native_decide` aren't allowed. Put all your Lean code in one ```lean block; it will be checked by Lean.")
 	}
 	return s.System, b.String()
 }
@@ -38,8 +44,8 @@ func (s *Set) Grade(q Question, reply string) (got string, ok bool) {
 	reply = StripThinking(reply)
 	check := s.CheckOf(q)
 	switch check {
-	case CheckCode, CheckJudge:
-		return "", false // graded by running the code or by a judge (code.go, judge.go)
+	case CheckCode, CheckJudge, CheckLean:
+		return "", false // graded by running the code, by Lean, or by a judge
 	case CheckRegex, CheckContains:
 		match := false
 		for _, a := range append([]string{q.Answer}, q.Accept...) {

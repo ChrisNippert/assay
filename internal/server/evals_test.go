@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"math"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"assay/internal/evals"
+	"assay/internal/lean"
 )
 
 func waitEvals(t *testing.T, s *Server) evalState {
@@ -250,5 +254,60 @@ func TestEvalCodeAndJudge(t *testing.T) {
 	r, _ = s.evalRes.Get("d1", "mixed", "")
 	if !r.Done() || r.Correct != 1 || r.Answers[1].Pending || r.Answers[1].JudgeModel != "mid:q4" || !strings.Contains(r.Answers[1].Judge, "no proof") {
 		t.Fatalf("judged %+v", r.Answers[1])
+	}
+}
+
+const leanSet = `name = "L"
+check = "lean"
+[[questions]]
+id = "double"
+prompt = "Prove double n = 2n."
+preamble = "def double (n : Nat) : Nat := n + n"
+statement = "∀ n : Nat, double n = 2 * n"
+[[questions]]
+id = "sorry"
+prompt = "Prove it again."
+preamble = "def double (n : Nat) : Nat := n + n"
+statement = "∀ n : Nat, double n = 2 * n"
+`
+
+func TestEvalLean(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	inst := &lean.Installer{Dir: filepath.Join(home, ".local/share/assay/lean")}
+	if inst.Binary() == "" {
+		t.Skip("Lean isn't installed")
+	}
+	s, fake, _ := newTestServer(t)
+	fake.tags = threeModels
+	lib, _ := evals.OpenLibrary(t.TempDir())
+	s.evalLib, s.evalRes = lib, evals.OpenResults(t.TempDir())
+	lib.Save("l", []byte(leanSet))
+	// Without Lean the run is refused up front.
+	s.leanInst = &lean.Installer{Dir: t.TempDir()}
+	if _, err := s.startEvals(context.Background(), evalRunRequest{Models: []string{"small:q4"}, Sets: []string{"l"}}); err == nil || !strings.Contains(err.Error(), "Lean") {
+		t.Fatalf("ran without Lean: %v", err)
+	}
+	if onPath, _ := exec.LookPath("lean"); onPath != "" {
+		t.Skip("a lean on PATH makes the refusal untestable")
+	}
+	s.leanInst = inst
+	fake.replies = []string{
+		line("Unfold and use omega.\n```lean\ntheorem goal : ∀ n : Nat, double n = 2 * n := by\n  intro n; unfold double; omega\n```"),
+		line("```lean\ntheorem goal : ∀ n : Nat, double n = 2 * n := by sorry\n```"),
+	}
+	if _, err := s.startEvals(context.Background(), evalRunRequest{Models: []string{"small:q4"}, Sets: []string{"l"}}); err != nil {
+		t.Fatal(err)
+	}
+	waitEvals(t, s)
+	r, _ := s.evalRes.Get("d1", "l", "")
+	if r == nil || !r.Done() || r.Correct != 1 || !r.Answers[0].Correct || r.Answers[1].Correct || !strings.Contains(r.Answers[1].Output, "sorry") {
+		t.Fatalf("result %+v", r)
+	}
+	// The prompt gives the definitions and the exact theorem to prove.
+	fake.mu.Lock()
+	msg := fake.chatReqs[len(fake.chatReqs)-2].Messages[0].Content
+	fake.mu.Unlock()
+	if !strings.Contains(msg, "def double") || !strings.Contains(msg, "theorem goal : ∀ n : Nat, double n = 2 * n") {
+		t.Errorf("prompt: %s", msg)
 	}
 }

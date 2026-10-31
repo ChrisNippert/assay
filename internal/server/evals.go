@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"assay/internal/evals"
+	"assay/internal/lean"
 	"assay/internal/ollama"
 	"assay/internal/scores"
 )
@@ -170,6 +171,9 @@ func (s *Server) startEvals(ctx context.Context, req evalRunRequest) (evalState,
 		set, err := s.evalLib.Get(id)
 		if err != nil {
 			return evalState{}, errors.New("no such set: " + id)
+		}
+		if set.NeedsLean() && s.leanInst.Binary() == "" {
+			return evalState{}, errors.New(set.Name + " is checked by Lean, which isn't installed yet. Install it from the Benchmarks page first.")
 		}
 		if set.NeedsCode() && !evals.HavePython() {
 			return evalState{}, errors.New(set.Name + " runs the model's code with Python 3, and none was found on PATH")
@@ -349,6 +353,12 @@ func (s *Server) runEvalItem(ctx context.Context, i int, redo bool) error {
 				}
 			case evals.CheckJudge:
 				a.Pending = true
+			case evals.CheckLean:
+				if err := s.gradeLean(ctx, q, &a); ctx.Err() != nil {
+					return ctx.Err()
+				} else if err != nil {
+					return err
+				}
 			}
 		}
 		res.Answers = append(res.Answers, a)
@@ -374,6 +384,28 @@ func gradeCode(ctx context.Context, q evals.Question, a *evals.Answer) error {
 		return err
 	}
 	a.Correct, a.Output = pass, out
+	return nil
+}
+
+// gradeLean checks the reply's Lean proof of the question's statement.
+func (s *Server) gradeLean(ctx context.Context, q evals.Question, a *evals.Answer) error {
+	bin := s.leanInst.Binary()
+	if bin == "" {
+		return errors.New("Lean isn't installed")
+	}
+	code, ok := lean.ExtractCode(evals.StripThinking(a.Reply))
+	if !ok {
+		a.Output = "No ```lean code block in the reply."
+		return nil
+	}
+	r, err := lean.Check(ctx, bin, q.Preamble, q.Statement, code)
+	if err != nil {
+		return err
+	}
+	a.Correct, a.Output = r.OK, r.Output
+	if r.OK && a.Output == "" {
+		a.Output = "Lean accepted the proof."
+	}
 	return nil
 }
 
@@ -503,10 +535,11 @@ type evalSetJSON struct {
 	Hash        string `json:"hash"`
 	Judge       bool   `json:"judge,omitempty"` // has questions a judge model grades
 	Code        bool   `json:"code,omitempty"`  // runs the model's code
+	Lean        bool   `json:"lean,omitempty"`  // checked by Lean
 }
 
 func setJSON(st *evals.Set) evalSetJSON {
-	return evalSetJSON{ID: st.ID, Name: st.Name, Short: st.ShortName(), Description: st.Description, Check: st.Check, Questions: len(st.Questions), BuiltIn: st.BuiltIn, Hash: st.Hash, Judge: st.NeedsJudge(), Code: st.NeedsCode()}
+	return evalSetJSON{ID: st.ID, Name: st.Name, Short: st.ShortName(), Description: st.Description, Check: st.Check, Questions: len(st.Questions), BuiltIn: st.BuiltIn, Hash: st.Hash, Judge: st.NeedsJudge(), Code: st.NeedsCode(), Lean: st.NeedsLean()}
 }
 
 func (s *Server) evalSets() ([]evalSetJSON, map[string]string) {
@@ -824,6 +857,30 @@ func (s *Server) handleBenchmarksPage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.log.Warn("benchmarks page", "err", err)
 	}
-	p.Data = &benchmarksData{Initial: map[string]any{"results": res, "run": s.evalJob.state()}}
+	p.Data = &benchmarksData{Initial: map[string]any{"results": res, "run": s.evalJob.state(), "lean": s.leanInst.Status()}}
 	s.render(w, "benchmarks", p)
+}
+
+// Lean, for proof sets.
+
+func (s *Server) handleLeanStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, s.leanInst.Status())
+}
+
+func (s *Server) handleLeanInstall(w http.ResponseWriter, r *http.Request) {
+	if s.leanInst.Dir == "" {
+		writeError(w, http.StatusBadRequest, "no folder to install Lean in")
+		return
+	}
+	if err := s.leanInst.Start(); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, s.leanInst.Status())
+}
+
+func (s *Server) handleLeanCancel(w http.ResponseWriter, r *http.Request) {
+	s.leanInst.Cancel()
+	writeJSON(w, http.StatusOK, s.leanInst.Status())
 }

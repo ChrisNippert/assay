@@ -2256,6 +2256,10 @@ button.bm-th:hover { color: var(--text); }
 .bm-pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0 0; font-family: inherit; font-size: var(--fs-sm); line-height: 1.5; max-height: 320px; overflow-y: auto; }
 .bm-reply { background: var(--sunk, var(--soft)); border-radius: 8px; padding: 8px 10px; }
 .bm-out { font-family: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace; font-size: 12px; }
+.bm-lean { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-top: 6px; }
+.bm-lean .muted { flex: 1 1 260px; }
+.bm-lean-need { padding: 10px 12px; border-radius: 10px; background: var(--sunk, var(--soft)); }
+.bm-lean-need .bm-lean { margin-top: 0; }
 .bm-judge select { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
 @media (max-width: 720px) {
   .bm-fit { grid-template-columns: 1fr; }

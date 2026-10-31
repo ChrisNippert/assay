@@ -1,0 +1,326 @@
+name = "Proofs in Lean"
+short = "Lean"
+description = "Theorems to prove in Lean 4 (core, no Mathlib), checked by the Lean prover: no judge. Needs Lean, which Assay can install."
+check = "lean"
+
+[[questions]]
+id = "rev-rev"
+prompt = "Prove that reversing a list twice gives the list back."
+statement = "∀ l : List Nat, l.reverse.reverse = l"
+answer = '''
+theorem goal : ∀ l : List Nat, l.reverse.reverse = l := by intro l; simp
+'''
+
+[[questions]]
+id = "append-length"
+prompt = "Prove that the length of two lists appended is the sum of their lengths."
+statement = "∀ l₁ l₂ : List Nat, (l₁ ++ l₂).length = l₁.length + l₂.length"
+answer = '''
+theorem goal : ∀ l₁ l₂ : List Nat, (l₁ ++ l₂).length = l₁.length + l₂.length := by intro a b; simp
+'''
+
+[[questions]]
+id = "even-product"
+prompt = "Prove that n(n + 1) is even for every natural number n."
+statement = "∀ n : Nat, 2 ∣ n * (n + 1)"
+answer = '''
+theorem goal : ∀ n : Nat, 2 ∣ n * (n + 1) := by
+  intro n
+  apply Nat.dvd_of_mod_eq_zero
+  rcases Nat.mod_two_eq_zero_or_one n with h | h <;> simp [Nat.mul_mod, Nat.add_mod, h]
+'''
+
+[[questions]]
+id = "four-consecutive"
+prompt = "Prove that the product of four consecutive natural numbers, plus one, is a perfect square."
+statement = "∀ n : Nat, n * (n + 1) * (n + 2) * (n + 3) + 1 = (n * n + 3 * n + 1) ^ 2"
+answer = '''
+theorem goal : ∀ n : Nat, n * (n + 1) * (n + 2) * (n + 3) + 1 = (n * n + 3 * n + 1) ^ 2 := by
+  intro n; grind
+'''
+
+[[questions]]
+id = "odd-sum"
+prompt = "Prove that the sum of the first n odd numbers is n²."
+statement = "∀ n : Nat, oddSum n = n * n"
+preamble = '''
+def oddSum : Nat → Nat
+  | 0 => 0
+  | n + 1 => oddSum n + (2 * n + 1)
+'''
+answer = '''
+theorem goal : ∀ n : Nat, oddSum n = n * n := by
+  intro n
+  induction n with
+  | zero => rfl
+  | succ k ih => simp only [oddSum, ih]; grind
+'''
+
+[[questions]]
+id = "gauss"
+prompt = "Prove Gauss's formula: twice the sum 1 + 2 + … + n equals n(n + 1)."
+statement = "∀ n : Nat, 2 * sumTo n = n * (n + 1)"
+preamble = '''
+def sumTo : Nat → Nat
+  | 0 => 0
+  | n + 1 => sumTo n + (n + 1)
+'''
+answer = '''
+theorem goal : ∀ n : Nat, 2 * sumTo n = n * (n + 1) := by
+  intro n
+  induction n with
+  | zero => rfl
+  | succ k ih => simp only [sumTo]; grind
+'''
+
+[[questions]]
+id = "cube-minus"
+prompt = "Prove that n³ − n is divisible by 6 for every integer n."
+statement = "∀ n : Int, 6 ∣ n ^ 3 - n"
+answer = '''
+theorem goal : ∀ n : Int, 6 ∣ n ^ 3 - n := by
+  intro n
+  have e : n ^ 3 = n * n * n := by grind
+  rw [e]
+  apply Int.dvd_of_emod_eq_zero
+  have : n % 6 = 0 ∨ n % 6 = 1 ∨ n % 6 = 2 ∨ n % 6 = 3 ∨ n % 6 = 4 ∨ n % 6 = 5 := by omega
+  rcases this with h | h | h | h | h | h <;> simp [Int.sub_emod, Int.mul_emod, h]
+'''
+
+[[questions]]
+id = "pythagorean-three"
+prompt = "Prove that if a² + b² = c² for natural numbers, then 3 divides a or b."
+statement = "∀ a b c : Nat, a * a + b * b = c * c → a % 3 = 0 ∨ b % 3 = 0"
+answer = '''
+theorem goal : ∀ a b c : Nat, a * a + b * b = c * c → a % 3 = 0 ∨ b % 3 = 0 := by
+  intro a b c h
+  have hm : (a * a + b * b) % 3 = c * c % 3 := by rw [h]
+  rw [Nat.add_mod, Nat.mul_mod a, Nat.mul_mod b, Nat.mul_mod c] at hm
+  have : a % 3 < 3 := Nat.mod_lt _ (by decide)
+  have : b % 3 < 3 := Nat.mod_lt _ (by decide)
+  have : c % 3 < 3 := Nat.mod_lt _ (by decide)
+  rcases (by omega : a % 3 = 0 ∨ a % 3 = 1 ∨ a % 3 = 2) with h1 | h1 | h1 <;>
+  rcases (by omega : b % 3 = 0 ∨ b % 3 = 1 ∨ b % 3 = 2) with h2 | h2 | h2 <;>
+  rcases (by omega : c % 3 = 0 ∨ c % 3 = 1 ∨ c % 3 = 2) with h4 | h4 | h4 <;>
+  simp [h1, h2, h4] at hm <;> omega
+'''
+
+[[questions]]
+id = "two-power"
+prompt = "Prove that n² < 2ⁿ for every n ≥ 5."
+statement = "∀ n : Nat, 5 ≤ n → n * n < 2 ^ n"
+answer = '''
+theorem goal : ∀ n : Nat, 5 ≤ n → n * n < 2 ^ n := by
+  intro n hn
+  induction n with
+  | zero => omega
+  | succ k ih =>
+    rcases Nat.lt_or_ge k 5 with hk | hk
+    · have : k = 4 := by omega
+      subst this; decide
+    · have ih := ih hk
+      rw [Nat.pow_succ]
+      have : 5 * k ≤ k * k := Nat.mul_le_mul_right k hk
+      grind
+'''
+
+[[questions]]
+id = "euler-false"
+prompt = "Some say n² + n + 41 is prime for every natural number n. Prove that this is false: find an n where it has a divisor strictly between 1 and itself."
+statement = "∃ n d : Nat, 1 < d ∧ d < n * n + n + 41 ∧ (n * n + n + 41) % d = 0"
+answer = '''
+theorem goal : ∃ n d : Nat, 1 < d ∧ d < n * n + n + 41 ∧ (n * n + n + 41) % d = 0 :=
+  ⟨40, 41, by decide⟩
+'''
+
+[[questions]]
+id = "cantor"
+prompt = "Prove Cantor's theorem for the natural numbers: no function from ℕ to sets of naturals (predicates) hits every set."
+statement = "∀ f : Nat → (Nat → Prop), ∃ S : Nat → Prop, ∀ n, f n ≠ S"
+answer = '''
+theorem goal : ∀ f : Nat → (Nat → Prop), ∃ S : Nat → Prop, ∀ n, f n ≠ S := by
+  intro f
+  refine ⟨fun n => ¬ f n n, fun n h => ?_⟩
+  have := congrFun h n
+  by_cases hn : f n n
+  · exact (this ▸ hn) hn |>.elim
+  · exact hn (this ▸ hn)
+'''
+
+[[questions]]
+id = "fib-sum"
+prompt = "Prove that F₁ + F₂ + … + Fₙ = Fₙ₊₂ − 1 for the Fibonacci numbers."
+statement = "∀ n : Nat, fibSum n + 1 = fib (n + 2)"
+preamble = '''
+def fib : Nat → Nat
+  | 0 => 0
+  | 1 => 1
+  | n + 2 => fib n + fib (n + 1)
+def fibSum : Nat → Nat
+  | 0 => 0
+  | n + 1 => fibSum n + fib (n + 1)
+'''
+answer = '''
+theorem goal : ∀ n : Nat, fibSum n + 1 = fib (n + 2) := by
+  intro n
+  induction n with
+  | zero => rfl
+  | succ k ih =>
+    have : fib (k + 3) = fib (k + 1) + fib (k + 2) := rfl
+    show fibSum k + fib (k + 1) + 1 = fib (k + 3)
+    omega
+'''
+
+[[questions]]
+id = "nicomachus"
+prompt = "Prove Nicomachus's theorem: 1³ + 2³ + … + n³ = (1 + 2 + … + n)²."
+statement = "∀ n : Nat, cubeSum n = sumTo n ^ 2"
+preamble = '''
+def sumTo : Nat → Nat
+  | 0 => 0
+  | n + 1 => sumTo n + (n + 1)
+def cubeSum : Nat → Nat
+  | 0 => 0
+  | n + 1 => cubeSum n + (n + 1) ^ 3
+'''
+answer = '''
+theorem gauss_lemma : ∀ n : Nat, 2 * sumTo n = n * (n + 1) := by
+  intro n
+  induction n with
+  | zero => rfl
+  | succ k ih => simp only [sumTo]; grind
+theorem goal : ∀ n : Nat, cubeSum n = sumTo n ^ 2 := by
+  intro n
+  induction n with
+  | zero => rfl
+  | succ k ih =>
+    have g := gauss_lemma k
+    simp only [cubeSum, sumTo, ih]
+    grind
+'''
+
+[[questions]]
+id = "sqrt2"
+prompt = "Prove that √2 is irrational, stated over the naturals: p² is never 2q² when q > 0."
+statement = "∀ p q : Nat, 0 < q → p * p ≠ 2 * (q * q)"
+answer = '''
+theorem goal : ∀ p q : Nat, 0 < q → p * p ≠ 2 * (q * q) := by
+  intro p
+  induction p using Nat.strongRecOn with
+  | _ p ih =>
+    intro q hq h
+    have hp2 : p % 2 = 0 := by
+      have : p * p % 2 = 0 := by omega
+      rcases Nat.mod_two_eq_zero_or_one p with h0 | h1
+      · exact h0
+      · rw [Nat.mul_mod, h1] at this; simp at this
+    obtain ⟨k, rfl⟩ : 2 ∣ p := Nat.dvd_of_mod_eq_zero hp2
+    have hq2 : q * q = 2 * (k * k) := by grind
+    have hqe : q % 2 = 0 := by
+      have : q * q % 2 = 0 := by omega
+      rcases Nat.mod_two_eq_zero_or_one q with h0 | h1
+      · exact h0
+      · rw [Nat.mul_mod, h1] at this; simp at this
+    obtain ⟨m, rfl⟩ : 2 ∣ q := Nat.dvd_of_mod_eq_zero hqe
+    have hk : 0 < k := by
+      rcases Nat.eq_zero_or_pos k with h0 | h0
+      · subst h0; exfalso; have := Nat.mul_pos hq hq; simp at hq2; omega
+      · exact h0
+    have hm : 0 < m := by omega
+    have : k < 2 * k := by omega
+    exact ih k this m hm (by grind)
+'''
+
+[[questions]]
+id = "infinite-primes"
+prompt = "Prove that there are infinitely many primes: above every n there is a prime."
+statement = "∀ n : Nat, ∃ p, n < p ∧ IsPrime p"
+preamble = '''
+def IsPrime (p : Nat) : Prop := 2 ≤ p ∧ ∀ d, d ∣ p → d = 1 ∨ d = p
+'''
+answer = '''
+theorem prime_factor : ∀ m : Nat, 2 ≤ m → ∃ p, IsPrime p ∧ p ∣ m := by
+  intro m
+  induction m using Nat.strongRecOn with
+  | _ m ih =>
+    intro hm
+    by_cases hp : ∀ d, d ∣ m → d = 1 ∨ d = m
+    · exact ⟨m, ⟨hm, hp⟩, Nat.dvd_refl m⟩
+    · simp only [Classical.not_forall, not_or] at hp
+      obtain ⟨d, hd, hd1, hdm⟩ := hp
+      have dpos : 0 < d := Nat.pos_of_dvd_of_pos hd (by omega)
+      have dle : d ≤ m := Nat.le_of_dvd (by omega) hd
+      obtain ⟨p, pp, pd⟩ := ih d (by omega) (by omega)
+      exact ⟨p, pp, Nat.dvd_trans pd hd⟩
+def fact : Nat → Nat
+  | 0 => 1
+  | n + 1 => (n + 1) * fact n
+theorem fact_pos : ∀ n, 0 < fact n := by
+  intro n; induction n with
+  | zero => decide
+  | succ k ih => simp only [fact]; exact Nat.mul_pos (by omega) ih
+theorem dvd_fact : ∀ n k, 1 ≤ k → k ≤ n → k ∣ fact n := by
+  intro n; induction n with
+  | zero => intro k h1 h2; omega
+  | succ m ih =>
+    intro k h1 h2
+    simp only [fact]
+    rcases Nat.lt_or_ge k (m + 1) with h | h
+    · exact Nat.dvd_trans (ih k h1 (by omega)) (Nat.dvd_mul_left _ _)
+    · have : k = m + 1 := by omega
+      subst this; exact Nat.dvd_mul_right _ _
+theorem goal : ∀ n : Nat, ∃ p, n < p ∧ IsPrime p := by
+  intro n
+  obtain ⟨p, pp, pd⟩ := prime_factor (fact n + 1) (by have := fact_pos n; omega)
+  refine ⟨p, ?_, pp⟩
+  by_cases h : p ≤ n
+  · have : p ∣ fact n := dvd_fact n p (by have := pp.1; omega) h
+    have h1 : p ∣ 1 := (Nat.dvd_add_right this).mp pd
+    have := Nat.le_of_dvd (by decide) h1
+    have := pp.1; omega
+  · omega
+'''
+
+[[questions]]
+id = "insertion-sort"
+prompt = "Prove that insertion sort returns a sorted list."
+statement = "∀ l : List Nat, Sorted (isort l)"
+preamble = '''
+def ins (x : Nat) : List Nat → List Nat
+  | [] => [x]
+  | y :: ys => if x ≤ y then x :: y :: ys else y :: ins x ys
+def isort : List Nat → List Nat
+  | [] => []
+  | x :: xs => ins x (isort xs)
+def Sorted : List Nat → Prop
+  | [] => True
+  | [_] => True
+  | x :: y :: rest => x ≤ y ∧ Sorted (y :: rest)
+'''
+answer = '''
+theorem ins_sorted (x : Nat) : ∀ l, Sorted l → Sorted (ins x l)
+  | [], _ => by simp [ins, Sorted]
+  | [y], _ => by
+      by_cases hxy : x ≤ y
+      · simp [ins, Sorted, hxy]
+      · simp [ins, Sorted, hxy]; omega
+  | y :: z :: zs, h => by
+      have h1 : y ≤ z := h.1
+      have h2 : Sorted (z :: zs) := h.2
+      have ih := ins_sorted x (z :: zs) h2
+      by_cases hxy : x ≤ y
+      · have e : ins x (y :: z :: zs) = x :: y :: z :: zs := by simp [ins, hxy]
+        rw [e]; exact ⟨hxy, h⟩
+      · have e : ins x (y :: z :: zs) = y :: ins x (z :: zs) := by simp [ins, hxy]
+        rw [e]
+        by_cases hxz : x ≤ z
+        · have e2 : ins x (z :: zs) = x :: z :: zs := by simp [ins, hxz]
+          rw [e2] at ih ⊢; exact ⟨by omega, ih⟩
+        · have e2 : ins x (z :: zs) = z :: ins x zs := by simp [ins, hxz]
+          rw [e2] at ih ⊢; exact ⟨h1, ih⟩
+theorem goal : ∀ l : List Nat, Sorted (isort l) := by
+  intro l
+  induction l with
+  | nil => trivial
+  | cons x xs ih => exact ins_sorted x _ ih
+'''
