@@ -79,10 +79,10 @@ func (s *Server) turnTools(ctx context.Context, c *chats.Chat, want *bool, model
 		d.Project = s.projectSearch(c.Project)
 	}
 	out := tools.Build(d)
-	if c.EditCode { // opt-in per chat, so not in the Settings catalog
+	if c.EditCode && d.Settings.On("edit_code") { // also opt-in per chat
 		out = append(out, editCodeTool(c))
 	}
-	if c.Forget {
+	if c.Forget && d.Settings.On("forget") {
 		out = append(out, forgetTool(c))
 	}
 	return out

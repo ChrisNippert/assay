@@ -68,6 +68,9 @@ var Catalog = []Info{
 	{"search_chats", "Search saved chats", "Finds things you discussed in earlier chats"},
 	{"search_project", "Search project files", "Looks through the files of the chat’s project"},
 	{"current_time", "Current time", "Today’s date and the time"},
+	// Built in internal/server, and only for chats that switch them on in Tune.
+	{"edit_code", "Edit code blocks", "Changes an earlier code block instead of reprinting it; switch it on per chat in Tune"},
+	{"forget", "Trim old messages", "Leaves earlier messages out of later prompts, with a note and undo; switch it on per chat in Tune"},
 }
 
 func infoOf(name string) (Info, bool) {
