@@ -24,6 +24,8 @@ type Stats struct {
 	PromptTokens int     `json:"promptTokens"`
 	OutputTokens int     `json:"outputTokens"`
 	TokensPerSec float64 `json:"tokensPerSec"`
+	// PromptPerSec is how fast the prompt was read (0 when it was cached).
+	PromptPerSec float64 `json:"promptPerSec,omitempty"`
 	TotalMS      int64   `json:"totalMs"`
 	LoadMS       int64   `json:"loadMs"`
 	// DoneReason is why generation stopped: "stop" normally, "length" when

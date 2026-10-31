@@ -306,13 +306,13 @@
     check: '<path d="M5 12l5 5 9-10"/>',
     speak: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>',
   };
-  function actionBtn(action, label) {
-    const b = el('button', 'msg-action');
+  function actionBtn(action, label, text) {
+    const b = el('button', text ? 'msg-action txt' : 'msg-action');
     b.type = 'button';
     b.dataset.action = action;
     b.title = label;
     b.setAttribute('aria-label', label);
-    b.innerHTML = `<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[action]}</svg>`;
+    b.innerHTML = `<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[action]}</svg>${text ? `<span class="msg-action-text">${text}</span>` : ''}`;
     return b;
   }
 
@@ -338,7 +338,7 @@
   function addActions(msg) {
     const bar = el('div', 'msg-actions');
     if (msg.classList.contains('user')) bar.append(actionBtn('copy', 'Copy'), actionBtn('edit', 'Edit and resend'));
-    else bar.append(actionBtn('copy', 'Copy'), actionBtn('speak', 'Read aloud'), actionBtn('redo', 'Regenerate'));
+    else bar.append(actionBtn('copy', 'Copy', 'Copy'), actionBtn('redo', 'Regenerate', 'Retry'), actionBtn('speak', 'Read aloud'));
     const stats = msg.querySelector(':scope > .stats');
     if (stats) {
       // Stats and actions share one quiet line under a reply.
@@ -417,7 +417,9 @@
       try {
         await copyText(src);
         btn.innerHTML = btn.innerHTML.replace(/<svg([^>]*)>.*<\/svg>/s, `<svg$1>${ICONS.check}</svg>`);
-        setTimeout(() => { btn.replaceWith(actionBtn('copy', 'Copy')); }, 1200);
+        const label = btn.querySelector('.msg-action-text');
+        if (label) label.textContent = 'Copied';
+        setTimeout(() => { btn.replaceWith(actionBtn('copy', 'Copy', label ? 'Copy' : undefined)); }, 1200);
       } catch { btn.title = 'Couldn’t copy'; }
       return;
     }
@@ -690,32 +692,106 @@
     if (scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 4) follow = true;
   }, { passive: true });
 
-  // ---- context meter ----
-  // How full the model's context is: the last reply's prompt plus its
-  // output, counted up while a reply streams.
-  const meter = document.getElementById('ctx-meter');
+  // ---- header numbers: speed, context, GPU memory ----
+  // Always shown. Context: the last reply's prompt plus its output (counted
+  // up while a reply streams), of the length the model runs with, else the
+  // length Tune shows. Speed: counted live while a reply streams, then the
+  // server's figure. All painting happens at most once a frame.
   const kfmt = (n) => n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n);
-  let ctxUsed = 0, ctxMax = 0;
+  const $n = (id) => document.getElementById(id);
+  const numEls = { tps: $n('num-tps'), used: $n('ctx-used'), max: $n('ctx-max'), fill: $n('ctx-fill'), wrap: $n('ctx-meter'), compress: $n('ctx-compress'), gpuUsed: $n('gpu-used'), gpuTotal: $n('gpu-total'), gpu: $n('num-gpu') };
+  let ctxUsed = 0, ctxMax = 0; // ctxMax: what the last reply or the loaded model says
+  let liveTps = 0, lastTps = 0, gpuNums = null, numFrame = 0, numLive = false;
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  // Sets a number's text; a changed value outside live counting eases in.
+  function setNum(node, text) {
+    if (!node || node.textContent === text) return;
+    node.textContent = text;
+    if (!numLive && !reduceMotion.matches) {
+      node.classList.remove('bump');
+      void node.offsetWidth;
+      node.classList.add('bump');
+    }
+  }
+  function paintNumbers() {
+    numFrame = 0;
+    if (!numEls.wrap) return;
+    const max = ctxMax || window.assayTune?.contextSize?.() || 0;
+    const pct = max ? Math.min(100, (ctxUsed * 100) / max) : 0;
+    numEls.fill.style.width = pct + '%';
+    numEls.wrap.classList.toggle('warn', pct >= 80);
+    setNum(numEls.used, kfmt(ctxUsed));
+    setNum(numEls.max, !max ? 'auto' : max % 1024 === 0 ? max / 1024 + 'k' : kfmt(max));
+    // Compress is offered when the chat nears the limit and has something to fold up.
+    const msgs = list.querySelectorAll(':scope > .msg').length, folded = window.assayTune?.compression?.()?.upTo || 0;
+    numEls.compress.hidden = !(pct >= 80 && chatId && msgs - 4 > folded && !controller);
+    const tps = numLive ? liveTps : lastTps;
+    setNum(numEls.tps, tps ? String(Math.round(tps)) : '–');
+    numEls.tps.classList.toggle('live', numLive);
+    if (gpuNums) {
+      setNum(numEls.gpuUsed, gpuNums.used);
+      setNum(numEls.gpuTotal, gpuNums.total);
+    }
+  }
+  const paintSoon = () => { if (!numFrame) numFrame = requestAnimationFrame(paintNumbers); };
   function showContext(used, max) {
     if (used != null) ctxUsed = used;
     if (max) ctxMax = max;
-    if (!ctxMax) ctxMax = window.assayTune?.contextSize?.() || 0; // before the first reply says
-    if (!meter) return;
-    meter.hidden = !ctxUsed;
-    const pct = ctxMax ? Math.min(100, (ctxUsed * 100) / ctxMax) : 0;
-    document.getElementById('ctx-fill').style.width = pct + '%';
-    meter.classList.toggle('warn', pct >= 80);
-    meter.classList.toggle('nomax', !ctxMax);
-    document.getElementById('ctx-text').textContent = ctxMax
-      ? `${kfmt(ctxUsed)} / ${kfmt(ctxMax)} context · ${Math.round(pct)}%`
-      : `${kfmt(ctxUsed)} tokens of context used`;
+    paintSoon();
+  }
+  // The loaded model's share of GPU memory, of the card's total.
+  const gb = (b) => { const v = b / 2 ** 30; return v >= 10 ? String(Math.round(v)) : v.toFixed(1); };
+  async function refreshGpu() {
+    try {
+      const [g, l] = await Promise.all([fetch('/api/gpu').then((r) => r.json()), fetch('/api/loaded').then((r) => r.json())]);
+      const model = baseOf(selectedOption());
+      const mine = (l || []).find((m) => !m.loading && (m.name === model || m.name === selectedOption()?.value)) || (l || []).find((m) => !m.loading);
+      const used = mine ? (mine.sizeVram || 0) : 0;
+      if (g?.vramTotal > 0) gpuNums = { used: gb(used), total: gb(g.vramTotal) };
+      if (mine?.context && !ctxMax) ctxMax = mine.context;
+    } catch {}
+    paintSoon();
   }
   {
-    const last = [...list.querySelectorAll('.stats[data-used]')].pop();
-    if (last) showContext(last.dataset.used.split('+').reduce((a, b) => a + +b, 0), +last.dataset.ctx || 0);
+    const lastStats = [...list.querySelectorAll('.stats[data-used]')].pop();
+    if (lastStats) {
+      let used = lastStats.dataset.used.split('+').reduce((a, b) => a + +b, 0);
+      // A summary made after the last reply (Compress now) shrank the prompt.
+      const c = window.assayTune?.compression?.();
+      if (c?.saved && c.created && Date.parse(c.created) / 1000 > +lastStats.dataset.at) used = Math.max(0, used - c.saved);
+      ctxUsed = used;
+      ctxMax = +lastStats.dataset.ctx || 0;
+      lastTps = +lastStats.dataset.tps || 0;
+    } else {
+      // No reply yet (a new chat, or one from before stats were kept): guess from the text.
+      let chars = 0;
+      for (const m of list.querySelectorAll(':scope > .msg')) chars += m.textContent.length;
+      ctxUsed = Math.round(chars / 3.8);
+    }
+    paintNumbers();
   }
-  meter?.addEventListener('click', () => document.getElementById('tune-btn')?.click());
-  meter?.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); meter.click(); } });
+  $n('ctx-open')?.addEventListener('click', () => window.assayTune?.open?.('num_ctx'));
+  numEls.compress?.addEventListener('click', async () => {
+    numEls.compress.disabled = true;
+    numEls.compress.textContent = 'Summarizing…';
+    try {
+      const res = await fetch(`/api/chats/${encodeURIComponent(chatId)}/compress`, { method: 'POST' });
+      if (!res.ok) throw new Error(await errorText(res));
+      location.reload();
+    } catch (err) {
+      numEls.compress.disabled = false;
+      numEls.compress.textContent = 'Compress';
+      numEls.compress.title = err.message;
+    }
+  });
+  numEls.gpu?.addEventListener('click', () => {
+    const chip = document.getElementById('mem-btn');
+    if (chip) chip.click(); else location.href = '/library';
+  });
+  // Tune loads its numbers after the page, and changes with the model.
+  document.addEventListener('tune-changed', paintSoon);
+  document.addEventListener('loaded-changed', refreshGpu);
+  refreshGpu();
 
   async function readNDJSON(body, onEvent) {
     const reader = body.getReader();
@@ -734,10 +810,13 @@
     }
   }
 
-  function statsText(st) {
-    let text = `${st.tokensPerSec.toFixed(1)} tok/s · ${st.outputTokens} tokens`;
-    if (st.context) text += ` · ${Math.round(st.context / 1024)}k context${st.autoContext ? ' (auto)' : ''}`;
-    return text;
+  // The stats line under a reply; the server renders the same markup.
+  function statsHTML(st) {
+    const part = (v, label) => `<span class="st"><b>${v}</b> ${label}</span>`;
+    return part(Math.round(st.tokensPerSec), 'tok/s')
+      + (st.promptPerSec ? part(Math.round(st.promptPerSec), 'tok/s reading') : '')
+      + part(st.outputTokens, 'tokens')
+      + (st.totalMs ? part((st.totalMs / 1000).toFixed(1), 's') : '');
   }
 
   function lengthNote(onlyThinking, stats) {
@@ -964,9 +1043,24 @@
     controller = new AbortController();
     syncSendBtn();
     let streamed = 0;
+    // Live speed: characters streamed over time (about 3.8 a token), smoothed.
+    // Counted from the first token, so reading the prompt doesn't drag it down.
+    let tpsAt = 0, tpsChars = 0, tpsSeen = 0;
+    const tickSpeed = () => {
+      if (resume || !tpsAt) return;
+      const now = performance.now();
+      if (now - tpsAt < 250) return;
+      const rate = ((streamed - tpsChars) / 3.8) / ((now - tpsAt) / 1000);
+      liveTps = liveTps && tpsSeen > 1 ? liveTps * 0.7 + rate * 0.3 : rate;
+      tpsSeen++;
+      tpsAt = now;
+      tpsChars = streamed;
+      numLive = true;
+    };
     const ctxStart = ctxUsed + Math.round(text.length / 3.8);
     let outcome = 'done';
     // If the reply has to load the model first, the memory list shows it.
+    refreshGpu();
     const loadCheck = isLoaded(selectedOption()) ? null : setTimeout(() => refreshLoaded(true), 500);
     let content = '';
     let thinking = '';
@@ -1005,8 +1099,10 @@
         // A chunk can hold several tokens: estimate from the text (~3.8
         // characters a token) until the reply's own count arrives.
         if (ev.type === 'content' || ev.type === 'thinking') {
+          if (!tpsAt) { tpsAt = performance.now(); tpsChars = streamed; liveTps = 0; }
           streamed += ev.text.length;
           showContext(ctxStart + Math.round(streamed / 3.8));
+          tickSpeed();
         } else if (frame) draw(); // anything else lands after the text so far
         switch (ev.type) {
           case 'chat':
@@ -1078,7 +1174,9 @@
             break;
           case 'done':
             if (ev.stats) {
-              stats.textContent = statsText(ev.stats);
+              stats.innerHTML = statsHTML(ev.stats);
+              lastTps = ev.stats.tokensPerSec || lastTps;
+              numLive = false;
               showContext(ev.stats.promptTokens + ev.stats.outputTokens, ev.stats.context);
             }
             if (ev.stats?.doneReason === 'length') reply.append(el('div', 'msg-warn', lengthNote(!content && !!thinking, ev.stats)));
@@ -1119,6 +1217,8 @@
       if (chatId) window.assay.trackRunning(chatId, false);
       addActions(reply);
       input.focus();
+      numLive = false;
+      refreshGpu();
       refreshLoaded(); // chatting loads the model, so the memory list may have changed
       window.assayTune?.setChat({ messages: list.querySelectorAll(':scope > .msg').length });
     }

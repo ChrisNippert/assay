@@ -919,6 +919,7 @@
     const n = changedCount();
     summary.textContent = ['Tune', ...parts, n ? `${n} changed` : ''].filter(Boolean).join(' · ');
     openBtn.classList.toggle('has-changes', n > 0);
+    document.dispatchEvent(new Event('tune-changed'));
   }
 
   // ---- which model is tuned ----
@@ -1101,7 +1102,16 @@
     // The reply format in effect (the chat's, else the preset's), for display.
     replyFormat: () => shown(FORMAT) ?? 'text',
     baseModel,
-    open() { setOpen(true); },
+    // Opens the panel; with a setting's key, at that setting.
+    open(key) {
+      setOpen(true);
+      if (!key) return;
+      const row = rows.find((r) => r.def.key === key);
+      row?.row.closest('details')?.setAttribute('open', '');
+      const input = $('tp-' + key) || row?.row.querySelector('input, select');
+      setTimeout(() => { input?.scrollIntoView({ block: 'center', behavior: 'smooth' }); input?.focus({ preventScroll: true }); }, 60);
+    },
+    compression: () => chatState.compression,
   };
 
   loadDefaults();
