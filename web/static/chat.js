@@ -12,8 +12,6 @@
   const scroller = document.getElementById('messages');
   const form = document.getElementById('composer');
   const input = document.getElementById('input');
-  // The long hint doesn't fit one line on a phone and its second line is clipped.
-  if (input && window.matchMedia('(max-width: 760px)').matches) input.placeholder = 'Message';
   const sendBtn = document.getElementById('send');
   const sendLabel = sendBtn.querySelector('.send-label');
   let chatId = chatEl.dataset.chatId || '';
@@ -436,26 +434,46 @@
   const baseOf = (opt) => opt?.dataset.base || '';
   let loadedNames = new Set(JSON.parse(chatEl.dataset.loaded || '[]'));
 
-  // The app bar shows what's in memory (with eject). Next to the picker we
-  // only offer "Load" when the picked model isn't loaded yet.
+  // The chip carries the state (dot); the menu says it in words and offers
+  // Eject, and a small Load button sits beside the chip while it isn't loaded.
+  const switcherDot = document.getElementById('switcher-dot');
+  const stateRow = document.getElementById('switcher-state');
+  const ejectBtn = document.getElementById('eject-btn');
   function showLoadState() {
-    const base = baseOf(selectedOption());
-    const names = (selectedOption()?.dataset.names || base).split(' ');
-    const loaded = !base || names.some((n) => loadedNames.has(n));
-    loadBtn.hidden = loaded;
-    if (!loaded) {
+    const opt = selectedOption();
+    const base = baseOf(opt);
+    const as = (opt?.dataset.names || base).split(' ').find((n) => loadedNames.has(n)) || '';
+    const loaded = !!as;
+    switcherDot.classList.toggle('on', loaded);
+    const shown = prettyOf(opt);
+    switcherBtn.title = !base ? 'Choose a model or preset' : `${shown} is ${loaded ? 'loaded' : 'not loaded yet'}. Choose another model or preset`;
+    loadBtn.hidden = loaded || !base;
+    if (!loadBtn.hidden) {
       setLoadButton(loadBtn, base, false);
-      loadBtn.title = `Load ${base} into memory now, so the first reply starts faster`;
+      loadBtn.title = `Load ${prettyOf(modelOption(base) || opt)} into memory now, so the first reply starts faster`;
     }
+    stateRow.hidden = !base;
+    stateRow.querySelector('.switcher-dot').classList.toggle('on', loaded);
+    document.getElementById('switcher-state-text').textContent = loaded ? 'Loaded in memory' : 'Not loaded. It loads on your first message';
+    ejectBtn.hidden = !loaded;
+    if (loaded) { ejectBtn.dataset.eject = as; ejectBtn.disabled = false; ejectBtn.textContent = 'Eject'; }
   }
 
   const isLoaded = (opt) => (opt?.dataset.names || baseOf(opt)).split(' ').some((n) => loadedNames.has(n));
   // The model option a name (any of its aliases) belongs to.
   const modelOption = (name) => [...select.querySelectorAll('option[data-names]')]
     .find((o) => o.dataset.names.split(' ').includes(name));
+  // The readable name ("Gemma 4 12B") for a model option; the raw name stays the identifier.
+  const prettyOf = (opt) => {
+    if (!opt) return '';
+    if (opt.value.startsWith('preset:')) return opt.textContent;
+    return opt.dataset.pretty || opt.textContent;
+  };
+  const quantOfOpt = (opt) => (opt?.value.startsWith('preset:') ? modelOption(baseOf(opt)) : opt)?.dataset.quant || '';
+  // The chip's muted part and a list row's subtitle.
   const metaOf = (opt) => opt?.value.startsWith('preset:')
-    ? 'preset on ' + baseOf(opt)
-    : opt?.dataset.meta?.replace(/^ · | · $/g, '') || '';
+    ? 'preset on ' + (prettyOf(modelOption(baseOf(opt))) || baseOf(opt))
+    : [opt?.dataset.quant, opt?.dataset.meta].filter(Boolean).join(' · ');
 
   // The empty chat says what will happen when you send.
   function showWelcomeHint() {
@@ -463,14 +481,14 @@
     const opt = selectedOption();
     if (!hint || !opt?.value) return;
     hint.textContent = isLoaded(opt)
-      ? `${opt.textContent} is loaded and ready.`
-      : `${opt.textContent} will load when you send your first message.`;
+      ? `${prettyOf(opt)} is loaded and ready.`
+      : `${prettyOf(opt)} will load when you send your first message.`;
   }
 
   function syncPicker() {
     const opt = selectedOption();
-    switcherName.textContent = opt?.textContent || 'Choose a model';
-    meta.textContent = metaOf(opt);
+    switcherName.textContent = prettyOf(opt) || 'Choose a model';
+    meta.textContent = opt?.value.startsWith('preset:') ? metaOf(opt) : quantOfOpt(opt);
     showLoadState();
     showWelcomeHint();
   }
@@ -486,7 +504,7 @@
     options.replaceChildren();
     const q = filter.value.trim().toLowerCase();
     for (const group of select.querySelectorAll('optgroup')) {
-      const opts = [...group.querySelectorAll('option')].filter((o) => o.value && (!q || o.textContent.toLowerCase().includes(q)));
+      const opts = [...group.querySelectorAll('option')].filter((o) => o.value && (!q || (o.textContent + ' ' + prettyOf(o)).toLowerCase().includes(q)));
       if (!opts.length) continue;
       options.append(el('div', 'switcher-group', group.label));
       for (const o of opts) {
@@ -498,7 +516,8 @@
         const dot = el('span', 'switcher-dot' + (isLoaded(o) ? ' on' : ''));
         dot.title = isLoaded(o) ? 'Loaded' : '';
         const text = el('span', 'row-text');
-        const title = el('span', 'row-title', o.textContent);
+        const title = el('span', 'row-title', prettyOf(o));
+        row.title = o.textContent; // the raw name, for the curious
         if (o.value.startsWith('preset:')) title.prepend(el('span', 'switcher-star', '★ '));
         text.append(title, el('span', 'row-sub', metaOf(o)));
         row.append(dot, text);
@@ -722,15 +741,21 @@
     numEls.wrap.classList.toggle('warn', pct >= 80);
     setNum(numEls.used, kfmt(ctxUsed));
     setNum(numEls.max, !max ? 'auto' : max % 1024 === 0 ? max / 1024 + 'k' : kfmt(max));
+    numEls.wrap.classList.toggle('no-used', !max && !ctxUsed); // "Context auto", not "0 of auto"
     // Compress is offered when the chat nears the limit and has something to fold up.
     const msgs = list.querySelectorAll(':scope > .msg').length, folded = window.assayTune?.compression?.()?.upTo || 0;
     numEls.compress.hidden = !(pct >= 80 && chatId && msgs - 4 > folded && !controller);
     const tps = numLive ? liveTps : lastTps;
     setNum(numEls.tps, tps ? String(Math.round(tps)) : '–');
     numEls.tps.classList.toggle('live', numLive);
+    const opt = selectedOption();
+    const off = !!opt?.value && !isLoaded(opt);
+    numEls.gpu.classList.toggle('off', off);
+    numEls.gpu.title = off ? 'Not loaded yet. Click to load it now' : 'GPU memory used by the loaded model. Click to see what is using it';
     if (gpuNums) {
       setNum(numEls.gpuUsed, gpuNums.used);
       setNum(numEls.gpuTotal, gpuNums.total);
+      numEls.gpu.classList.toggle('cpu', !!gpuNums.cpu);
     }
   }
   const paintSoon = () => { if (!numFrame) numFrame = requestAnimationFrame(paintNumbers); };
@@ -747,7 +772,7 @@
       const model = baseOf(selectedOption());
       const mine = (l || []).find((m) => !m.loading && (m.name === model || m.name === selectedOption()?.value)) || (l || []).find((m) => !m.loading);
       const used = mine ? (mine.sizeVram || 0) : 0;
-      if (g?.vramTotal > 0) gpuNums = { used: gb(used), total: gb(g.vramTotal) };
+      if (g?.vramTotal > 0) gpuNums = { used: gb(used), total: gb(g.vramTotal), cpu: !!mine && mine.size > 0 && !used };
       if (mine?.context && !ctxMax) ctxMax = mine.context;
     } catch {}
     paintSoon();
@@ -785,6 +810,7 @@
     }
   });
   numEls.gpu?.addEventListener('click', () => {
+    if (numEls.gpu.classList.contains('off') && !loadBtn.hidden) { loadBtn.click(); return; }
     const chip = document.getElementById('mem-btn');
     if (chip) chip.click(); else location.href = '/library';
   });
@@ -936,9 +962,8 @@
   input.addEventListener('input', syncSendBtn);
   // On a phone the box grows with the text (up to about six lines).
   function fitInput() {
-    if (!isPhone()) { input.style.height = ''; return; }
     input.style.height = 'auto';
-    input.style.height = Math.min(input.scrollHeight + 2, 152) + 'px';
+    input.style.height = Math.min(input.scrollHeight + 2, isPhone() ? 152 : 240) + 'px';
   }
   sheets.phone.addEventListener('change', fitInput);
   // Attaching a file also makes a draft.
@@ -1019,10 +1044,15 @@
     const reply = el('div', 'msg assistant');
     // The reply is a run of segments (thinking, text), with a row for each
     // tool call between them; these are the current segment's elements.
-    let thinkBox, thinkText, md;
+    let thinkBox, thinkText, md, thinkStart = 0;
+    const thoughtFor = () => {
+      const n = Math.max(1, Math.round((performance.now() - thinkStart) / 1000));
+      return `Thought for ${n} second${n === 1 ? '' : 's'}`;
+    };
     const newSegment = () => {
       thinkBox = el('details', 'thinking');
       thinkBox.hidden = true;
+      thinkStart = 0;
       thinkBox.append(el('summary', null, 'Thinking…'));
       thinkText = el('div', 'thinking-text');
       thinkBox.append(thinkText);
@@ -1076,7 +1106,7 @@
         drawnThinking = thinking.length;
         thinkText.textContent = thinking;
         // A long think shows it's still going, even folded up.
-        if (!content) thinkBox.querySelector('summary').textContent = `Thinking… ~${kfmt(Math.round(thinking.length / 3.8))} tokens`;
+        if (!content) thinkBox.querySelector('summary').textContent = `Thinking… ${Math.max(1, Math.round((performance.now() - thinkStart) / 1000))}s`;
       }
       if (content.length !== drawnContent) {
         drawnContent = content.length;
@@ -1134,7 +1164,7 @@
             break;
           case 'tool': {
             // End this segment: keep what was written as part of the transcript.
-            if (thinking) thinkBox.querySelector('summary').textContent = `Thinking · ~${kfmt(Math.round(thinking.length / 3.8))} tokens`;
+            if (thinking) thinkBox.querySelector('summary').textContent = thoughtFor();
             if (thinking && !content) thinkBox.open = false;
             if (content) { md.classList.add('said'); thinkBox.open = false; } else md.remove();
             if (!thinking) thinkBox.remove();
@@ -1155,7 +1185,7 @@
             break;
           }
           case 'thinking':
-            if (!thinking) { thinkBox.hidden = false; thinkBox.open = true; stats.textContent = ''; }
+            if (!thinking) { thinkBox.hidden = false; thinkBox.open = true; stats.textContent = ''; thinkStart = performance.now(); }
             thinking += ev.text;
             drawSoon();
             break;
@@ -1167,7 +1197,7 @@
           case 'content':
             if (!content) {
               stats.textContent = '';
-              if (thinking) { thinkBox.open = false; thinkBox.querySelector('summary').textContent = `Thinking · ~${kfmt(Math.round(thinking.length / 3.8))} tokens`; }
+              if (thinking) { thinkBox.open = false; thinkBox.querySelector('summary').textContent = thoughtFor(); }
             }
             content += ev.text;
             drawSoon();
@@ -1200,7 +1230,7 @@
       }
     } finally {
       draw();
-      if (thinking) thinkBox.querySelector('summary').textContent = `Thinking · ~${kfmt(Math.round(thinking.length / 3.8))} tokens`;
+      if (thinking) thinkBox.querySelector('summary').textContent = thoughtFor();
       for (const row of running.values()) { // stopped mid-call
         row.classList.remove('pending');
         row.querySelector('summary').textContent = 'Stopped before the call finished';
