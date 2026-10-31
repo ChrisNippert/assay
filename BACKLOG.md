@@ -24,8 +24,11 @@ through the models that have both your score and a public one.
   run can be inspected.
 - The estimate shows its fit quality (how many anchor models, R²) and is
   always labelled as an estimate, never mixed up with the published score.
-- UI: a Benchmarks page (sets, run on a model, results table), the score
-  on Library rows, Compare and the model page.
+- ✅ (2026-10-31) Benchmarks page, 9 built-in sets incl. Hard coding,
+  Equations to code (both run against hidden tests) and Proofs (judge model).
+- Open: show the estimate on Library rows, Compare and the model page;
+  harder knowledge/logic sets (the easy ones saturate: a 2B gets 85–95%);
+  re-judge with another judge; other languages than Python for code sets.
 
 ### 2. Scores and Compare follow-ups (M)
 
