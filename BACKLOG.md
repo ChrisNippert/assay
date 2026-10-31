@@ -2,278 +2,119 @@
 
 Ordered by what to do next. Each item says why it matters and roughly how
 big it is (S = an hour or two, M = a session, L = several sessions).
+Tidied 2026-10-31: Ollama-era items that no longer apply were dropped;
+finished work is under Done at the bottom.
 
 ## Next up
 
-**Done 2026-10-24:** speculative decoding (MTP heads + n-gram as Auto;
-EAGLE3/DFlash/DSpark wired but untested), LoRA adapters (untested with a
-real Unsloth LoRA), chat caches across unloads, structured output, MoE
-expert placement, **tool use** and **context compression** (automatic +
-manual). Open from these: real EAGLE3/DFlash drafts and a real LoRA;
-SearXNG against a real instance; terser summaries from small models;
-the dead voice-talker and Ollama-era auto-context code.
+### 1. Custom benchmarks (L) — started 2026-10-31
 
-### 1. ✅ Finish the llama.cpp switch (done 2026-10-23)
+Asked for 2026-10-31. Assay's direction is comparing and evaluating models,
+so: write your own benchmarks, run them on local models, and place each
+model on the Artificial Analysis Intelligence Index by fitting a line
+through the models that have both your score and a public one.
 
-Done 2026-10-23: Ollama is no longer needed (stages 1–5 below).
-Speculative decoding (stage 4, and section "Runtime settings" further
-down) is wanted in the first release.
+- Native Go eval runner, one model at a time, through the engine (no
+  Python harness). External tools (promptfoo, lm-evaluation-harness,
+  Inspect) can still use Assay's `/v1` API.
+- Benchmarks are plain files: a list of questions with a checker each
+  (exact answer, number, multiple choice, regex, contains; later: code that
+  runs, a judge model). A few small built-in sets to start.
+- Results per model digest, per benchmark, with every answer kept so a
+  run can be inspected.
+- The estimate shows its fit quality (how many anchor models, R²) and is
+  always labelled as an estimate, never mixed up with the published score.
+- UI: a Benchmarks page (sets, run on a model, results table), the score
+  on Library rows, Compare and the model page.
 
-Decided 2026-10-20: full replacement, Vulkan build. Measured here with
-the same GGUF files and settings (all layers on GPU, flash attention,
-q8_0 cache, 1k prompt, 256 tokens out):
+### 2. Scores and Compare follow-ups (M)
 
-| Model | Ollama 0.40.6 | llama.cpp Vulkan | llama.cpp ROCm |
-|---|---|---|---|
-| Qwen3.5-9B Q4 prompt / write | 504 / 38.7 | 881 / 52.2 | 904 / 50.3 |
-| Gemma 4 12B prompt / write | 675 / 32.4 | 750 / 35.8 | 809 / 37.6 |
+- Discover: sort by score; rank within the current filter ("#2 of 14 in
+  5–12B").
+- Model page: show the measured speed.
+- "Add to compare" on Library and Discover rows; compare a quant that
+  isn't downloaded yet (fit and score only).
+- Model-card benchmarks and uploaders' KLD numbers as extra Compare rows.
 
-Ollama itself runs an older bundled `llama-server`; the gain is newer
-llama.cpp. Gotcha: `llama-server` defaults to 4 parallel slots, which
-overfilled 12 GB VRAM (5.9 tok/s); always pass `-np 1`.
+### 3. Leftovers from the llama.cpp switch (S–M)
 
-**Progress (2026-10-21, stage 1 done):** `internal/gguf`, `internal/engine`
-(store, Ollama import by hard link, one llama-server per model, chat/embed
-translation, keep-alive/pinning/evicting, placement read from the log) and
-`server.Backend`; `-engine llama.cpp` is the default, `-engine ollama` the
-fallback. Default `-c 32768`. Running() reports the name a model was loaded
-by. The user's GPU runs the **ROCm** build (2B: 81 vs 49 tok/s on Vulkan;
-equal on bigger models), installed at ~/.local/share/assay/llama.cpp/
-(built from commit 339f324 for gfx1030; the engine sets
-HSA_OVERRIDE_GFX_VERSION). Vulkan stays the default for the one-click
-install (stage 5) since it needs no ROCm.
-Next, in order:
-- ✅ Settings per model (2026-10-21): context, GPU layers, keep loaded,
-  cache type and flash attention are saved on the model from Tune (and
-  override DefaultCtx; checked: `-c 4096 -ngl 0 -fa off`). Settings →
-  Models lists them. Maybe a 16k default for small-VRAM cards. f16 cache
-  without flash attention wrote 10% faster on Gemma 4 (40 vs 36): now
-  settable per model.
-- Stage 2 done (2026-10-21): `engine.Pull` downloads `hf.co/` names from
-  Hugging Face itself (resume from `.partial`, sha256 check, split files
-  kept by name in a folder, F16 mmproj, Unsloth `params`), `Copy` adds the
-  short name. Knowledge's embedding suggestions are HF repos now. Only
-  non-HF names (Ollama library) still pull through Ollama, then import.
-  Left: a free-disk-space check before starting; draft GGUF downloads
-  (their tags have a space, which the pull API refuses) wait for stage 4.
-- Presets aren't published as models on llama.cpp (Create is a no-op) until
-  stage 3's `/v1` API; Zed still sees the old ones in Ollama.
 - RAG keyword (BM25) fallback, so project files work without an embedding
-  model (user's thesis PDF is stuck "waiting").
+  model (a project chat about a PDF got nothing because no embedding model
+  had been picked). (M)
+- Try EAGLE3 / DFlash / DSpark drafts and a real Unsloth LoRA; both are
+  wired but untested. (S)
+- SearXNG against a real instance. (S)
+- Terser compression summaries from small models. (S)
+- Dead code: the voice talker (`voiceTurn`, `/api/voice?model=` warm-up)
+  and the Ollama-era parts of `autoctx.go`. Careful: `pickContext` and
+  `kvFactor` are still used by Compare, Discover, Setup and Presets. (S)
 
-Stages (the app keeps working after each):
-1. **Engine core.** `internal/gguf` reads GGUF metadata (what Ollama's
-   `/api/show` gave us: architecture, layers, context, chat template,
-   parameter count, quant type). `internal/engine` keeps a model store
-   (`~/.local/share/assay/models/`), imports Ollama's models by hard
-   link (no re-download), runs one `llama-server` per loaded model (port,
-   context, GPU layers, cache type, `--jinja`, `-np 1`, idle unload,
-   pinning, evicting to make room), and speaks OpenAI chat/embeddings to
-   it. The server talks to an engine interface instead of the Ollama
-   client.
-2. ✅ **Downloads** straight from Hugging Face (resume, split files, mmproj),
-   replacing `ollama pull`; delete.
-3. ✅ (2026-10-23) **API for editors:** Assay serves `/v1/chat/completions`, `/v1/models`,
-   `/v1/embeddings` (OpenAI-compatible, loads models on demand); presets
-   show up as models there (replacing "publish to Ollama").
-4. ✅ **Settings and tuning:** an engine section (llama.cpp version,
-   backend, defaults, models with their own settings) replaces the Ollama
-   server page, and cache type / flash attention / keep loaded are per
-   model in Tune. ✅ (2026-10-23) threads and speculative decoding (draft
-   model per model; measure it on the GPU when it's free: CPU-only it gave
-   1.55×). Compare's speed test and RAG embeddings already go through the
-   engine, and auto context is llama.cpp's `--fit` (32k asked, lowered
-   when memory is short). Cleanup left: autoctx.go's Ollama-era estimator
-   (`pickContext` past the `fitter` check, `kvFactor` users) is dead code
-   now; delete it with the voice talker code. (S)
-5. ✅ **Install and clean up** (2026-10-23): one-click llama.cpp (Vulkan)
-   install and update from GitHub releases, beside your own build; the
-   Ollama client, `-engine ollama`, `-ollama`, the Ollama server settings
-   and preset publishing are gone. Ollama models are still imported from
-   `~/.ollama/models` by hard link (`-ollama-models`).
+### 4. Windows follow-ups (S–M)
 
-Also pending: keyword search (BM25) for RAG so project files work without
-an embedding model (a user asked a project chat about a PDF and got
-nothing because no embedding model had been picked).
-
-### 2. ✅ Choose where models are stored (done 2026-10-23)
-
-Done: see ARCHITECTURE.md, "Models folder". Was asked for 2026-10-23. Models live in `<data>/models` (hard links from
-`~/.ollama/models` on import), fixed by `-data`. Add a "Models folder"
-row in Settings → Models: pick a path, Assay moves `blobs/` and the
-manifests there (with progress; stop loaded models first) and remembers
-it in its config, with `-models DIR` as a flag. Gotcha: hard links can't
-cross filesystems, so on another disk Ollama imports become copies (show
-the space needed) or symlinks. Check free space before moving.
-
-### Runtime settings: speculative decoding (M) — wanted for the first release
-
-Requested 2026-10-20. Each one depends on what Ollama exposes, so check the
-installed version (0.40.x) before building UI for it.
-
-- **GPU layers:** done (Tune → GPU layers, see Done).
-- **Server settings page.** Show Ollama's server-wide settings (read from
-  `systemctl show ollama -p Environment`, no root needed): KV cache type,
-  flash attention, default context, network binding. Offer a ready-to-run
-  `sudo systemctl edit ollama` snippet rather than running sudo ourselves.
-  Feed the KV type into auto-context (`kvBytesPerValue` in `hw/kv.go`):
-  q8_0 halves the cache, q4_0 quarters it.
-- **KV cache dtype (f16 / q8_0 / q4_0).** Historically server-wide only
-  (`OLLAMA_KV_CACHE_TYPE`, needs `OLLAMA_FLASH_ATTENTION=1`), not per model.
-  Research whether 0.40 allows it per request or per model. If not, show the
-  current server setting read-only with instructions, and factor it into
-  the memory/fit estimates (q8_0 halves KV size, so bigger contexts fit).
-- **Speculative decoding: not on this setup (checked 2026-10-20).** Ollama
-  0.40.6 accepts `draft` on `/api/create` and returns success, but for GGUF
-  models it stores no draft layer and nothing changes (Qwen3.5-9B Q4 with a
-  2B draft: 35.2 tok/s both ways). `ollama create --draft-quantize` is
-  safetensors-only, which suggests the MLX runner. `draft_num_predict` is a
-  documented option (default 4, 0 = off). Revisit on a newer Ollama; if it
-  lands, check `/api/show` lists the draft before showing any UI.
-
-### ✅ Link models other apps downloaded (done 2026-10-24)
-
-Library → "Found on this computer": Hugging Face cache (Unsloth, llama.cpp
-`-hf`), Unsloth Studio's own caches, LM Studio, added folders; linked, never
-copied (see ARCHITECTURE). Open: verify on Windows (hard links need the
-same NTFS volume; other drives are used in place, no symlinks or admin), and
-maybe read GGUF headers to catch mislabelled quants.
-
-### 3. Windows release follow-ups (S–M)
-
-Windows build and zip exist (2026-10-24, see ARCHITECTURE "Platforms").
+Windows build and zip exist (see ARCHITECTURE "Platforms").
 - Test on a real Windows PC: load a model, chat, models folder move,
-  second launch, Ollama import (Ollama on Windows keeps `%USERPROFILE%\.ollama\models`).
+  second launch, Ollama import, linked models from other drives.
 - An exe icon and version info (a `.syso` resource), maybe code signing to
   avoid the SmartScreen warning.
 - Optional: a tray icon instead of the console window (needs cgo or a
   pure-Go tray lib; weigh against the single-binary rule).
 - PDFs need pdftotext; a pure-Go PDF text extractor would avoid that.
 
-## Lower priority
-
-Set 2026-10-23: after the llama.cpp switch and the models folder.
-
-### ✅ Tool use (M–L) — done 2026-10-24, see ARCHITECTURE
-
-Asked for 2026-10-23. llama-server already runs with `--jinja` and models
-whose template mentions tools get a "tools" capability, but chat never
-sends `tools` or handles `tool_calls`.
-
-- **`/v1` OpenAI-compatible API first** (stage 3 below): passes `tools`
-  straight through, so Zed's agent tools work with local models and show
-  how well they call tools before we build our own. (M)
-- **Built-in tools in chat**: web search (needs SearXNG or an API key:
-  decide), fetch a URL, calculator, search chats / project files. Loop:
-  model asks → Assay runs → result goes back → model continues. Each call
-  shows as a foldable row in the reply, like thinking; saved with the chat. (M–L)
-- Off per chat or model when the template has no tools; a step limit so a
-  model can't loop forever. Qwen3.5 calls tools decently, Gemma less so.
-
-### ✅ Automatic context compression (M) — done 2026-10-24, see ARCHITECTURE
-
-Asked for 2026-10-23. Long chats hit the context length and the oldest
-turns silently fall off (or the reply is cut at `length`). Instead, when a
-chat nears ~80% of `num_ctx`, summarize the older turns with the same model
-and send summary + recent turns. Keep the full history on disk and in the
-page; show a quiet "earlier messages summarized" marker where the cut is,
-clickable to see the summary. Cache the summary in the chat file so it's
-made once, redone only when edits touch summarized turns. Thinking text
-from old turns is dropped first, before any summarizing. A setting to
-turn it off.
-
-### Intelligence score and benchmarks (L)
-
-The M4 feature from the design (Compare page, score on Discover rows and
-model pages).
-
-- **Research done (2026-10-20).** Findings:
-  - **Score source:** the Artificial Analysis Intelligence Index (v4.x).
-    - **Easiest feed:** OpenRouter's keyless `https://openrouter.ai/api/v1/models`. It embeds
-      `benchmarks.artificial_analysis.intelligence_index`, and about 130 of its models carry a
-      `hugging_face_id`, which makes the join trivial.
-    - **Direct AA API:** `GET https://artificialanalysis.ai/api/v2/language/models` with an
-      `x-api-key` header. The key is free and allows 100 requests a day. Names don't map to HF
-      ids, so it can only fill gaps.
-    - **Attribution:** a visible link to artificialanalysis.ai is required. Don't commit the
-      fetched data to the repo.
-  - **GGUF repo → base model:** use `?expand[]=baseModels` on the HF model API, or the
-    `base_model:quantized:<org>/<name>` tag. Prefer `relation: "quantized"`; a finetune doesn't
-    inherit the base model's score.
-  - **Scale:** v4 scores are compressed (roughly 0–50; small models score 4–23). Show the score
-    as a rank or bar within the visible set, not as "/100".
-  - **No score:** show a muted "not rated", never 0. HF `evalResults` entries are too sparse
-    and inconsistent to combine into a score, though they could appear as labelled chips.
-  - **Not useful:**
-    - The Open LLM Leaderboard has been frozen since March 2025.
-    - LiveBench has no data endpoint.
-    - Epoch's CSV URL returned a 404.
-  - **Caching:** keep a `scores.json` that refreshes at most daily and serves stale data when a
-    refresh fails.
-- **Local speed bench:** built (Compare → Run speed test). Open: show
-  measured speed on Library rows and the model page.
-- **Score on Discover + model page (M):** sort by intelligence, show it on
-  rows, rank within the current filter ("#2 of 14 in 5–12B").
-- **Compare page:** built (see Done). Still open: model-card benchmarks
-  and uploaders' KLD numbers as extra rows; an "add to compare" action on
-  Library and Discover rows; comparing a not-yet-downloaded quant (fit and
-  score only).
-
-### Voice follow-ups (S–M) — parked, not needed for now
-
-Voice mode shipped 2026-10-20 (see Done) and became dictation + read aloud
-on 2026-10-21. Open:
-
-- **Dead talker code.** `voiceTurn`, the talker and its warm-up
-  (`/api/voice?model=`) are unused since the switch to dictation. Delete
-  them, or bring live mode back as an option if it's missed. The talker and
-  overthinking items below only matter for live mode. (S)
-
-- **Phone over HTTPS.** The mic needs a secure context. Document or automate
-  `tailscale serve --bg 8484` (and `-allow-host <machine>.<tailnet>.ts.net`). (S)
-- **Gemma 4 hears audio natively.** Ollama lists `audio` in its capabilities,
-  so whisper could be skipped for it. Keep whisper for the live transcript;
-  try sending the WAV as the message for better understanding of names. (M)
-- **Talker quality.** Qwen3.5-2B sometimes states a wrong fact in the
-  lead-in ("water scatters blue light"). Try a 4B, or tighter few-shot
-  prompts. The filters in `goodLine` catch numbers and conclusions only. (S)
-- **Overthinking.** Qwen3.5-9B still thinks 20–90 s on easy questions.
-  Small talk is now routed to the talker; simple factual questions could be
-  too ("answer without thinking"), or a think budget. Watch whether the
-  one-line prose prompt slows Qwen down. (M)
-- **Better speech detection.** Typing no longer triggers it (click filter,
-  sustained-voice window, duck-then-confirm interrupts). Silero VAD
-  (onnxruntime-web, ~2 MB) if other noise still causes false starts. (M)
-
-### Design ideas (remaining)
-
-All of the 2026-10-20 polish list is done (see Done).
-
 ## Later
 
-- **Check split quants and vision (`mmproj`) downloads.** A normal
-  download works end to end (Qwen3.5-9B Q8_0 with its short name, 2026-10-20).
-  Split and vision repos haven't been tried with `ollama pull hf.co/…`. (S)
-- **Family grouping on Discover.** Collapse `Qwen3-8B`, `Qwen3-8B-Instruct-2507`,
-  etc. into one expandable row. (M)
-- **Exact memory estimates.** Read layer count, KV heads and head size from
-  the GGUF header with an HTTP range request instead of the rule of thumb.
-  Fixes over-estimates for sliding-window/hybrid models. (M)
-- **"Ollama can run it" filter.** Flag architectures the installed Ollama
-  version doesn't support before downloading. (M, needs research on how to
-  detect support)
-- **Download fallback** for repos `hf.co` pulls can't handle: fetch the
-  GGUF directly, then `/api/blobs` + `/api/create`. (M)
-- **Preset drift detection.** On startup, compare published presets with
-  `assay/*` in Ollama and offer to re-sync. (S)
-- **`config.toml`.** Listen address, Ollama URL, HF token, default context,
-  instead of flags and env vars. (S)
-- **Better MoE detection** for unfamiliar architecture names (e.g. read
-  expert count from GGUF metadata, same range request as above). (S, after
-  exact memory estimates)
+- **"Ask another model"** side by side in a chat (experimental). (M)
 - **Chat search** across saved chats. (M)
+- **Family grouping on Discover.** Collapse `Qwen3-8B`,
+  `Qwen3-8B-Instruct-2507`, etc. into one expandable row. (M)
+- **Exact memory estimates before download.** Read layer count, KV heads
+  and head size from the GGUF header with an HTTP range request instead of
+  the rule of thumb; fixes over-estimates for sliding-window/hybrid models.
+  Then better MoE detection from the expert count. (M)
+- **Projects:** link citations [n] to their passage; per-chat attachments;
+  EPUB / XLSX; an approximate index for very large projects. (M)
+- **Read GGUF headers of linked models** to catch mislabelled quants. (S)
+- **`config.toml`** for listen address, HF token, default context, instead
+  of flags and env vars. (S)
+
+## Parked
+
+### Voice follow-ups
+
+Voice is dictation + read aloud since 2026-10-21. Live mode items only
+matter if it comes back.
+- Phone over HTTPS: document or automate `tailscale serve --bg 8484`
+  (and `-allow-host <machine>.<tailnet>.ts.net`). (S)
+- Gemma 4 hears audio natively: try sending the WAV instead of whisper. (M)
+- Better speech detection (Silero VAD via onnxruntime-web) if noise still
+  causes false starts. (M)
 
 ## Done
+
+- 2026-10-25 → 2026-10-31, in short (details in ARCHITECTURE.md):
+  design D across the whole app (Inter, copper/indigo accents, view
+  transitions, prerender, stat strip, sortable Library columns, Measure
+  all); live tok/s and an always-visible context bar in the chat header;
+  rename to Assay; first-run setup with a llama.cpp build choice; start on
+  boot and releases; free-disk check before downloads; readable by-name
+  model links; path pickers; multi-GPU; phone layout; background replies;
+  resource limits; per-model vision switch; starred default model; MTP-head
+  downloads; prompt pruning of superseded code at 60% context; the
+  `edit_code` and `forget` chat tools.
+- llama.cpp switch (2026-10-21 → 10-23): Ollama replaced by one
+  `llama-server` per model (Vulkan default, ROCm here: Qwen3.5-9B Q4
+  504/38.7 → 904/50.3 tok/s prompt/write vs Ollama 0.40.6), HF downloads,
+  `/v1` API with presets as models, per-model settings, one-click install,
+  models folder choice. Gotcha kept for reference: always pass `-np 1`.
+- 2026-10-24: speculative decoding (Auto = MTP head + n-gram), LoRA, chat
+  KV caches across unloads, structured output, MoE expert placement, tool
+  use, context compression, linking models other apps downloaded, Windows
+  build.
+- Intelligence score research (2026-10-20), still how scores work: the
+  Artificial Analysis index via OpenRouter's keyless model list (joined on
+  `hugging_face_id`; a visible link to artificialanalysis.ai is required;
+  don't commit fetched data), GGUF repo → base model via
+  `base_model:quantized:` tags (a finetune doesn't inherit the score), v4
+  scores are compressed (~0–50) so show rank or bar, "not rated" never 0.
 
 - Projects and RAG (2026-10-20): projects group chats (sidebar folders,
   drag and drop, a picker on the chat page) and can have instructions, a
