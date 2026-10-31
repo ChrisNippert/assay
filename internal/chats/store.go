@@ -105,7 +105,10 @@ type Chat struct {
 	Compression *Compression `json:"compression,omitempty"`
 	// Tools is whether the model may call tools: nil leaves it to the
 	// preset, then to the default (on when the model supports tools).
-	Tools    *bool     `json:"tools,omitempty"`
+	Tools *bool `json:"tools,omitempty"`
+	// EditCode lets the model change an earlier code block with edit_code
+	// (see edit.go). Off unless the chat turns it on.
+	EditCode bool      `json:"editCode,omitempty"`
 	Created  time.Time `json:"created"`
 	Updated  time.Time `json:"updated"`
 	Messages []Message `json:"messages"`

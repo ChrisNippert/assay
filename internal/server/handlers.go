@@ -41,6 +41,7 @@ type tuneState struct {
 	Think    *bool          `json:"think"`
 	Compress *bool          `json:"compress"`
 	Tools    *bool          `json:"tools"`
+	EditCode bool           `json:"editCode"`
 	// Compression is the chat's summary, if it has one; Messages counts the
 	// chat's messages.
 	Compression *chats.Compression `json:"compression"`
@@ -69,7 +70,7 @@ func (s *Server) handleChatPage(w http.ResponseWriter, r *http.Request) {
 		data.Running = s.getRun(c.ID) != nil
 		data.Model = c.Model
 		data.Preset = c.Preset
-		data.Tune = tuneState{Options: c.Options, System: c.System, Think: c.Think, Compress: c.Compress, Tools: c.Tools, Compression: c.Compression, Messages: len(c.Messages)}
+		data.Tune = tuneState{Options: c.Options, System: c.System, Think: c.Think, Compress: c.Compress, Tools: c.Tools, EditCode: c.EditCode, Compression: c.Compression, Messages: len(c.Messages)}
 		p.ChatID = c.ID
 		p.Title = c.Title
 	}
@@ -253,6 +254,8 @@ type sendRequest struct {
 	// Tools lets the model call tools: nil leaves it to the preset, then
 	// to on (when the model supports them).
 	Tools *bool `json:"tools"`
+	// EditCode switches on the edit_code tool for this chat (off by default).
+	EditCode bool `json:"editCode"`
 	// FromUser, when set, drops that user message (counting user messages
 	// from 0) and everything after it before sending: edit and regenerate.
 	FromUser *int `json:"fromUser"`
@@ -497,6 +500,7 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 	}
 	c.Model = req.Model // switching models mid-chat is allowed
 	c.Preset, c.Options, c.System, c.Think, c.Compress, c.Tools = req.Preset, overrides, req.System, req.Think, req.Compress, req.Tools
+	c.EditCode = req.EditCode
 	if len(req.Attachments) > 0 {
 		added, err := s.chats.Adopt(c.ID, req.Attachments)
 		if err != nil {

@@ -882,6 +882,7 @@
   const PENDING = {
     web_search: 'Searching the web…', fetch_url: 'Reading a page…', calculator: 'Calculating…',
     search_chats: 'Searching your chats…', search_project: 'Searching the project’s files…', current_time: 'Checking the time…',
+    edit_code: 'Editing a code block…',
   };
   function prettyJSON(s) {
     try { return JSON.stringify(JSON.parse(s), null, 2); } catch { return s; }
@@ -898,6 +899,7 @@
     box.classList.remove('pending');
     box.classList.toggle('err', !!call.error);
     box.querySelector('summary').textContent = call.label;
+    if (call.name === 'edit_code') box.open = true; // the updated block is the point
     box.querySelector('.tool-body').append(el('div', 'tool-k', 'Result'), el('pre', 'tool-pre', call.result));
   }
 

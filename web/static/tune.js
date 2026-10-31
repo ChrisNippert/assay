@@ -27,7 +27,7 @@
   let presets = JSON.parse(chatEl.dataset.presets || 'null') || [];
   const initial = JSON.parse(chatEl.dataset.tune || '{}');
   // This chat's own changes. Anything not in here is inherited.
-  const state = { options: { ...(initial.options || {}) }, system: initial.system || '', think: initial.think ?? null, compress: initial.compress ?? null, tools: initial.tools ?? null };
+  const state = { options: { ...(initial.options || {}) }, system: initial.system || '', think: initial.think ?? null, compress: initial.compress ?? null, tools: initial.tools ?? null, editCode: !!initial.editCode };
   // The chat's summary of its oldest messages (see server compress.go), and
   // how many messages it has on the page.
   const chatState = { compression: initial.compression || null, messages: initial.messages || 0 };
@@ -285,6 +285,7 @@
     if (def.kind === 'think') { state.think = null; return render(); }
     if (def.kind === 'compress') { state.compress = null; return render(); }
     if (def.kind === 'tools') { state.tools = null; return render(); }
+    if (def.kind === 'optin') { state[def.key] = false; return render(); }
     // A chat's own value over a saved one goes first.
     if (savedHere(def) && def.key in state.options) { delete state.options[def.key]; return render(); }
     setOption(def, null);
@@ -406,6 +407,22 @@
     } catch {}
     return { id, box, sub: $('tsec-' + id + '-sub') };
   });
+
+  // ---- opt-in tools ----
+  // Off unless the chat switches them on; each adds one tool the model may call.
+  {
+    const def = { key: 'editCode', label: 'Edit code blocks', kind: 'optin', help: 'The model can change a code block from earlier in the chat by its exact text, instead of reprinting it' };
+    const { row, sub, ctrl, reset } = rowShell(def);
+    const sel = el('select', 'combo');
+    sel.id = 'tp-' + def.key;
+    sel.append(new Option('Off', 'off'), new Option('On', 'on'));
+    sel.addEventListener('change', () => { state[def.key] = sel.value === 'on'; render(); });
+    ctrl.append(sel);
+    row.title = def.help;
+    reset.addEventListener('click', () => resetRow(def));
+    rows.push({ def, row, sub, reset, select: sel });
+    $('tune-reply').append(row);
+  }
 
   // ---- automatic compression ----
   // "Compress automatically" is the chat's own choice, else its preset's, else
@@ -627,7 +644,7 @@
 
   // ---- rendering ----
   function changedCount() {
-    return Object.keys(state.options).length + (state.system ? 1 : 0) + (state.think !== null ? 1 : 0) + (state.compress !== null ? 1 : 0) + (state.tools !== null ? 1 : 0);
+    return Object.keys(state.options).length + (state.system ? 1 : 0) + (state.think !== null ? 1 : 0) + (state.compress !== null ? 1 : 0) + (state.tools !== null ? 1 : 0) + (state.editCode ? 1 : 0);
   }
 
   function describe(inh) {
@@ -686,6 +703,12 @@
     sel.value = state.think === null ? '' : state.think ? 'on' : 'off';
     r.sub.textContent = defaults.thinking ? 'Reasons step by step before answering' : 'This model doesn’t say it can think';
     return state.think !== null;
+  }
+
+  function renderOptIn(r) {
+    r.select.value = state[r.def.key] ? 'on' : 'off';
+    r.sub.textContent = r.def.help;
+    return state[r.def.key];
   }
 
   function renderTools(r) {
@@ -856,7 +879,7 @@
       r.row.hidden = (!!r.def.engine && !perModel()) || (r.def.when && !r.def.when()) || (other() && !savedHere(r.def));
       const off = r.def.off ? r.def.off() : '';
       const k = r.def.kind;
-      const changed = k === 'format' ? renderFormat(r) : k === 'combo' ? renderCombo(r) : k === 'think' ? renderThink(r) : k === 'compress' ? renderCompress(r) : k === 'tools' ? renderTools(r) : k === 'choice' ? renderChoice(r) : k === 'devices' ? renderDevices(r) : renderNumber(r);
+      const changed = k === 'format' ? renderFormat(r) : k === 'combo' ? renderCombo(r) : k === 'think' ? renderThink(r) : k === 'compress' ? renderCompress(r) : k === 'tools' ? renderTools(r) : k === 'optin' ? renderOptIn(r) : k === 'choice' ? renderChoice(r) : k === 'devices' ? renderDevices(r) : renderNumber(r);
       r.row.classList.toggle('changed', changed);
       r.reset.hidden = !changed;
       // A row that doesn't apply right now stays visible, greyed, with the reason.
@@ -1040,6 +1063,7 @@
     state.think = null;
     state.compress = null;
     state.tools = null;
+    state.editCode = false;
   }
 
   async function run(btn, fn) {
@@ -1093,7 +1117,7 @@
       return p ? { preset: p.name } : { model: select.value };
     },
     settings() {
-      return { options: state.options, system: state.system, think: state.think, compress: state.compress, tools: state.tools };
+      return { options: state.options, system: state.system, think: state.think, compress: state.compress, tools: state.tools, editCode: state.editCode };
     },
     // chat.js reports the chat's summary and how many messages it shows.
     setChat(c) {

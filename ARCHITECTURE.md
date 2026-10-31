@@ -529,6 +529,8 @@ mentions tools. Compression counts the tool schemas too (estimated at 3
 characters per token). Checked with Qwen3.5 9B: calculator, fetch_url of
 example.com, search_chats and DuckDuckGo search all called correctly.
 
+**Opt-in tools.** A chat's Tune row "Edit code blocks" (`Chat.EditCode`, sent as `editCode`, off by default) adds `edit_code` to the tools in `turnTools`; it lives in `internal/server/edit.go`, outside the Settings catalog. The model sends `{find, replace}`; `applyEdit` takes the latest fenced block (saved message or an earlier successful `edit_code` result) that contains `find`, requires exactly one occurrence, and returns the whole updated block. The saved messages are never changed: the block comes back as the call's result, which the chat shows open and the model sees in later prompts.
+
 ### Context compression
 
 Before compressing, `pruneMessages` (`internal/server/prune.go`) runs once the

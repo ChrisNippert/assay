@@ -78,7 +78,11 @@ func (s *Server) turnTools(ctx context.Context, c *chats.Chat, want *bool, model
 	if c.Project != "" {
 		d.Project = s.projectSearch(c.Project)
 	}
-	return tools.Build(d)
+	out := tools.Build(d)
+	if c.EditCode { // opt-in per chat, so not in the Settings catalog
+		out = append(out, editCodeTool(c))
+	}
+	return out
 }
 
 // projectSearch is search_project for a project, or nil if it has no
