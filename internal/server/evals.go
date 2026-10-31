@@ -38,6 +38,10 @@ type evalItem struct {
 	Answered int    `json:"answered"`
 	Correct  int    `json:"correct"`
 	Total    int    `json:"total"`
+	// Judging is how many answers the judge has left; Waiting how many
+	// still wait for one after the run (no judge was picked).
+	Judging int `json:"judging,omitempty"`
+	Waiting int `json:"waiting,omitempty"`
 }
 
 type evalJob struct {
@@ -46,6 +50,7 @@ type evalJob struct {
 	Items     []evalItem
 	Think     string
 	MaxTokens int
+	Judge     string
 	Waiting   string
 	Cancelled bool
 	cancel    context.CancelFunc
@@ -55,6 +60,7 @@ type evalState struct {
 	Running   bool       `json:"running"`
 	Items     []evalItem `json:"items"`
 	Think     string     `json:"think"`
+	Judge     string     `json:"judge,omitempty"`
 	Waiting   string     `json:"waiting,omitempty"`
 	Cancelled bool       `json:"cancelled,omitempty"`
 	// Done and Total count questions across all items.
@@ -65,7 +71,7 @@ type evalState struct {
 func (j *evalJob) state() evalState {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	st := evalState{Running: j.running, Items: slices.Clone(j.Items), Think: j.Think, Waiting: j.Waiting, Cancelled: j.Cancelled}
+	st := evalState{Running: j.running, Items: slices.Clone(j.Items), Think: j.Think, Judge: j.Judge, Waiting: j.Waiting, Cancelled: j.Cancelled}
 	if st.Items == nil {
 		st.Items = []evalItem{}
 	}
@@ -97,6 +103,8 @@ type evalRunRequest struct {
 	MaxTokens int `json:"maxTokens"`
 	// Redo runs sets again that already have a finished result.
 	Redo bool `json:"redo"`
+	// Judge grades judge questions (proofs); required when a set has them.
+	Judge string `json:"judge"`
 }
 
 func (s *Server) handleEvalRunStart(w http.ResponseWriter, r *http.Request) {
@@ -163,7 +171,17 @@ func (s *Server) startEvals(ctx context.Context, req evalRunRequest) (evalState,
 		if err != nil {
 			return evalState{}, errors.New("no such set: " + id)
 		}
+		if set.NeedsCode() && !evals.HavePython() {
+			return evalState{}, errors.New(set.Name + " runs the model's code with Python 3, and none was found on PATH")
+		}
 		sets = append(sets, set)
+	}
+	if req.Judge != "" {
+		gi := slices.IndexFunc(groups, func(g modelGroup) bool { return g.Has(req.Judge) })
+		if gi < 0 {
+			return evalState{}, errors.New("no such judge model: " + req.Judge)
+		}
+		req.Judge = groups[gi].Primary.Name
 	}
 	var items []evalItem
 	for _, name := range req.Models {
@@ -197,7 +215,7 @@ func (s *Server) startEvals(ctx context.Context, req evalRunRequest) (evalState,
 	jctx, cancel := context.WithCancel(context.Background())
 	j.mu.Lock()
 	j.running, j.Cancelled, j.Waiting, j.Items, j.cancel = true, false, "", items, cancel
-	j.Think, j.MaxTokens = req.Think, req.MaxTokens
+	j.Think, j.MaxTokens, j.Judge = req.Think, req.MaxTokens, req.Judge
 	j.mu.Unlock()
 	go s.runEvals(jctx, req.Redo)
 	return j.state(), nil
@@ -275,7 +293,7 @@ func (s *Server) evalWait(ctx context.Context) error {
 func (s *Server) runEvalItem(ctx context.Context, i int, redo bool) error {
 	j := &s.evalJob
 	j.mu.Lock()
-	it, think, maxTok := j.Items[i], j.Think, j.MaxTokens
+	it, think, maxTok, judge := j.Items[i], j.Think, j.MaxTokens, j.Judge
 	j.mu.Unlock()
 	set, err := s.evalLib.Get(it.Set)
 	if err != nil {
@@ -321,6 +339,17 @@ func (s *Server) runEvalItem(ctx context.Context, i int, redo bool) error {
 		}
 		if err != nil {
 			a.Error = err.Error()
+		} else {
+			switch set.CheckOf(q) {
+			case evals.CheckCode:
+				if err := gradeCode(ctx, q, &a); ctx.Err() != nil {
+					return ctx.Err()
+				} else if err != nil {
+					return err // no Python: the rest would fail the same way
+				}
+			case evals.CheckJudge:
+				a.Pending = true
+			}
 		}
 		res.Answers = append(res.Answers, a)
 		res.Recount()
@@ -330,13 +359,96 @@ func (s *Server) runEvalItem(ctx context.Context, i int, redo bool) error {
 		}
 		j.set(i, func(it *evalItem) { it.Answered, it.Correct = len(res.Answers), res.Correct })
 	}
+	return s.judgeEvalItem(ctx, i, set, res, judge)
+}
+
+// gradeCode runs the reply's code against the question's tests.
+func gradeCode(ctx context.Context, q evals.Question, a *evals.Answer) error {
+	code, ok := evals.ExtractCode(a.Reply)
+	if !ok {
+		a.Output = "No Python code block in the reply."
+		return nil
+	}
+	pass, out, err := evals.RunCode(ctx, code, q.Tests)
+	if err != nil {
+		return err
+	}
+	a.Correct, a.Output = pass, out
 	return nil
 }
 
-// askEval asks one question at temperature 0.
+// judgeEvalItem has the judge grade the answers waiting for one. Without a
+// judge they stay waiting and the item says so.
+func (s *Server) judgeEvalItem(ctx context.Context, i int, set *evals.Set, res *evals.Result, judge string) error {
+	j := &s.evalJob
+	var waiting []int
+	for k, a := range res.Answers {
+		if a.Pending {
+			waiting = append(waiting, k)
+		}
+	}
+	if len(waiting) == 0 {
+		return nil
+	}
+	if judge == "" {
+		j.set(i, func(it *evalItem) { it.Waiting = len(waiting) })
+		return nil
+	}
+	byID := map[string]evals.Question{}
+	for _, q := range set.Questions {
+		byID[q.ID] = q
+	}
+	if err := s.evalWait(ctx); err != nil {
+		return err
+	}
+	auto, err := s.loadAuto(ctx, judge, "10m")
+	if err != nil {
+		return errors.New("couldn't load the judge: " + err.Error())
+	}
+	for n, k := range waiting {
+		j.set(i, func(it *evalItem) { it.Judging = len(waiting) - n })
+		if err := s.evalWait(ctx); err != nil {
+			return err
+		}
+		a := &res.Answers[k]
+		system, user := evals.JudgeMessages(byID[a.ID], a.Reply)
+		verdict, err := s.askModel(ctx, judge, system, user, evals.ThinkDefault, evalTokensThink, auto.Ctx)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err != nil {
+			return errors.New("the judge failed: " + err.Error())
+		}
+		pass, ok := evals.ParseVerdict(verdict.Reply)
+		a.Judge, a.JudgeModel, a.Pending, a.Correct = evals.StripThinking(verdict.Reply), judge, false, pass && ok
+		if !ok {
+			a.Judge += "\n\n(The judge gave no verdict; counted as a fail.)"
+		}
+		res.Recount()
+		if err := s.evalRes.Put(res); err != nil {
+			return errors.New("couldn't save the result: " + err.Error())
+		}
+		j.set(i, func(it *evalItem) { it.Correct = res.Correct })
+	}
+	j.set(i, func(it *evalItem) { it.Judging = 0 })
+	return nil
+}
+
+// askEval asks one question at temperature 0 and grades what it can.
 func (s *Server) askEval(ctx context.Context, model string, set *evals.Set, q evals.Question, think string, maxTok, numCtx int) (evals.Answer, error) {
-	a := evals.Answer{ID: q.ID}
 	system, user := set.Messages(q)
+	a, err := s.askModel(ctx, model, system, user, think, maxTok, numCtx)
+	a.ID = q.ID
+	if err != nil {
+		return a, err
+	}
+	a.Got, a.Correct = set.Grade(q, a.Reply)
+	return a, nil
+}
+
+// askModel sends one prompt at temperature 0 and collects the reply.
+func (s *Server) askModel(ctx context.Context, model, system, user, think string, maxTok, numCtx int) (evals.Answer, error) {
+	var a evals.Answer
 	var msgs []ollama.Message
 	if system != "" {
 		msgs = append(msgs, ollama.Message{Role: "system", Content: system})
@@ -375,11 +487,7 @@ func (s *Server) askEval(ctx context.Context, model string, set *evals.Set, q ev
 	a.Reply, a.Thinking = content.String(), thinking.String()
 	a.Tokens, a.Cut = final.EvalCount, final.DoneReason == "length"
 	a.Clip()
-	if err != nil {
-		return a, err
-	}
-	a.Got, a.Correct = set.Grade(q, a.Reply)
-	return a, nil
+	return a, err
 }
 
 // Sets.
@@ -393,10 +501,12 @@ type evalSetJSON struct {
 	Questions   int    `json:"questions"`
 	BuiltIn     bool   `json:"builtIn"`
 	Hash        string `json:"hash"`
+	Judge       bool   `json:"judge,omitempty"` // has questions a judge model grades
+	Code        bool   `json:"code,omitempty"`  // runs the model's code
 }
 
 func setJSON(st *evals.Set) evalSetJSON {
-	return evalSetJSON{ID: st.ID, Name: st.Name, Short: st.ShortName(), Description: st.Description, Check: st.Check, Questions: len(st.Questions), BuiltIn: st.BuiltIn, Hash: st.Hash}
+	return evalSetJSON{ID: st.ID, Name: st.Name, Short: st.ShortName(), Description: st.Description, Check: st.Check, Questions: len(st.Questions), BuiltIn: st.BuiltIn, Hash: st.Hash, Judge: st.NeedsJudge(), Code: st.NeedsCode()}
 }
 
 func (s *Server) evalSets() ([]evalSetJSON, map[string]string) {
@@ -471,6 +581,7 @@ type evalCell struct {
 	Stale    bool      `json:"stale,omitempty"` // the set changed since
 	Cut      int       `json:"cut,omitempty"`   // answers that hit the token limit
 	Errors   int       `json:"errors,omitempty"`
+	Pending  int       `json:"pending,omitempty"` // waiting for a judge
 	At       time.Time `json:"at"`
 }
 
@@ -551,7 +662,7 @@ func (s *Server) evalResultsFor(ctx context.Context, think string, suite []strin
 		}
 		row := evalRow{Name: g.Primary.Name, Title: groupTitle(g), Quant: quantOf(g), Digest: g.Primary.Digest, Params: float64(parseParams(g.Primary.Details.ParameterSize)) / 1e9, Cells: map[string]evalCell{}}
 		for _, r := range byDigest[g.Primary.Digest] {
-			c := evalCell{Score: r.Score(), Correct: r.Correct, Answered: len(r.Answers), Total: r.Total, Done: r.Done(), At: r.At}
+			c := evalCell{Score: r.Score(), Correct: r.Correct, Answered: len(r.Answers), Total: r.Total, Done: r.Done(), At: r.At, Pending: r.Pending()}
 			c.Stale = hashes[r.Set] != "" && hashes[r.Set] != r.SetHash
 			for _, a := range r.Answers {
 				if a.Cut {

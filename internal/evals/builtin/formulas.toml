@@ -1,0 +1,263 @@
+name = "Equations to code"
+short = "Formulas"
+description = "Turn a mathematical formula into working Python, including numerical traps like overflow and cancellation. Run against hidden tests. Needs Python 3."
+check = "code"
+
+[[questions]]
+id = "haversine"
+prompt = '''
+Implement the haversine great-circle distance as `haversine(lat1, lon1, lat2, lon2) -> float`, with coordinates in degrees and the result in kilometres, using R = 6371 km:
+
+d = 2R · asin( √( sin²(Δφ/2) + cos φ₁ · cos φ₂ · sin²(Δλ/2) ) )
+
+where φ is latitude and λ is longitude, both in radians.'''
+tests = '''
+from math import isclose
+
+assert isclose(haversine(51.5074, -0.1278, 48.8566, 2.3522), 343.55606034104153, rel_tol=1e-6)
+assert isclose(haversine(0, 0, 0, 180), 20015.086796020572, rel_tol=1e-6)
+assert haversine(10, 20, 10, 20) == 0
+assert isclose(haversine(-33.8688, 151.2093, 40.7128, -74.0060), 15988.755507039632, rel_tol=1e-6)
+'''
+
+[[questions]]
+id = "black-scholes"
+prompt = '''
+Implement the Black–Scholes price of a European call option as `bs_call(S, K, r, sigma, T) -> float`:
+
+C = S·N(d₁) − K·e^(−rT)·N(d₂)
+d₁ = [ ln(S/K) + (r + σ²/2)·T ] / (σ·√T)
+d₂ = d₁ − σ·√T
+
+where N is the standard normal cumulative distribution function. Use only the standard library.'''
+tests = '''
+from math import isclose
+
+assert isclose(bs_call(100, 100, 0.05, 0.2, 1), 10.450583572185565, rel_tol=1e-6)
+assert isclose(bs_call(50, 60, 0.01, 0.3, 0.5), 1.302792472396817, rel_tol=1e-6)
+assert isclose(bs_call(120, 100, 0.03, 0.25, 2), 31.279802719901866, rel_tol=1e-6)
+'''
+
+[[questions]]
+id = "simpson"
+prompt = '''
+Implement composite Simpson's rule as `simpson(f, a, b, n) -> float`, where n is an even number of subintervals and h = (b − a)/n:
+
+∫ₐᵇ f(x) dx ≈ (h/3) · [ f(x₀) + 4·Σ_{i odd} f(xᵢ) + 2·Σ_{i even, 0<i<n} f(xᵢ) + f(xₙ) ]
+
+with xᵢ = a + i·h. Raise ValueError if n is odd or not positive.'''
+tests = '''
+from math import isclose
+
+from math import sin, pi, exp
+assert isclose(simpson(sin, 0, pi, 10), 2.0001095173150043, rel_tol=1e-9)
+assert isclose(simpson(lambda x: x**3, 0, 2, 2), 4.0, rel_tol=1e-12)
+assert isclose(simpson(exp, -1, 1, 100), 2.35040238937675, rel_tol=1e-9)
+assert isclose(simpson(lambda x: x*x, 3, 1, 4), -26/3, rel_tol=1e-9)
+for bad in (3, 0, -2):
+    try:
+        simpson(sin, 0, 1, bad)
+    except ValueError:
+        continue
+    raise AssertionError("accepted n=%d" % bad)
+'''
+
+[[questions]]
+id = "rk4"
+prompt = '''
+Implement the classical fourth-order Runge–Kutta method as `rk4(f, y0, t0, t1, n) -> float`, taking n equal steps of size h = (t1 − t0)/n for the ODE dy/dt = f(t, y):
+
+k₁ = f(t, y)
+k₂ = f(t + h/2, y + h·k₁/2)
+k₃ = f(t + h/2, y + h·k₂/2)
+k₄ = f(t + h, y + h·k₃)
+y ← y + (h/6)(k₁ + 2k₂ + 2k₃ + k₄),  t ← t + h
+
+Return y at t1.'''
+tests = '''
+from math import isclose
+
+assert isclose(rk4(lambda t, y: y, 1.0, 0.0, 1.0, 10), 2.718279744135166, rel_tol=1e-12)
+assert isclose(rk4(lambda t, y: -2*t*y, 1.0, 0.0, 2.0, 50), 0.01831578743733711, rel_tol=1e-12)
+assert isclose(rk4(lambda t, y: t - y, 0.5, 1.0, 3.0, 7), 2.0676771856857137, rel_tol=1e-12)
+'''
+
+[[questions]]
+id = "kepler"
+prompt = '''
+Solve Kepler's equation M = E − e·sin(E) for the eccentric anomaly E, given the mean anomaly M (radians, any real value) and eccentricity 0 ≤ e < 1, as `kepler_E(M, e) -> float`. The result must satisfy the equation to within 1e-12 and be the unique solution, which lies in the same 2π period as M (that is, E − M is between −e and e). It must converge for e up to 0.99.'''
+tests = '''
+from math import isclose
+
+from math import sin, pi
+for M in [0.0, 0.1, 1.0, 2.5, pi, 4.0, 6.0, -1.3, 20.0, -50.0]:
+    for e in [0.0, 0.1, 0.5, 0.9, 0.99]:
+        E = kepler_E(M, e)
+        assert abs(E - e*sin(E) - M) < 1e-12, (M, e, E)
+        assert -e - 1e-12 <= E - M <= e + 1e-12, (M, e, E)
+'''
+
+[[questions]]
+id = "shoelace"
+prompt = '''
+Write `polygon_area(points: list[tuple[float, float]]) -> float` returning the area of a simple polygon whose vertices are given in order (clockwise or counter-clockwise), using the shoelace formula:
+
+A = ½ · | Σᵢ (xᵢ·yᵢ₊₁ − xᵢ₊₁·yᵢ) |
+
+where the indices wrap around (the vertex after the last is the first).'''
+tests = '''
+from math import isclose
+
+assert polygon_area([(0, 0), (4, 0), (4, 3)]) == 6
+assert polygon_area([(0, 0), (0, 3), (4, 0)]) == 6
+assert polygon_area([(0, 0), (2, 0), (2, 2), (1, 1), (0, 2)]) == 3
+assert isclose(polygon_area([(1.5, 2.5), (6.25, 1), (7, 5.5), (3, 7.75)]), 23.4375, rel_tol=1e-12)
+assert polygon_area([(0, 0), (1, 0)]) == 0
+'''
+
+[[questions]]
+id = "logsumexp"
+prompt = '''
+Write `logsumexp(xs: list[float]) -> float` computing log( Σᵢ e^(xᵢ) ) without overflow or underflow, even for inputs like [1000, 1000] or [−1000, −1000]. Return −inf for an empty list.'''
+tests = '''
+from math import isclose
+
+from math import log, inf
+assert isclose(logsumexp([1000, 1000]), 1000 + log(2), rel_tol=1e-12)
+assert isclose(logsumexp([-1000, -1000]), -1000 + log(2), rel_tol=1e-12)
+assert isclose(logsumexp([0.5, 1.5, -2.0]), 1.8350975955161672, rel_tol=1e-12)
+assert isclose(logsumexp([710, 0]), 710, rel_tol=1e-12)
+assert logsumexp([]) == -inf
+assert isclose(logsumexp([3.0]), 3.0)
+'''
+
+[[questions]]
+id = "sample-std"
+prompt = '''
+Write `sample_std(xs: list[float]) -> float` returning the sample standard deviation
+
+s = √( (1/(n − 1)) · Σᵢ (xᵢ − x̄)² )
+
+It must stay accurate when the values are huge but close together, such as [1e9 + 4, 1e9 + 7, 1e9 + 13, 1e9 + 16]. Raise ValueError for fewer than two values.'''
+tests = '''
+from math import isclose
+
+assert isclose(sample_std([2, 4, 4, 4, 5, 5, 7, 9]), 2.138089935299395, rel_tol=1e-12)
+assert isclose(sample_std([1e9 + 4, 1e9 + 7, 1e9 + 13, 1e9 + 16]), 5.477225575051661, rel_tol=1e-9)
+assert sample_std([3, 3, 3]) == 0
+for bad in ([], [1.0]):
+    try:
+        sample_std(bad)
+    except ValueError:
+        continue
+    raise AssertionError("accepted %r" % bad)
+'''
+
+[[questions]]
+id = "binomial-pmf"
+prompt = '''
+Write `binom_pmf(k: int, n: int, p: float) -> float` for the binomial distribution:
+
+P(X = k) = C(n, k) · pᵏ · (1 − p)^(n−k)
+
+It must give accurate (non-zero) answers for large n, such as n = 10,000 and k = 5,000, where the factors on their own overflow or underflow a float. Handle p = 0 and p = 1, and return 0 for k outside 0..n.'''
+tests = '''
+from math import isclose
+
+assert isclose(binom_pmf(3, 10, 0.5), 120 / 1024, rel_tol=1e-9)
+assert isclose(binom_pmf(5000, 10000, 0.5), 0.007978646139266547, rel_tol=1e-6)
+assert isclose(binom_pmf(30, 1000, 0.02), 0.008048770327114832, rel_tol=1e-6)
+assert binom_pmf(0, 5, 0) == 1 and binom_pmf(1, 5, 0) == 0
+assert binom_pmf(5, 5, 1) == 1 and binom_pmf(4, 5, 1) == 0
+assert binom_pmf(-1, 5, 0.3) == 0 and binom_pmf(6, 5, 0.3) == 0
+'''
+
+[[questions]]
+id = "bezier"
+prompt = '''
+Write `bezier(points: list[tuple[float, float]], t: float) -> tuple[float, float]` evaluating the Bézier curve with the given control points at parameter t ∈ [0, 1]:
+
+B(t) = Σᵢ₌₀ⁿ C(n, i) · (1 − t)^(n−i) · tⁱ · Pᵢ
+
+where n + 1 is the number of control points.'''
+tests = '''
+from math import isclose
+
+pts = [(0, 0), (1, 2), (3, 3), (4, 0)]
+assert bezier(pts, 0) == (0, 0)
+assert all(isclose(a, b) for a, b in zip(bezier(pts, 1), (4, 0)))
+assert all(isclose(a, b, rel_tol=1e-12) for a, b in zip(bezier(pts, 0.3), (1.1159999999999999, 1.4489999999999998)))
+assert all(isclose(a, b, rel_tol=1e-12) for a, b in zip(bezier([(0, 0), (10, 10)], 0.25), (2.5, 2.5)))
+five = [(0, 0), (1, 4), (2, -1), (5, 3), (6, 0)]
+assert all(isclose(a, b, rel_tol=1e-12) for a, b in zip(bezier(five, 0.6), (3.3504, 1.3056)))
+'''
+
+[[questions]]
+id = "annuity"
+prompt = '''
+Write `future_value(payment: float, rate: float, periods: int) -> float` for an ordinary annuity (payments at the end of each period):
+
+FV = P · ((1 + r)ⁿ − 1) / r
+
+Make it correct when r = 0 (the limit is P·n) and accurate for very small rates like 1e-12.'''
+tests = '''
+from math import isclose
+
+assert isclose(future_value(100, 0.05, 10), 1257.7892535548829, rel_tol=1e-12)
+assert future_value(250, 0, 12) == 3000
+assert isclose(future_value(1000, 1e-12, 360), 360000, rel_tol=1e-9)
+assert isclose(future_value(50, 0.004, 480), 72436.06981529397, rel_tol=1e-9)
+'''
+
+[[questions]]
+id = "wilson"
+prompt = '''
+Write `wilson_lower(successes: int, n: int, z: float = 1.96) -> float` returning the lower bound of the Wilson score interval for a proportion, where p̂ = successes/n:
+
+( p̂ + z²/(2n) − z·√( p̂(1 − p̂)/n + z²/(4n²) ) ) / ( 1 + z²/n )
+
+Return 0 when n is 0.'''
+tests = '''
+from math import isclose
+
+assert isclose(wilson_lower(81, 263), 0.2552876130636696, rel_tol=1e-12)
+assert isclose(wilson_lower(5, 5), 0.565508505247919, rel_tol=1e-12)
+assert isclose(wilson_lower(0, 10) + 1, 1, rel_tol=1e-12)
+assert wilson_lower(0, 0) == 0
+assert isclose(wilson_lower(40, 50, z=2.576), 0.6234924437856847, rel_tol=1e-12)
+'''
+
+[[questions]]
+id = "dft"
+prompt = '''
+Write `dft(x: list[complex]) -> list[complex]` computing the discrete Fourier transform
+
+X_k = Σ_{n=0}^{N−1} x_n · e^(−2πi·k·n/N),  for k = 0, …, N − 1.
+
+Use only the standard library (`cmath` is fine).'''
+tests = '''
+from math import isclose
+
+def close(a, b):
+    return len(a) == len(b) and all(abs(p - q) < 1e-9 for p, q in zip(a, b))
+assert close(dft([1, 0, 0, 0]), [1, 1, 1, 1])
+assert close(dft([1, 1, 1, 1]), [4, 0, 0, 0])
+assert close(dft([0, 1, 0, -1]), [0, -2j, 0, 2j])
+assert close(dft([1, 2, 3, 4, 5]), [(15-0j), (-2.500000000000001+3.4409548011779334j), (-2.5+0.8122992405822644j), (-2.499999999999999-0.8122992405822671j), (-2.4999999999999964-3.440954801177935j)])
+assert dft([]) == []
+'''
+
+[[questions]]
+id = "catalan"
+prompt = '''
+Write `catalan(n: int) -> int` returning the n-th Catalan number exactly, as a Python int, for n up to 1000:
+
+Cₙ = (1/(n + 1)) · C(2n, n)'''
+tests = '''
+from math import isclose
+
+assert [catalan(i) for i in range(10)] == [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862]
+assert catalan(100) == 896519947090131496687170070074100632420837521538745909320
+assert catalan(1000) == 2046105521468021692642519982997827217179245642339057975844538099572176010191891863964968026156453752449015750569428595097318163634370154637380666882886375203359653243390929717431080443509007504772912973142253209352126946839844796747697638537600100637918819326569730982083021538057087711176285777909275869648636874856805956580057673173655666887003493944650164153396910927037406301799052584663611016897272893305532116292143271037140718751625839812072682464343153792956281748582435751481498598087586998603921577523657477775758899987954012641033870640665444651660246024318184109046864244732001962029120
+assert isinstance(catalan(30), int)
+'''

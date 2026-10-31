@@ -24,6 +24,10 @@ func (s *Set) Messages(q Question) (system, user string) {
 		b.WriteString("\n\nEnd your reply with a final line of the form \"Answer: N\", where N is just the number.")
 	case CheckExact:
 		b.WriteString("\n\nEnd your reply with a final line of the form \"Answer: …\" giving only the answer.")
+	case CheckCode:
+		b.WriteString("\n\nWrite it in Python 3, using only the standard library. Put the complete solution in one ```python code block; it will be run against hidden tests.")
+	case CheckJudge:
+		b.WriteString("\n\nWrite a complete, rigorous proof.")
 	}
 	return s.System, b.String()
 }
@@ -34,6 +38,8 @@ func (s *Set) Grade(q Question, reply string) (got string, ok bool) {
 	reply = StripThinking(reply)
 	check := s.CheckOf(q)
 	switch check {
+	case CheckCode, CheckJudge:
+		return "", false // graded by running the code or by a judge (code.go, judge.go)
 	case CheckRegex, CheckContains:
 		match := false
 		for _, a := range append([]string{q.Answer}, q.Accept...) {

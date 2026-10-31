@@ -29,10 +29,12 @@ const (
 	CheckChoice   = "choice"   // the final answer is this letter of Choices
 	CheckContains = "contains" // the whole reply contains this text (case ignored)
 	CheckRegex    = "regex"    // the whole reply matches this regular expression
+	CheckCode     = "code"     // the reply's last Python code block passes Tests
+	CheckJudge    = "judge"    // a judge model compares the reply with Answer (a reference solution)
 )
 
 // Checks lists every check, for the UI.
-var Checks = []string{CheckNumber, CheckExact, CheckChoice, CheckContains, CheckRegex}
+var Checks = []string{CheckNumber, CheckExact, CheckChoice, CheckContains, CheckRegex, CheckCode, CheckJudge}
 
 // Question is one item of a set.
 type Question struct {
@@ -50,6 +52,9 @@ type Question struct {
 	Tolerance float64 `toml:"tolerance,omitempty" json:"tolerance,omitempty"`
 	// Not, for regex and contains, fails a reply that matches it instead.
 	Not bool `toml:"not,omitempty" json:"not,omitempty"`
+	// Tests, for the code check, is Python run after the model's code
+	// (usually asserts); passing means it exits without an error.
+	Tests string `toml:"tests,omitempty" json:"tests,omitempty"`
 }
 
 // Set is one benchmark.
@@ -69,6 +74,16 @@ type Set struct {
 	// Hash changes whenever a question, answer or check changes, so old
 	// results can be told apart from current ones.
 	Hash string `toml:"-" json:"hash"`
+}
+
+// NeedsJudge says some question is graded by a judge model.
+func (s *Set) NeedsJudge() bool {
+	return slices.ContainsFunc(s.Questions, func(q Question) bool { return s.CheckOf(q) == CheckJudge })
+}
+
+// NeedsCode says some question runs the model's code.
+func (s *Set) NeedsCode() bool {
+	return slices.ContainsFunc(s.Questions, func(q Question) bool { return s.CheckOf(q) == CheckCode })
 }
 
 // ShortName is the column label.
@@ -126,11 +141,15 @@ func (s *Set) Validate() error {
 		if strings.TrimSpace(q.Prompt) == "" {
 			return fmt.Errorf("%s has no prompt", n)
 		}
-		if q.Answer == "" {
+		c := s.CheckOf(*q)
+		if q.Answer == "" && c != CheckCode {
 			return fmt.Errorf("%s has no answer", n)
 		}
-		c := s.CheckOf(*q)
 		switch c {
+		case CheckCode:
+			if strings.TrimSpace(q.Tests) == "" {
+				return fmt.Errorf("%s needs tests", n)
+			}
 		case CheckNumber:
 			for _, a := range append([]string{q.Answer}, q.Accept...) {
 				if _, ok := parseNumber(a); !ok {
@@ -148,7 +167,7 @@ func (s *Set) Validate() error {
 			if _, err := regexp.Compile(q.Answer); err != nil {
 				return fmt.Errorf("%s: %v", n, err)
 			}
-		case CheckExact, CheckContains:
+		case CheckExact, CheckContains, CheckJudge:
 		default:
 			return fmt.Errorf("%s: unknown check %q", n, c)
 		}
@@ -161,7 +180,7 @@ func (s *Set) hash() string {
 	h := sha256.New()
 	fmt.Fprintf(h, "%s\x00%s\x00", s.Check, s.System)
 	for _, q := range s.Questions {
-		fmt.Fprintf(h, "%s\x00%s\x00%s\x00%q\x00%s\x00%q\x00%g\x00%v\x01", q.ID, q.Prompt, q.Answer, q.Accept, q.Check, q.Choices, q.Tolerance, q.Not)
+		fmt.Fprintf(h, "%s\x00%s\x00%s\x00%q\x00%s\x00%q\x00%g\x00%v\x00%s\x01", q.ID, q.Prompt, q.Answer, q.Accept, q.Check, q.Choices, q.Tolerance, q.Not, q.Tests)
 	}
 	return hex.EncodeToString(h.Sum(nil))[:12]
 }

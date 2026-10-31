@@ -2255,6 +2255,8 @@ button.bm-th:hover { color: var(--text); }
 .bm-ans-q summary { cursor: pointer; color: var(--muted); font-size: var(--fs-sm); }
 .bm-pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0 0; font-family: inherit; font-size: var(--fs-sm); line-height: 1.5; max-height: 320px; overflow-y: auto; }
 .bm-reply { background: var(--sunk, var(--soft)); border-radius: 8px; padding: 8px 10px; }
+.bm-out { font-family: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace; font-size: 12px; }
+.bm-judge select { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
 @media (max-width: 720px) {
   .bm-fit { grid-template-columns: 1fr; }
   .bm-dlg-cols { grid-template-columns: 1fr; }

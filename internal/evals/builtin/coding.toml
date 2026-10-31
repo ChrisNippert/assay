@@ -1,0 +1,310 @@
+name = "Hard coding"
+short = "Coding"
+description = "Write a Python function or class from a spec; it's run against hidden tests, including edge cases and speed. Needs Python 3."
+check = "code"
+
+[[questions]]
+id = "eval-expr"
+prompt = '''
+Write a function `evaluate(expr: str) -> int` that evaluates an arithmetic expression containing non-negative integers, `+`, `-`, `*`, `/`, parentheses, unary minus (e.g. `-(2+3)` or `3*-2`) and spaces. `/` is integer division that truncates toward zero (so `-7/2` is `-3`). Don't use `eval` or `exec`.'''
+tests = '''
+assert evaluate("1 + 2 * 3") == 7
+assert evaluate("(1 + 2) * 3") == 9
+assert evaluate("10 - 4 - 3") == 3
+assert evaluate("100 / 10 / 5") == 2
+assert evaluate("-7 / 2") == -3
+assert evaluate("7 / -2") == -3
+assert evaluate("3 * -2") == -6
+assert evaluate("-(2 + 3) * 4") == -20
+assert evaluate("2 * (3 + (4 - 1) * 2) - 5") == 13
+assert evaluate("  42 ") == 42
+assert evaluate("1 - -1") == 2
+assert evaluate("((((7))))") == 7
+assert evaluate("8 / 3 * 3") == 6
+assert evaluate("-3 * -(4 - 6) / 4") == -1
+'''
+
+[[questions]]
+id = "lru"
+prompt = '''
+Write a class `LRUCache` with `__init__(self, capacity: int)`, `get(self, key) -> int` (return the value, or -1 if missing) and `put(self, key, value) -> None`. When a `put` would exceed the capacity, evict the least recently used key first. Both `get` and `put` count as a use. Both must run in O(1) on average.'''
+tests = '''
+c = LRUCache(2)
+c.put(1, 1); c.put(2, 2)
+assert c.get(1) == 1
+c.put(3, 3)
+assert c.get(2) == -1
+c.put(4, 4)
+assert c.get(1) == -1
+assert c.get(3) == 3 and c.get(4) == 4
+c = LRUCache(2)
+c.put(1, 1); c.put(2, 2); c.put(1, 10)
+c.put(3, 3)
+assert c.get(2) == -1 and c.get(1) == 10
+c = LRUCache(1)
+c.put(5, 5); c.put(6, 6)
+assert c.get(5) == -1 and c.get(6) == 6
+import time
+c = LRUCache(50000)
+t = time.time()
+for i in range(200000):
+    c.put(i, i); c.get(i // 2)
+assert time.time() - t < 3, "too slow"
+'''
+
+[[questions]]
+id = "regex-match"
+prompt = '''
+Write `is_match(s: str, p: str) -> bool` that implements regular expression matching over the whole string, where `.` matches any single character and `*` matches zero or more of the preceding element. Patterns are valid (a `*` always follows a character or `.`). Don't use the `re` module.'''
+tests = '''
+assert is_match("aa", "a*")
+assert not is_match("aa", "a")
+assert is_match("ab", ".*")
+assert is_match("aab", "c*a*b")
+assert not is_match("mississippi", "mis*is*p*.")
+assert is_match("mississippi", "mis*is*ip*.")
+assert is_match("", "a*b*c*")
+assert not is_match("", ".")
+assert is_match("abcd", "d*abc.")
+assert not is_match("ab", ".*c")
+assert is_match("aaa", "ab*a*c*a")
+assert not is_match("a" * 30 + "b", "a*a*a*a*a*a*a*a*a*a*c"), "must not take exponential time"
+'''
+
+[[questions]]
+id = "skyline-histogram"
+prompt = '''
+Write `largest_rectangle(heights: list[int]) -> int` that returns the area of the largest rectangle that fits under a histogram whose bars have the given heights and width 1. It must handle 200,000 bars in well under a second.'''
+tests = '''
+assert largest_rectangle([2, 1, 5, 6, 2, 3]) == 10
+assert largest_rectangle([2, 4]) == 4
+assert largest_rectangle([]) == 0
+assert largest_rectangle([0, 0]) == 0
+assert largest_rectangle([6, 2, 5, 4, 5, 1, 6]) == 12
+assert largest_rectangle([1, 1, 1, 1]) == 4
+assert largest_rectangle([5]) == 5
+assert largest_rectangle([1, 2, 3, 4, 5]) == 9
+import time
+t = time.time()
+assert largest_rectangle(list(range(1, 200001))) == 10000100000
+assert time.time() - t < 2, "too slow"
+'''
+
+[[questions]]
+id = "topo-order"
+prompt = '''
+Write `course_order(n: int, prereqs: list[tuple[int, int]]) -> list[int]`. Courses are numbered 0 to n-1; a pair `(a, b)` means course `b` must be taken before course `a`. Return an order in which all courses can be taken; when several courses are available at once, take the smallest number first. If it's impossible because of a cycle, return an empty list.'''
+tests = '''
+assert course_order(2, [(1, 0)]) == [0, 1]
+assert course_order(4, [(1, 0), (2, 0), (3, 1), (3, 2)]) == [0, 1, 2, 3]
+assert course_order(2, [(1, 0), (0, 1)]) == []
+assert course_order(3, []) == [0, 1, 2]
+assert course_order(5, [(0, 4), (1, 4), (2, 0), (2, 1)]) == [3, 4, 0, 1, 2]
+assert course_order(3, [(0, 1), (1, 2), (2, 1)]) == []
+assert course_order(1, []) == [0]
+assert course_order(6, [(5, 0), (4, 0), (0, 3), (1, 3), (2, 1)]) == [3, 0, 1, 2, 4, 5]
+'''
+
+[[questions]]
+id = "words"
+prompt = '''
+Write `to_words(n: int) -> str` that writes a whole number from 0 to 999,999,999 in British English words, all lowercase, with "and" before the last part when it's under 100 and something bigger came before it, hyphens in compound numbers from 21 to 99, and no commas. Examples: 0 → "zero", 105 → "one hundred and five", 1042 → "one thousand and forty-two", 2_000_015 → "two million and fifteen", 999 → "nine hundred and ninety-nine", 120_000 → "one hundred and twenty thousand".'''
+tests = '''
+assert to_words(0) == "zero"
+assert to_words(7) == "seven"
+assert to_words(13) == "thirteen"
+assert to_words(40) == "forty"
+assert to_words(99) == "ninety-nine"
+assert to_words(100) == "one hundred"
+assert to_words(105) == "one hundred and five"
+assert to_words(999) == "nine hundred and ninety-nine"
+assert to_words(1000) == "one thousand"
+assert to_words(1042) == "one thousand and forty-two"
+assert to_words(1100) == "one thousand one hundred"
+assert to_words(120000) == "one hundred and twenty thousand"
+assert to_words(2000015) == "two million and fifteen"
+assert to_words(1001001) == "one million one thousand and one"
+assert to_words(999999999) == "nine hundred and ninety-nine million nine hundred and ninety-nine thousand nine hundred and ninety-nine"
+assert to_words(50000300) == "fifty million three hundred"
+'''
+
+[[questions]]
+id = "min-window"
+prompt = '''
+Write `min_window(s: str, t: str) -> str` that returns the shortest substring of `s` containing every character of `t`, counting repeats (if `t` has two "a"s, the window needs two). If there are several shortest ones, return the leftmost. If there is none, return "". It must be linear time: `s` can be 200,000 characters long.'''
+tests = '''
+assert min_window("ADOBECODEBANC", "ABC") == "BANC"
+assert min_window("a", "a") == "a"
+assert min_window("a", "aa") == ""
+assert min_window("aa", "aa") == "aa"
+assert min_window("abcabc", "cb") == "bc"
+assert min_window("xyz", "q") == ""
+assert min_window("bba", "ab") == "ba"
+assert min_window("acbbaca", "aba") == "baca"
+import time, random
+random.seed(1)
+s = "".join(random.choice("abcdefghij") for _ in range(200000)) + "XYZ"
+t0 = time.time()
+assert min_window(s, "XYZ") == "XYZ"
+assert time.time() - t0 < 2, "too slow"
+'''
+
+[[questions]]
+id = "dijkstra-grid"
+prompt = '''
+Write `cheapest_path(grid: list[list[int]]) -> int`. Each cell holds the cost of stepping onto it (all costs are positive). Start at the top-left cell (its cost counts too) and reach the bottom-right cell, moving up, down, left or right. Return the smallest total cost. Grids can be 300 × 300.'''
+tests = '''
+assert cheapest_path([[1, 3, 1], [1, 5, 1], [4, 2, 1]]) == 7
+assert cheapest_path([[5]]) == 5
+assert cheapest_path([[1, 2], [3, 4]]) == 7
+g = [[1, 9, 1, 1, 1],
+     [1, 9, 1, 9, 1],
+     [1, 9, 1, 9, 1],
+     [1, 1, 1, 9, 1]]
+assert cheapest_path(g) == 14, "needs to go up as well as down"
+import random, time
+random.seed(7)
+big = [[random.randint(1, 9) for _ in range(300)] for _ in range(300)]
+t = time.time()
+r = cheapest_path(big)
+assert time.time() - t < 5, "too slow"
+assert r == 1722
+'''
+
+[[questions]]
+id = "interval-merge"
+prompt = '''
+Write `free_slots(busy: list[list[tuple[int, int]]], day_start: int, day_end: int, length: int) -> list[tuple[int, int]]`. Each inner list is one person's busy intervals as (start, end) minutes, end exclusive, unsorted and possibly overlapping or touching. Return every maximal interval within [day_start, day_end) when nobody is busy and that is at least `length` minutes long, sorted by start.'''
+tests = '''
+assert free_slots([[(60, 120)], [(90, 150)]], 0, 300, 30) == [(0, 60), (150, 300)]
+assert free_slots([[(0, 100), (100, 200)]], 0, 200, 1) == []
+assert free_slots([[(50, 60)], [(55, 70), (80, 85)]], 0, 100, 10) == [(0, 50), (70, 80), (85, 100)]
+assert free_slots([[(50, 60)], [(55, 70), (80, 85)]], 0, 100, 15) == [(0, 50), (85, 100)]
+assert free_slots([], 9, 17, 8) == [(9, 17)]
+assert free_slots([[(0, 10)], [(500, 600)]], 100, 200, 100) == [(100, 200)]
+assert free_slots([[(150, 160), (100, 110)], [(120, 130)]], 100, 200, 5) == [(110, 120), (130, 150), (160, 200)]
+assert free_slots([[(10, 20)]], 0, 30, 11) == []
+'''
+
+[[questions]]
+id = "roman"
+prompt = '''
+Write two functions: `to_roman(n: int) -> str` for 1 ≤ n ≤ 3999 using standard subtractive notation, and `from_roman(s: str) -> int` that converts a valid Roman numeral back. `from_roman` must raise `ValueError` for anything that isn't the standard form of a number from 1 to 3999 (for example "IIII", "VX", "IC", "MMMM", "" or "abc").'''
+tests = '''
+assert to_roman(1994) == "MCMXCIV"
+assert to_roman(3999) == "MMMCMXCIX"
+assert to_roman(4) == "IV" and to_roman(9) == "IX" and to_roman(40) == "XL"
+assert from_roman("MCMXCIV") == 1994
+assert from_roman("XLII") == 42
+for i in range(1, 4000):
+    assert from_roman(to_roman(i)) == i
+for bad in ["IIII", "VX", "IC", "MMMM", "", "abc", "IIX", "XM", "VV", "LL", "DD", "CCCC", "IVI", "XXL"]:
+    try:
+        from_roman(bad)
+    except ValueError:
+        continue
+    raise AssertionError("accepted " + repr(bad))
+'''
+
+[[questions]]
+id = "n-queens"
+prompt = '''
+Write `count_queens(n: int) -> int` that returns how many ways n queens can be placed on an n × n chessboard so that no two attack each other. It must return the answer for n = 12 in a few seconds.'''
+tests = '''
+assert count_queens(1) == 1
+assert count_queens(2) == 0
+assert count_queens(3) == 0
+assert count_queens(4) == 2
+assert count_queens(6) == 4
+assert count_queens(8) == 92
+import time
+t = time.time()
+assert count_queens(12) == 14200
+assert time.time() - t < 10, "too slow"
+'''
+
+[[questions]]
+id = "bank-ledger"
+prompt = '''
+Write `settle(transactions: list[tuple[str, str, int]]) -> list[tuple[str, str, int]]`. Each transaction `(a, b, x)` means `a` paid `x` cents on behalf of `b`, so `b` owes `a` that amount. Return a list of payments `(debtor, creditor, amount)` that settles everyone's net balance using as few payments as possible. People whose net balance is zero don't appear. Groups have at most 10 people with a non-zero balance. Any minimal answer is accepted.'''
+tests = '''
+from collections import defaultdict
+def check(tx, minimum):
+    out = settle(tx)
+    bal = defaultdict(int)
+    for a, b, x in tx:
+        bal[a] += x; bal[b] -= x
+    for d, c, x in out:
+        assert x > 0, "payments must be positive"
+        bal[d] += x; bal[c] -= x
+    assert all(v == 0 for v in bal.values()), "balances not settled"
+    assert len(out) == minimum, "%d payments, the minimum is %d" % (len(out), minimum)
+check([("a", "b", 100)], 1)
+check([("a", "b", 100), ("b", "a", 100)], 0)
+check([("a", "b", 10), ("b", "c", 10)], 1)
+check([("a", "b", 50), ("c", "d", 30), ("d", "a", 20)], 3)
+check([("a", "x", 5), ("b", "y", 7), ("c", "z", 3), ("x", "b", 7), ("y", "c", 3), ("z", "a", 5)], 2)
+check([("p1", "q1", 10), ("p2", "q2", 20), ("p3", "q3", 30), ("p4", "q4", 40)], 4)
+check([("a", "b", 3), ("a", "c", 5), ("d", "e", 4), ("f", "e", 4), ("g", "h", 7), ("i", "g", 1)], 6)
+check([("a", "d", 1), ("b", "d", 2), ("c", "e", 3), ("e", "f", 3), ("f", "a", 1), ("f", "b", 2)], 1)
+'''
+
+[[questions]]
+id = "tokenize-csv"
+prompt = '''
+Write `parse_csv(text: str) -> list[list[str]]` following RFC 4180: fields are separated by commas and records by `\n` or `\r\n`; a field may be wrapped in double quotes, inside which commas and line breaks are literal and `""` stands for one `"`. A final line break doesn't start an empty record, but an empty line in the middle is a record with one empty field. Don't use the `csv` module.'''
+tests = '''
+assert parse_csv("a,b,c\n1,2,3\n") == [["a", "b", "c"], ["1", "2", "3"]]
+assert parse_csv("a,b") == [["a", "b"]]
+assert parse_csv('"x, y",z') == [["x, y", "z"]]
+assert parse_csv('"say ""hi""",2') == [['say "hi"', "2"]]
+assert parse_csv('"line1\nline2",b\r\nc,d\r\n') == [["line1\nline2", "b"], ["c", "d"]]
+assert parse_csv("a,,c\n") == [["a", "", "c"]]
+assert parse_csv("a\n\nb\n") == [["a"], [""], ["b"]]
+assert parse_csv(",\n") == [["", ""]]
+assert parse_csv('""') == [[""]]
+assert parse_csv("") == []
+assert parse_csv('a,"b\r\nc"') == [["a", "b\r\nc"]]
+'''
+
+[[questions]]
+id = "rate-limiter"
+prompt = '''
+Write a class `SlidingLimiter(limit: int, window: float)` with a method `allow(t: float) -> bool`. It is called with non-decreasing timestamps in seconds. It returns True (and records the request) if fewer than `limit` requests were allowed in the half-open time window (t - window, t], otherwise False (and the refused request is not recorded). Each call must be O(1) amortized.'''
+tests = '''
+r = SlidingLimiter(2, 10)
+assert r.allow(0) and r.allow(1)
+assert not r.allow(5)
+assert not r.allow(9.999)
+assert r.allow(10), "the request at 0 has left the window (t - window, t]"
+assert not r.allow(10.5)
+assert r.allow(11)
+r = SlidingLimiter(3, 1)
+assert [r.allow(x) for x in [0, 0, 0, 0, 0.5, 1, 1, 1, 1]] == [True, True, True, False, False, True, True, True, False]
+import time
+r = SlidingLimiter(1000, 5.0)
+t0 = time.time()
+n = sum(r.allow(i * 0.001) for i in range(300000))
+assert n == 60000, n
+assert time.time() - t0 < 3, "too slow"
+'''
+
+[[questions]]
+id = "longest-palindrome"
+prompt = '''
+Write `longest_palindrome(s: str) -> str` returning the longest palindromic substring of `s` (the leftmost one if there is a tie). It must handle strings of 100,000 characters in a couple of seconds.'''
+tests = '''
+assert longest_palindrome("babad") == "bab"
+assert longest_palindrome("cbbd") == "bb"
+assert longest_palindrome("a") == "a"
+assert longest_palindrome("") == ""
+assert longest_palindrome("abacdfgdcaba") == "aba"
+assert longest_palindrome("forgeeksskeegfor") == "geeksskeeg"
+assert longest_palindrome("abcde") == "a"
+import time
+s = "ab" * 50000
+t = time.time()
+r = longest_palindrome(s)
+assert r == s[:-1], "wrong for a long repeating string"
+assert time.time() - t < 3, "too slow"
+'''

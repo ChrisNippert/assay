@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"math"
 	"net/http/httptest"
 	"strings"
@@ -186,5 +187,68 @@ func TestBenchmarksPage(t *testing.T) {
 	s.ServeHTTP(rec, httptest.NewRequest("PUT", "http://localhost/api/evals/sets/math", strings.NewReader(twoQuestions)))
 	if rec.Code != 400 {
 		t.Errorf("saved over a built-in set: %d", rec.Code)
+	}
+}
+
+const codeAndProof = `name = "Mixed"
+[[questions]]
+id = "add"
+check = "code"
+prompt = "Write add(a, b)."
+tests = "assert add(2, 3) == 5\n"
+[[questions]]
+id = "proof"
+check = "judge"
+prompt = "Prove 1 + 1 = 2."
+answer = "By definition."
+`
+
+func line(content string) string {
+	b, _ := json.Marshal(map[string]any{"message": map[string]string{"role": "assistant", "content": content}})
+	return string(b) + "\n" + `{"done":true,"done_reason":"stop","eval_count":5}` + "\n"
+}
+
+func TestEvalCodeAndJudge(t *testing.T) {
+	if !evals.HavePython() {
+		t.Skip("no python3")
+	}
+	s, fake, _ := newTestServer(t)
+	fake.tags = threeModels
+	lib, _ := evals.OpenLibrary(t.TempDir())
+	s.evalLib, s.evalRes = lib, evals.OpenResults(t.TempDir())
+	if _, err := lib.Save("mixed", []byte(codeAndProof)); err != nil {
+		t.Fatal(err)
+	}
+	// No judge: the proof waits.
+	fake.replies = []string{line("```python\ndef add(a, b):\n    return a + b\n```"), line("It's obvious.")}
+	if _, err := s.startEvals(context.Background(), evalRunRequest{Models: []string{"small:q4"}, Sets: []string{"mixed"}}); err != nil {
+		t.Fatal(err)
+	}
+	st := waitEvals(t, s)
+	if it := st.Items[0]; it.State != itemDone || it.Waiting != 1 || it.Correct != 1 {
+		t.Fatalf("item %+v", it)
+	}
+	r, _ := s.evalRes.Get("d1", "mixed", "")
+	if r.Done() || !r.Answers[0].Correct || !r.Answers[1].Pending {
+		t.Fatalf("result %+v", r)
+	}
+	// With a judge: only the judge is asked, and its verdict counts.
+	fake.mu.Lock()
+	asked := len(fake.chatReqs)
+	fake.replies = []string{line("A one-line claim, no proof.\nVerdict: FAIL")}
+	fake.mu.Unlock()
+	if _, err := s.startEvals(context.Background(), evalRunRequest{Models: []string{"small:q4"}, Sets: []string{"mixed"}, Judge: "mid:q4"}); err != nil {
+		t.Fatal(err)
+	}
+	waitEvals(t, s)
+	fake.mu.Lock()
+	reqs := fake.chatReqs[asked:]
+	fake.mu.Unlock()
+	if len(reqs) != 1 || reqs[0].Model != "mid:q4" || !strings.Contains(reqs[0].Messages[1].Content, "By definition.") {
+		t.Fatalf("judge requests %+v", reqs)
+	}
+	r, _ = s.evalRes.Get("d1", "mixed", "")
+	if !r.Done() || r.Correct != 1 || r.Answers[1].Pending || r.Answers[1].JudgeModel != "mid:q4" || !strings.Contains(r.Answers[1].Judge, "no proof") {
+		t.Fatalf("judged %+v", r.Answers[1])
 	}
 }

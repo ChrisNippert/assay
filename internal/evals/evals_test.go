@@ -1,9 +1,12 @@
 package evals
 
 import (
+	"context"
 	"math"
+	"os/exec"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestBuiltinSetsLoad(t *testing.T) {
@@ -47,6 +50,9 @@ func TestBuiltinAnswersGrade(t *testing.T) {
 	}
 	for _, s := range sets {
 		for _, q := range s.Questions {
+			if c := s.CheckOf(q); c == CheckCode || c == CheckJudge {
+				continue // see TestCodeRuns and TestParseVerdict
+			}
 			reply := "Let me think.\n\nAnswer: " + q.Answer
 			if s.CheckOf(q) == CheckRegex {
 				var ok bool
@@ -208,5 +214,93 @@ func TestFitLine(t *testing.T) {
 	f, _ = FitLine([]Point{{0.2, 12}, {0.4, 18}, {0.6, 31}, {0.5, 22}})
 	if f.R2 <= 0.8 || f.R2 >= 1 || f.SE <= 0 {
 		t.Errorf("noisy fit %+v", f)
+	}
+}
+
+func TestExtractCode(t *testing.T) {
+	reply := "<think>```python\nwrong()\n```</think>Here:\n```python\ndef f(): return 1\n```\nand a fix:\n```py\ndef f(): return 2\n```\nDone."
+	if code, ok := ExtractCode(reply); !ok || code != "def f(): return 2\n" {
+		t.Errorf("got %q %v", code, ok)
+	}
+	if code, ok := ExtractCode("```\nx = 1\n```"); !ok || code != "x = 1\n" {
+		t.Errorf("unlabelled: %q", code)
+	}
+	if _, ok := ExtractCode("no code here"); ok {
+		t.Error("found code in plain text")
+	}
+}
+
+func TestCodeRuns(t *testing.T) {
+	if !HavePython() {
+		t.Skip("no python3")
+	}
+	ctx := context.Background()
+	old := CodeTimeout
+	CodeTimeout = 2 * time.Second
+	defer func() { CodeTimeout = old }()
+	t.Logf("network blocked: %v", noNetwork())
+	if noNetwork() {
+		net := "import socket\ns = socket.socket()\ns.settimeout(2)\ns.connect(('1.1.1.1', 53))\n"
+		if ok, out, _ := RunCode(ctx, net, "pass\n"); ok {
+			t.Errorf("reached the network: %s", out)
+		}
+	}
+	tests := "assert add(2, 3) == 5\nassert add(-1, 1) == 0\n"
+	if ok, out, err := RunCode(ctx, "def add(a, b):\n    return a + b\n", tests); !ok || err != nil {
+		t.Errorf("right code failed: %v %s", err, out)
+	}
+	if ok, out, _ := RunCode(ctx, "def add(a, b):\n    return a - b\n", tests); ok || !strings.Contains(out, "AssertionError") {
+		t.Errorf("wrong code passed: %s", out)
+	}
+	// A solution can't fake success by printing the marker and exiting.
+	if ok, _, _ := RunCode(ctx, "print('ALL TESTS PASSED')\nimport sys\nsys.exit(0)\n", tests); ok {
+		t.Error("exit(0) before the tests counted as a pass")
+	}
+	if ok, out, _ := RunCode(ctx, "while True: pass\n", tests); ok || !strings.Contains(out, "Stopped") && !strings.Contains(out, "CPU") {
+		t.Logf("endless loop output: %q", out)
+		if ok {
+			t.Error("endless loop passed")
+		}
+	}
+}
+
+// Every built-in code question's tests are valid Python.
+func TestBuiltinCodeTestsCompile(t *testing.T) {
+	if !HavePython() {
+		t.Skip("no python3")
+	}
+	py, _ := pythonPath()
+	l, _ := OpenLibrary("")
+	sets, _ := l.List()
+	for _, s := range sets {
+		for _, q := range s.Questions {
+			if s.CheckOf(q) != CheckCode {
+				continue
+			}
+			cmd := exec.Command(py, "-c", "import sys; compile(sys.stdin.read(), 'tests', 'exec')")
+			cmd.Stdin = strings.NewReader(q.Tests)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Errorf("%s/%s: %v %s", s.ID, q.ID, err, out)
+			}
+		}
+	}
+}
+
+func TestParseVerdict(t *testing.T) {
+	cases := map[string][2]bool{
+		"The proof is fine.\nVerdict: PASS":                      {true, true},
+		"Gap in step 2.\n\n**Verdict: FAIL**":                    {false, true},
+		"verdict: pass ... wait, no.\nVerdict: FAIL":             {false, true},
+		"<think>Verdict: PASS</think>It is wrong. Verdict: fail": {false, true},
+		"I can't decide.": {false, false},
+	}
+	for in, want := range cases {
+		if pass, ok := ParseVerdict(in); pass != want[0] || ok != want[1] {
+			t.Errorf("%q: %v %v", in, pass, ok)
+		}
+	}
+	sys, user := JudgeMessages(Question{Prompt: "Prove X.", Answer: "Because Y."}, "<think>hmm</think>Proof: Z.")
+	if !strings.Contains(sys, "Verdict: PASS") || !strings.Contains(user, "Because Y.") || !strings.Contains(user, "Proof: Z.") || strings.Contains(user, "hmm") {
+		t.Errorf("judge prompt: %s", user)
 	}
 }

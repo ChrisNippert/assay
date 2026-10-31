@@ -90,7 +90,7 @@
     const box = el('div', 'bm-cell');
     if (item && item.state === 'running') {
       box.classList.add('busy');
-      box.append(el('span', 'lib-spin'), el('span', 'bm-sub', `${item.answered}/${item.total}`));
+      box.append(el('span', 'lib-spin'), el('span', 'bm-sub', item.judging ? `judging ${item.judging}` : `${item.answered}/${item.total}`));
       return box;
     }
     if (item) {
@@ -107,8 +107,8 @@
     }
     const b = el('button', 'bm-score');
     b.type = 'button';
-    b.title = `${c.correct} of ${c.answered} right${c.done ? '' : ` (${c.total - c.answered} not asked yet)`}${c.stale ? '. The set has changed since.' : ''}${c.cut ? `. ${c.cut} hit the token limit.` : ''}${c.errors ? `. ${c.errors} failed.` : ''} Click to read the answers.`;
-    const n = el('span', 'bm-num' + (c.done && !c.stale ? '' : ' partial'), c.done ? `${pct(c.score)}%` : `${c.answered}/${c.total}`);
+    b.title = `${c.correct} of ${c.answered} right${c.pending ? ` (${c.pending} waiting for a judge)` : ''}${c.answered < c.total ? ` (${c.total - c.answered} not asked yet)` : ''}${c.stale ? '. The set has changed since.' : ''}${c.cut ? `. ${c.cut} hit the token limit.` : ''}${c.errors ? `. ${c.errors} failed.` : ''} Click to read the answers.`;
+    const n = el('span', 'bm-num' + (c.done && !c.stale ? '' : ' partial'), c.done ? `${pct(c.score)}%` : c.pending && c.answered >= c.total ? 'judge' : `${c.answered}/${c.total}`);
     if (c.stale) n.append(el('span', 'bm-mark', '*'));
     const track = el('span', 'lib-track thin');
     const fill = el('span', 'lib-fill' + (c.done && !c.stale ? ' accent' : ''));
@@ -236,6 +236,8 @@
       const t = el('div', 'row-text');
       const title = el('div', 'row-title', s.name);
       if (s.builtIn) title.append(' ', el('span', 'tag', 'built in'));
+      if (s.code) title.append(' ', el('span', 'tag', 'runs code'));
+      if (s.judge) title.append(' ', el('span', 'tag', 'judged'));
       t.append(title, el('div', 'row-sub', `${s.questions} questions${s.check ? ' · ' + s.check : ''}${s.description ? ' · ' + s.description : ''}`));
       const ctrl = el('div', 'row-ctrl');
       const open = el('button', 'btn', s.builtIn ? 'View' : 'Edit');
@@ -270,7 +272,9 @@
     const s = $('bm-status');
     if (!run.running) {
       const failed = run.items.filter((it) => it.state === 'failed');
-      if (run.cancelled) status('Stopped. Starting again picks up where it left off.');
+      const waiting = run.items.reduce((n, it) => n + (it.waiting || 0), 0);
+      if (waiting && !failed.length && !run.cancelled) status(`${waiting} answer${waiting === 1 ? '' : 's'} wait for a judge. Run the set again with a judge picked to grade them.`);
+      else if (run.cancelled) status('Stopped. Starting again picks up where it left off.');
       else if (failed.length) status(failed.map((it) => `${it.title} · ${it.setName}: ${it.reason}`).join(' · '), true);
       else s.hidden = true;
       $('bm-run-open').disabled = false;
@@ -284,7 +288,7 @@
     const line = el('div', 'lib-progress-line');
     line.append(el('span', 'lib-spin'));
     const txt = el('span');
-    txt.textContent = (cur ? `${cur.title} · ${cur.setName}: ${cur.answered} of ${cur.total} asked, ${cur.correct} right` : 'Starting…') + (run.think === 'off' ? ' · thinking off' : '');
+    txt.textContent = (cur ? (cur.judging ? `${cur.title} · ${cur.setName}: the judge has ${cur.judging} left` : `${cur.title} · ${cur.setName}: ${cur.answered} of ${cur.total} asked, ${cur.correct} right`) : 'Starting…') + (run.think === 'off' ? ' · thinking off' : '');
     const stop = el('button', 'lib-linkbtn', 'Stop');
     stop.type = 'button';
     stop.onclick = async () => { stop.disabled = true; run = await api('DELETE', '/api/evals/run'); };
@@ -320,6 +324,9 @@
   function updateRunNote() {
     const ms = [...$('bm-run-models').querySelectorAll('input:checked')].map((i) => i.value);
     const ss = [...$('bm-run-sets').querySelectorAll('input:checked')].map((i) => i.value);
+    const picked = data.sets.filter((s) => ss.includes(s.id));
+    $('bm-judge-row').hidden = !picked.some((s) => s.judge);
+    $('bm-code-note').hidden = !picked.some((s) => s.code);
     const q = ss.reduce((n, id) => n + (data.sets.find((s) => s.id === id) || { questions: 0 }).questions, 0);
     $('bm-run-go').disabled = !ms.length || !ss.length;
     $('bm-run-note').textContent = ms.length && ss.length
@@ -334,6 +341,19 @@
       check(mBox, r.name, r.title, [r.quant, n ? `${n} sets done` : ''].filter(Boolean).join(' · '), (models || []).includes(r.name));
     }
     for (const s of data.sets) check(sBox, s.id, s.name, `${s.questions}`, (sets || data.suite).includes(s.id));
+    const judge = $('bm-run-judge');
+    judge.innerHTML = '';
+    const none = el('option', null, 'No judge: grade later');
+    none.value = '';
+    judge.append(none);
+    const byParams = [...data.rows].sort((a, b) => (b.params || 0) - (a.params || 0));
+    for (const r of byParams) {
+      const o = el('option', null, `${r.title}${r.quant ? ' · ' + r.quant : ''}${r.params ? ` · ${r.params < 10 ? r.params.toFixed(1) : Math.round(r.params)}B` : ''}`);
+      o.value = r.name;
+      judge.append(o);
+    }
+    const saved = store.get('bm-judge');
+    judge.value = saved && byParams.some((r) => r.name === saved) ? saved : byParams.length ? byParams[0].name : '';
     $('bm-run-redo').checked = false;
     updateRunNote();
     runDlg.showModal();
@@ -347,7 +367,9 @@
       sets: [...$('bm-run-sets').querySelectorAll('input:checked')].map((i) => i.value),
       think,
       redo: $('bm-run-redo').checked,
+      judge: $('bm-judge-row').hidden ? '' : $('bm-run-judge').value,
     };
+    if (body.judge) store.set('bm-judge', body.judge);
     const go = $('bm-run-go');
     go.disabled = true;
     try {
@@ -389,7 +411,8 @@
       head.append(el('span', 'bm-ans-mark', a.correct ? '✓' : '✗'), el('span', 'bm-ans-id', a.id));
       const facts = el('span', 'bm-ans-facts muted small');
       const parts = [];
-      if (qq.answer != null && (qq.check || set.check) !== 'regex') parts.push(`expected ${qq.answer}`);
+      const chk = qq.check || set.check;
+      if (qq.answer && !['regex', 'judge', 'code'].includes(chk)) parts.push(`expected ${qq.answer}`);
       if (a.got) parts.push(`got ${a.got}`);
       parts.push(`${a.tokens} tokens`, `${(a.ms / 1000).toFixed(1)} s`);
       if (a.cut) parts.push('hit the token limit');
@@ -401,7 +424,9 @@
         const d = el('details', 'bm-ans-q');
         d.open = !a.correct;
         d.append(el('summary', null, 'Question'), el('pre', 'bm-pre', qq.prompt + (qq.choices ? '\n\n' + qq.choices.map((c, i) => String.fromCharCode(65 + i) + '. ' + c).join('\n') : '')));
-        if ((qq.check || set.check) === 'regex') d.append(el('div', 'muted small', 'Must match: ' + qq.answer));
+        if (chk === 'regex') d.append(el('div', 'muted small', 'Must match: ' + qq.answer));
+        if (chk === 'judge' && qq.answer) { d.append(el('div', 'muted small', 'Reference:'), el('pre', 'bm-pre muted', qq.answer)); }
+        if (chk === 'code' && qq.tests) { d.append(el('div', 'muted small', 'Tests:'), el('pre', 'bm-pre bm-out', qq.tests)); }
         item.append(d);
       }
       if (a.thinking) {
@@ -410,6 +435,20 @@
         item.append(d);
       }
       item.append(el('pre', 'bm-pre bm-reply', a.reply || '(empty reply)'));
+      if (a.output) {
+        const d = el('details', 'bm-ans-q');
+        d.open = !a.correct;
+        d.append(el('summary', null, 'Test output'), el('pre', 'bm-pre bm-out', a.output));
+        item.append(d);
+      }
+      if (a.pending) item.append(el('div', 'muted small', 'Waiting for a judge.'));
+      if (a.judge) {
+        const d = el('details', 'bm-ans-q');
+        d.open = !a.correct;
+        const self = a.judgeModel === res.model;
+        d.append(el('summary', null, `Judged by ${a.judgeModel}${self ? ' (itself)' : ''}`), el('pre', 'bm-pre', a.judge));
+        item.append(d);
+      }
       list.append(item);
     }
     applyShow();

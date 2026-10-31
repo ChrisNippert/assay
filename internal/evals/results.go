@@ -31,6 +31,13 @@ type Answer struct {
 	Cut    bool   `json:"cut,omitempty"`
 	Ms     int64  `json:"ms"`
 	Error  string `json:"error,omitempty"`
+	// Output is what the tests printed (code check).
+	Output string `json:"output,omitempty"`
+	// Pending marks an answer waiting for a judge; Judge is the judge's
+	// reasoning and JudgeModel who judged.
+	Pending    bool   `json:"pending,omitempty"`
+	Judge      string `json:"judge,omitempty"`
+	JudgeModel string `json:"judgeModel,omitempty"`
 }
 
 // Result is one model's run of one set.
@@ -50,8 +57,21 @@ type Result struct {
 	Answers []Answer `json:"answers"`
 }
 
-// Done says every question has an answer.
-func (r *Result) Done() bool { return len(r.Answers) >= r.Total && r.Total > 0 }
+// Done says every question has an answer and none waits for a judge.
+func (r *Result) Done() bool {
+	return len(r.Answers) >= r.Total && r.Total > 0 && r.Pending() == 0
+}
+
+// Pending counts answers waiting for a judge.
+func (r *Result) Pending() int {
+	n := 0
+	for _, a := range r.Answers {
+		if a.Pending {
+			n++
+		}
+	}
+	return n
+}
 
 // Score is the share right, 0–1, of the questions answered so far.
 func (r *Result) Score() float64 {
@@ -176,7 +196,7 @@ func (rs *Results) All() []*Result {
 			continue
 		}
 		for i := range r.Answers {
-			r.Answers[i].Reply, r.Answers[i].Thinking = "", ""
+			r.Answers[i].Reply, r.Answers[i].Thinking, r.Answers[i].Judge, r.Answers[i].Output = "", "", "", ""
 		}
 		out = append(out, &r)
 	}
