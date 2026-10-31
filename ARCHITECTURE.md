@@ -214,13 +214,28 @@ code doesn't care which engine runs (`server.Backend`).
   `<data>/llamacpp.json` can put the release first. The installer reads
   GitHub's `/releases` list, not `/latest` (llama.cpp's builds are all
   pre-releases; "latest" is an old tag with no binaries), and takes the
-  newest with an asset for this system: Linux `ubuntu-vulkan-*.tar.gz`,
-  macOS `macos-*.tar.gz`, Windows `win-vulkan-*.zip`. It downloads (sha256
+  newest with the chosen build for this system. **Builds** (`release.go`,
+  `specs`): CPU, Vulkan (the default), ROCm/HIP and CUDA where the release
+  has them (Linux x64: all four; Linux arm64: Vulkan, CPU, CUDA; Windows x64
+  likewise with ROCm; macOS: Metal on Apple silicon, CPU on Intel). Names
+  with a version (`ubuntu-cuda-12.8-x64`, `ubuntu-rocm-10.0-x64`) take the
+  lowest CUDA (older drivers) and highest ROCm on offer. A CUDA build also
+  needs its separate `cudart-llama-…` file (Linux names carry the tag,
+  Windows names don't); both download with one progress bar and the runtime
+  is unpacked beside `llama-server` (files already there win), and a CUDA
+  build without its cudart isn't offered. `Recommend` picks from the GPU
+  names: AMD → ROCm, NVIDIA → CUDA, either falling back to Vulkan, mixed or
+  other vendors → Vulkan, none → CPU; the choice is always the user's.
+  `GET /api/llamacpp/check` lists the builds (id, label, who it is for,
+  size, files, URL) and `recommended`; `POST /api/llamacpp/install` takes
+  `build` (empty keeps the installed build, else the default); `release.json`
+  records the build. Settings has a build menu beside the install button.
+  It downloads (sha256
   when GitHub gives one), unpacks safely into `<dir>.new`, and swaps via
   `<dir>.old`. `Engine.SetServer` switches binaries live; running models
   keep their process. Updating the release in use with models loaded asks
   first, then stops them. A probe (`--version`, `--list-devices`) warns when
-  Vulkan sees no GPU; it isn't run on your own ROCm build.
+  the build sees no GPU; it isn't run on your own ROCm build.
 - **Found on this computer** (`internal/engine/sources.go`). Library
   offers, never imports by itself, the models other apps already
   downloaded, linked like the Ollama import: hard link on the store's disk,
@@ -752,6 +767,45 @@ On phones (max-width 760px) the UI follows the ChatGPT/Claude mobile pattern: th
 `hw.Detect` lists every card (`Memory.Cards`: AMD each `/sys/class/drm/card*/device` with `mem_info_vram_total`, iGPU carve-outs under 1 GiB skipped when a real card exists; NVIDIA each `nvidia-smi` line); `Memory.VRAM` is the total and `Memory.GPU` reads "4 GPUs (3x Quadro P2000, GeForce GTX 1050 Ti)" (one card keeps its own name). `hw.ReadLive` sums used/total and reports `gpuBusy` as the busiest card (layer-split cards take turns, so an average would look idle), plus `cards` (name, used, total, busy) when there is more than one; the Memory popover draws one small bar per card under the VRAM total. `hw.Classify` subtracts `ExtraCardOverhead` (512 MiB, each extra card's compute buffer) from the total; a single card is unchanged. llama-server uses all GPUs by default (layer split); the Tune panel (Memory & loading, only with more than one device) adds `gpu_devices` ("GPUs to use": checkboxes, stored as a comma list of `--device` names like CUDA0,CUDA2; all ticked = no value) and `split_mode` ("Split across GPUs": Layers, or Rows = `--split-mode row`); flags are passed only when not default. `Engine.Devices` runs `llama-server --list-devices` once per binary and caches it (nil on failure hides the options; `/api/models/defaults` carries `gpus`); the list is only consulted when a subset is chosen, and names no longer present are dropped. The VRAM limit (`--fit-target`, a per-device margin) spreads the held-back memory over the cards in use; with a subset the free memory still counts every card, so the limit is looser. Fit labels ignore the subset.
 
 Test-only: `OLLAMUI_FAKE_GPUS="name:totalMiB:usedMiB,..."` makes hw (and `Engine.Devices`, as CUDA0..) report made-up cards so the multi-GPU UI can be checked on one-GPU machines.
+
+## First-run setup
+
+`/setup` (`internal/server/setup.go`, `web/static/setup.js`) is a guided,
+skippable four-step page: Computer, Engine, First model, Done. Principle:
+every install is one explicit click that states what, from where, how big and
+where it goes; nothing downloads on its own.
+
+- **When it shows.** `/chat` (without a chat id) redirects to `/setup` while
+  `needsSetup(done, haveEngine, models)` holds: setup isn't done and there is
+  no llama-server resolved or no installed model. Only with the llama.cpp
+  engine (a nil manager never redirects) and never when listing models
+  fails. "Done" is the file `<config>/setup.json`, written by "Start chatting",
+  "Skip setup entirely" and the Discover link; Settings → Models → "Run setup
+  again" just opens `/setup`, which always renders. `POST /api/setup/done`
+  takes `{done:false}` to clear it.
+- **Computer.** `GET /api/setup` returns OS, each GPU with its VRAM, RAM, a
+  plain-words sentence from `reach` (largest model size that runs wholly on
+  the GPU, and at all, by `hw.Classify` on a ~4.8 bits/weight quant), the
+  engine state (path, source, `Manager.Probe` version and devices, install
+  folder, license, models folder) and installed model names.
+- **Engine.** If one is found it is shown with its probe and "Keep this one".
+  Otherwise the builds from `/api/llamacpp/check` are radio rows with the
+  recommended one preselected, and rows for what (tag, build, size), from
+  (GitHub release page and file names), goes to (`<data>/llama.cpp-release`)
+  and license (MIT). The button names the build and size; progress uses the
+  existing install job (`/api/llamacpp`, reloading the page resumes it). "Use
+  a llama-server I already have" is a path input with Browse… (`ollamuiPick`)
+  wired to `PUT /api/llamacpp/custom`; the verify result is the probe.
+- **First model.** `GET /api/setup/models` (cached ten minutes) checks
+  `firstModels`, a short list of well-known small instruct models (Qwen3.5
+  0.8B to 9B, Gemma 4 E2B/E4B/12B QAT, Unsloth repos), against Hugging Face's
+  file lists (read only): repos that are gone or have no ~4-bit quant
+  (`pickQuant`: UD-Q4_K_XL, Q4_K_M, Q4_0, any 4-bit) are dropped. `rankSuggestions`
+  keeps up to four from what fits comfortably (GPU, or RAM without a GPU): the
+  most capable, the best of the other family, a small quick one, each with a
+  "why". Each row shows size, fit, the hf.co repo link and the models folder;
+  its button posts to `/api/pulls`, the same machinery as Discover.
+- **Done.** Summary of the engine and installed models, and "Start chatting".
 
 ## Path pickers
 

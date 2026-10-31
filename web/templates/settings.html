@@ -49,8 +49,12 @@
     </script>
     {{if .Install}}<div class="row lc-row" id="lc-row" hidden>
       <div class="row-text"><span class="row-title" id="lc-title"></span><span class="row-sub" id="lc-sub"></span><div class="lc-bar" id="lc-bar" hidden><span></span></div></div>
-      <div class="row-ctrl"><span class="muted small" id="lc-state"></span><button type="button" class="btn subtle" id="lc-alt" hidden></button><button type="button" class="btn" id="lc-btn"></button></div>
+      <div class="row-ctrl"><span class="muted small" id="lc-state"></span><select id="lc-build" class="combo" aria-label="Build" hidden></select><button type="button" class="btn subtle" id="lc-alt" hidden></button><button type="button" class="btn" id="lc-btn"></button></div>
     </div>{{end}}
+    <div class="row">
+      <div class="row-text"><span class="row-title">First-run setup</span><span class="row-sub">The guided steps for your computer, llama.cpp and a first model.</span></div>
+      <div class="row-ctrl"><a href="/setup" class="btn">Run setup again</a></div>
+    </div>
     <div class="row">
       <div class="row-text"><span class="row-title">Defaults</span><span class="row-sub">A model without its own settings uses a {{if eq .CacheType "q8_0"}}half-size (q8_0){{else if eq .CacheType "q4_0"}}quarter-size (q4_0){{else}}full-size (f16){{end}} KV cache, flash attention {{.FlashAttn}}, and stays in memory {{.KeepAlive}} after the last message.</span></div>
     </div>
@@ -661,8 +665,8 @@
   const row = document.getElementById('lc-row');
   if (!row) return;
   const $ = (id) => document.getElementById(id);
-  const title = $('lc-title'), sub = $('lc-sub'), bar = $('lc-bar'), state = $('lc-state'), btn = $('lc-btn'), alt = $('lc-alt');
-  let st = null, chk = null, note = '', noteBad = false, busy = false, timer = null;
+  const title = $('lc-title'), sub = $('lc-sub'), bar = $('lc-bar'), state = $('lc-state'), btn = $('lc-btn'), alt = $('lc-alt'), pick = $('lc-build');
+  let st = null, chk = null, note = '', noteBad = false, busy = false, timer = null, want = '';
   const size = (n) => n >= 1e9 ? (n / 1e9).toFixed(1) + ' GB' : Math.round(n / 1e6) + ' MB';
   async function api(path, opts) {
     const res = await fetch(path, opts);
@@ -674,8 +678,18 @@
   function render() {
     row.hidden = false;
     btn.hidden = false; btn.className = 'btn'; btn.disabled = busy; alt.hidden = true; alt.disabled = busy; bar.hidden = true; state.textContent = '';
-    btn.onclick = alt.onclick = null;
-    const label = st.label || 'Vulkan';
+    btn.onclick = alt.onclick = null; pick.hidden = true;
+    const known0 = chk && chk.supported ? chk : null;
+    const builds = known0 && known0.builds || [];
+    // The build to install: the user's pick, else what's installed, else the one that suits the GPUs.
+    if (!builds.some((b) => b.id === want)) want = builds.some((b) => b.id === st.installedBuild) ? st.installedBuild : (known0 && known0.recommended) || (builds[0] && builds[0].id) || '';
+    const wb = builds.find((b) => b.id === want);
+    if (builds.length > 1 && !(st.job && st.job.state === 'running')) {
+      pick.replaceChildren(...builds.map((b) => { const o = document.createElement('option'); o.value = b.id; o.textContent = `${b.label} · ~${size(b.size)}` + (b.id === known0.recommended ? " (suggested)" : ""); return o; }));
+      pick.value = want; pick.hidden = false; pick.disabled = busy;
+      pick.onchange = () => { want = pick.value; render(); };
+    }
+    const label = wb ? wb.label : st.label || 'Vulkan';
     const job = st.job;
     if (job && job.state === 'running') {
       const pct = job.total > 0 ? Math.floor(100 * job.completed / job.total) : 0;
@@ -701,21 +715,22 @@
       btn.hidden = true; return;
     }
     const known = chk && chk.supported ? chk : null;
-    const mb = known ? `, ~${size(known.size)}` : '';
+    const mb = wb ? `, ~${size(wb.size)}` : known ? `, ~${size(known.size)}` : '';
     const checkFail = chk && chk.error ? ' Couldn’t reach GitHub: ' + chk.error : '';
     if (!st.installed) {
       const have = st.source !== 'none';
       title.textContent = have ? `Official llama.cpp release (${label})` : 'Install llama.cpp';
       say(have
-        ? 'Not installed. ollamui can download llama.cpp’s official ready-made build into its own folder (' + label + ', works on most GPUs). The llama.cpp you have now stays where it is, untouched, and keeps being used until you switch.' + checkFail
-        : 'Models can’t run without it. ollamui downloads llama.cpp’s official ready-made build from its GitHub releases into its own folder (' + label + ', works on most GPUs; it needs the system Vulkan loader, libvulkan).' + checkFail);
+        ? 'Not installed. ollamui can download llama.cpp’s official ready-made build into its own folder (' + label + (wb ? ': ' + wb.note : ', works on most GPUs') + '). The llama.cpp you have now stays where it is, untouched, and keeps being used until you switch.' + checkFail
+        : 'Models can’t run without it. ollamui downloads llama.cpp’s official ready-made build from its GitHub releases into its own folder (' + label + (wb ? ': ' + wb.note : ', works on most GPUs; it needs the system Vulkan loader, libvulkan') + ') Pick another build with the menu.' + checkFail);
       btn.textContent = `${have ? 'Download' : 'Install llama.cpp'} (${label}${mb})`;
       if (!have) btn.className = 'btn primary';
       btn.onclick = () => install(false);
       return;
     }
     const inUse = st.source === 'release';
-    title.textContent = `Official llama.cpp release ${st.installed} (${label})`;
+    const instLabel = st.installedLabel || label;
+    title.textContent = `Official llama.cpp release ${st.installed} (${instLabel})`;
     let text;
     if (inUse) text = 'In use.';
     else if (st.source === 'flag') text = 'Not in use: -llama-server takes priority.';
@@ -728,8 +743,12 @@
       else if (p.listed) text += ' Vulkan found no GPU, so models will run on the CPU, which is slow. Check that your GPU driver and the Vulkan loader (libvulkan.so.1) are installed.';
     }
     say(text + (known && known.upToDate ? ' Up to date.' : '') + (chk && chk.error ? ' Couldn’t check for updates: ' + chk.error : ''));
-    if (known && !known.upToDate && known.tag) {
-      btn.textContent = `Update to ${known.tag} (~${size(known.size)})`; btn.className = 'btn primary';
+    const switching = wb && st.installedBuild && wb.id !== st.installedBuild;
+    if (switching) {
+      btn.textContent = `Switch to ${wb.label} ${known.tag} (~${size(wb.size)})`; btn.className = 'btn primary';
+      btn.onclick = () => install(false);
+    } else if (known && !known.upToDate && known.tag) {
+      btn.textContent = `Update to ${known.tag} (~${size(wb ? wb.size : known.size)})`; btn.className = 'btn primary';
       btn.onclick = () => install(false);
     } else {
       btn.textContent = 'Check for update'; btn.className = 'btn subtle';
@@ -753,7 +772,7 @@
   async function install(force) {
     busy = true; note = ''; render();
     try {
-      st.job = await send('POST', '/api/llamacpp/install', { force });
+      st.job = await send('POST', '/api/llamacpp/install', { force, build: want });
     } catch (err) {
       busy = false;
       if (err.status === 409 && err.body.running) {

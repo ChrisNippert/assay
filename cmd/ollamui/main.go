@@ -200,6 +200,7 @@ func run() error {
 		Updates:       newUpdates(*configDir),
 		Service:       svc,
 		ServiceArgs:   os.Args[1:],
+		SetupFile:     filepath.Join(*configDir, "setup.json"),
 		AllowHosts:    allowHosts,
 		Logger:        log,
 	})

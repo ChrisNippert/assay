@@ -106,6 +106,8 @@ type Options struct {
 	Updates     *update.Checker
 	Service     service.Service
 	ServiceArgs []string
+	// SetupFile remembers that first-run setup was finished or skipped; empty keeps that in memory.
+	SetupFile string
 	// AllowHosts are extra hostnames (besides localhost and IP addresses)
 	// the UI may be reached by, e.g. a Tailscale machine name.
 	AllowHosts []string
@@ -155,9 +157,14 @@ type Server struct {
 	// vramUsed reports GPU memory in use; swapped out in tests.
 	vramUsed func() int64
 	memory   hw.Memory
-	log      *slog.Logger
-	pages    map[string]*template.Template
-	handler  http.Handler
+	setup    *setupState
+	// sugg are the first-model suggestions, kept for a few minutes.
+	suggMu  sync.Mutex
+	sugg    []suggestion
+	suggAt  time.Time
+	log     *slog.Logger
+	pages   map[string]*template.Template
+	handler http.Handler
 	// runs are the replies being written, by chat id (see runs.go).
 	runsMu sync.Mutex
 	runs   map[string]*run
@@ -167,7 +174,7 @@ type Server struct {
 func New(opts Options) (*Server, error) {
 	s := &Server{
 		ollama: opts.Ollama, chats: opts.Chats, chatSt: opts.ChatSettings, presets: opts.Presets,
-		hf: opts.HF, pulls: opts.Pulls, llama: opts.LlamaCpp, scores: opts.Scores, bench: opts.Bench, projects: opts.Projects, ragSt: opts.RAGSettings, toolSt: opts.Tools, limitSt: opts.Limits, version: opts.Version, updates: opts.Updates, service: opts.Service, serviceArgs: opts.ServiceArgs, indexQueue: make(chan indexJob, 256), voice: opts.Voice, voiceSt: opts.VoiceSettings, speech: opts.VoiceLauncher, memory: opts.Memory, log: opts.Logger,
+		hf: opts.HF, pulls: opts.Pulls, llama: opts.LlamaCpp, scores: opts.Scores, bench: opts.Bench, projects: opts.Projects, ragSt: opts.RAGSettings, toolSt: opts.Tools, limitSt: opts.Limits, version: opts.Version, updates: opts.Updates, service: opts.Service, serviceArgs: opts.ServiceArgs, indexQueue: make(chan indexJob, 256), voice: opts.Voice, voiceSt: opts.VoiceSettings, speech: opts.VoiceLauncher, memory: opts.Memory, log: opts.Logger, setup: openSetupState(opts.SetupFile),
 		vramUsed: hw.VRAMUsed,
 	}
 	if s.bench == nil {
@@ -205,7 +212,7 @@ func New(opts Options) (*Server, error) {
 		s.log = slog.Default()
 	}
 	s.pages = map[string]*template.Template{}
-	for _, name := range []string{"chat", "library", "discover", "model", "presets", "settings", "compare", "project"} {
+	for _, name := range []string{"chat", "library", "discover", "model", "presets", "settings", "compare", "project", "setup"} {
 		t, err := template.New("").Funcs(templateFuncs).ParseFS(web.FS, "templates/layout.html", "templates/"+name+".html")
 		if err != nil {
 			return nil, fmt.Errorf("parse %s template: %w", name, err)
@@ -233,6 +240,10 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("GET /discover/{owner}/{name}", s.handleModelPage)
 	mux.HandleFunc("GET /presets", s.handlePresetsPage)
 	mux.HandleFunc("GET /settings", s.handleSettingsPage)
+	mux.HandleFunc("GET /setup", s.handleSetupPage)
+	mux.HandleFunc("GET /api/setup", s.handleSetup)
+	mux.HandleFunc("GET /api/setup/models", s.handleSetupModels)
+	mux.HandleFunc("POST /api/setup/done", s.handleSetupDone)
 	mux.HandleFunc("GET /compare", s.handleComparePage)
 	mux.HandleFunc("GET /projects/{id}", s.handleProjectPage)
 	mux.HandleFunc("POST /api/projects", s.handleProjectCreate)

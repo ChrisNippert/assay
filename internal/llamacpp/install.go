@@ -42,6 +42,7 @@ type Progress struct {
 // record is what release.json in Dir says about the install.
 type record struct {
 	Tag       string    `json:"tag"`
+	Build     string    `json:"build,omitempty"`
 	Asset     string    `json:"asset"`
 	Installed time.Time `json:"installed"`
 }
@@ -62,21 +63,22 @@ func (in *Installer) Binary() string {
 	return ""
 }
 
-// Installed is the tag of the installed release ("" if none).
-func (in *Installer) Installed() string {
+func (in *Installer) record() (r record) {
 	if in.Binary() == "" {
-		return ""
+		return
 	}
-	b, err := os.ReadFile(filepath.Join(in.Dir, "release.json"))
-	if err != nil {
-		return ""
+	if b, err := os.ReadFile(filepath.Join(in.Dir, "release.json")); err == nil {
+		json.Unmarshal(b, &r)
 	}
-	var r record
-	if json.Unmarshal(b, &r) != nil {
-		return ""
-	}
-	return r.Tag
+	return
 }
+
+// Installed is the tag of the installed release ("" if none).
+func (in *Installer) Installed() string { return in.record().Tag }
+
+// InstalledBuild is the build ID of the installed release ("" if none, or
+// installed before builds had IDs).
+func (in *Installer) InstalledBuild() string { return in.record().Build }
 
 // Install downloads rel and swaps it into Dir. The old install stays
 // working until the new one is complete and unpacked; if the swap fails it
@@ -92,14 +94,32 @@ func (in *Installer) Install(ctx context.Context, rel *Release, progress func(Pr
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(parent, filepath.Base(in.Dir)+"-download-*")
-	if err != nil {
-		return err
+	// The build, then any extra libraries it needs; progress counts them all.
+	files := append([]Asset{rel.Asset}, rel.Extra...)
+	var all int64
+	for _, a := range files {
+		all += a.Size
 	}
-	defer os.Remove(tmp.Name())
-	defer tmp.Close()
-	if err := in.download(ctx, rel.Asset, tmp, progress); err != nil {
-		return err
+	var archives []string
+	var base int64
+	for _, a := range files {
+		tmp, err := os.CreateTemp(parent, filepath.Base(in.Dir)+"-download-*")
+		if err != nil {
+			return err
+		}
+		defer os.Remove(tmp.Name())
+		defer tmp.Close()
+		b := base
+		err = in.download(ctx, a, tmp, func(p Progress) {
+			p.Done += b
+			p.Total = max(all, p.Total+b)
+			progress(p)
+		})
+		if err != nil {
+			return err
+		}
+		base += a.Size
+		archives = append(archives, tmp.Name())
 	}
 
 	staging := in.Dir + ".new"
@@ -109,18 +129,18 @@ func (in *Installer) Install(ctx context.Context, rel *Release, progress func(Pr
 	}
 	defer os.RemoveAll(staging)
 	progress(Progress{Phase: "Unpacking"})
-	if strings.HasSuffix(rel.Asset.Name, ".zip") {
-		err = unzip(tmp.Name(), staging)
-	} else if _, err = tmp.Seek(0, io.SeekStart); err == nil {
-		err = untar(tmp, staging)
-	}
-	if err != nil {
+	if err := unpack(rel.Asset.Name, archives[0], staging); err != nil {
 		return fmt.Errorf("unpacking %s: %w", rel.Asset.Name, err)
 	}
 	if err := flatten(staging, in.exe()); err != nil {
 		return err
 	}
-	rec, _ := json.Marshal(record{Tag: rel.Tag, Asset: rel.Asset.Name, Installed: time.Now().UTC()})
+	for i, a := range rel.Extra {
+		if err := unpackBeside(a.Name, archives[i+1], staging); err != nil {
+			return fmt.Errorf("unpacking %s: %w", a.Name, err)
+		}
+	}
+	rec, _ := json.Marshal(record{Tag: rel.Tag, Build: rel.Build, Asset: rel.Asset.Name, Installed: time.Now().UTC()})
 	if err := os.WriteFile(filepath.Join(staging, "release.json"), rec, 0o644); err != nil {
 		return err
 	}
@@ -135,6 +155,51 @@ func (in *Installer) Install(ctx context.Context, rel *Release, progress func(Pr
 		}
 	}
 	return swap(staging, in.Dir)
+}
+
+// unpack extracts an archive (by its name's extension) into dest.
+func unpack(name, path, dest string) error {
+	if strings.HasSuffix(name, ".zip") {
+		return unzip(path, dest)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return untar(f, dest)
+}
+
+// unpackBeside extracts an archive of extra libraries and moves its files
+// into dir, next to the ones already there (which win on a clash).
+func unpackBeside(name, path, dir string) error {
+	tmp := dir + ".extra"
+	os.RemoveAll(tmp)
+	defer os.RemoveAll(tmp)
+	if err := os.MkdirAll(tmp, 0o755); err != nil {
+		return err
+	}
+	if err := unpack(name, path, tmp); err != nil {
+		return err
+	}
+	// A lone top-level folder is looked through, as flatten does.
+	if entries, err := os.ReadDir(tmp); err == nil && len(entries) == 1 && entries[0].IsDir() {
+		tmp = filepath.Join(tmp, entries[0].Name())
+	}
+	return filepath.WalkDir(tmp, func(p string, d os.DirEntry, err error) error {
+		if err != nil || p == tmp {
+			return err
+		}
+		rel, _ := filepath.Rel(tmp, p)
+		to := filepath.Join(dir, rel)
+		if d.IsDir() {
+			return os.MkdirAll(to, 0o755)
+		}
+		if _, err := os.Lstat(to); err == nil {
+			return nil
+		}
+		return os.Rename(p, to)
+	})
 }
 
 // swap puts the new folder in place of dir, keeping the old one until the

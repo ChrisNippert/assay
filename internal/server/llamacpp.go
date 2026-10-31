@@ -47,7 +47,11 @@ func (s *Server) handleLlamaCheck(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, c)
+	writeJSON(w, http.StatusOK, struct {
+		*llamacpp.Check
+		// Recommended is the build ID that suits this machine's GPUs.
+		Recommended string `json:"recommended,omitempty"`
+	}{c, s.recommendBuild(c)})
 }
 
 // handleLlamaInstall starts an install or update. With models running from
@@ -59,12 +63,13 @@ func (s *Server) handleLlamaInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Force bool `json:"force"`
+		Force bool   `json:"force"`
+		Build string `json:"build"` // build ID; empty keeps the installed one, else the default
 	}
 	if !readJSON(w, r, &req) {
 		return
 	}
-	job, err := m.Install(req.Force)
+	job, err := m.Install(req.Force, req.Build)
 	var running *llamacpp.RunningError
 	if errors.As(err, &running) {
 		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "running": running.Models})

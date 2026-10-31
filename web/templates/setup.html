@@ -1,0 +1,45 @@
+{{define "appbar"}}<h1 class="appbar-title">Setup</h1>{{end}}
+{{define "content"}}
+<div class="column setup" id="setup">
+  <p class="muted small su-lead">A few steps to get you chatting. Nothing is downloaded until you click a download button, and every one says what it fetches, from where, how big it is and where it goes. Each step can be skipped.</p>
+  <ol class="su-steps" id="su-steps" aria-label="Setup steps">
+    <li><button type="button" data-go="1" class="su-step"><span class="su-num">1</span><span class="su-name">Computer</span></button></li>
+    <li><button type="button" data-go="2" class="su-step"><span class="su-num">2</span><span class="su-name">Engine</span></button></li>
+    <li><button type="button" data-go="3" class="su-step"><span class="su-num">3</span><span class="su-name">First model</span></button></li>
+    <li><button type="button" data-go="4" class="su-step"><span class="su-num">4</span><span class="su-name">Done</span></button></li>
+  </ol>
+
+  <section class="su-panel" id="su-1" data-step="1" aria-labelledby="su-1-h">
+    <h2 class="group-title" id="su-1-h">Your computer</h2>
+    <p class="muted small">What ollamui found. This decides which models will run well here.</p>
+    <div class="boxed-list" id="su-system"><div class="row"><div class="row-text"><span class="row-sub">Looking…</span></div></div></div>
+  </section>
+
+  <section class="su-panel" id="su-2" data-step="2" aria-labelledby="su-2-h" hidden>
+    <h2 class="group-title" id="su-2-h">Engine: llama.cpp</h2>
+    <p class="muted small">Models don’t run inside ollamui itself. It starts <strong>llama.cpp</strong>’s <span class="mono">llama-server</span>, a free open-source program that does the actual work of running a model, and talks to it. Without it you can browse and download models but not chat with them.</p>
+    <div id="su-engine"><div class="boxed-list"><div class="row"><div class="row-text"><span class="row-sub">Looking for llama-server…</span></div></div></div></div>
+  </section>
+
+  <section class="su-panel" id="su-3" data-step="3" aria-labelledby="su-3-h" hidden>
+    <h2 class="group-title" id="su-3-h">A first model</h2>
+    <p class="muted small">A model is a large file holding what the AI has learned. These are well-known, general-purpose chat models small enough for this computer. Pick one to try; you can add or remove models any time.</p>
+    <div id="su-models"><div class="boxed-list"><div class="row"><div class="row-text"><span class="row-sub">Checking Hugging Face for models that fit…</span></div></div></div></div>
+    <p class="small su-more"><a href="/discover" data-skip-setup>Skip this and browse all models in Discover instead</a></p>
+  </section>
+
+  <section class="su-panel" id="su-4" data-step="4" aria-labelledby="su-4-h" hidden>
+    <h2 class="group-title" id="su-4-h">All set</h2>
+    <p class="muted small" id="su-done-lead">Here is what is on this computer now.</p>
+    <div class="boxed-list" id="su-summary"></div>
+  </section>
+
+  <div class="su-nav">
+    <button type="button" class="btn" id="su-back">Back</button>
+    <span class="grow"></span>
+    <button type="button" class="btn subtle" id="su-skip">Skip this step</button>
+    <button type="button" class="btn primary" id="su-next">Next</button>
+  </div>
+  <p class="small muted su-exit"><button type="button" class="linklike" id="su-exit">Skip setup entirely</button> · you can run it again any time from Settings.</p>
+</div>
+{{end}}
