@@ -531,6 +531,13 @@ example.com, search_chats and DuckDuckGo search all called correctly.
 
 ### Context compression
 
+Before compressing, `pruneMessages` (`internal/server/prune.go`) runs once the
+prompt is at 60% of the context: fenced code blocks and attached files in older
+messages that a later message repeats (same file name, or same language and
+first line) become a short note. Only the prompt changes, never the saved chat;
+the last 4 messages and the system prompt are kept, so short chats stay
+cache-identical.
+
 `internal/server/compress.go`. Before a reply the prompt is counted with
 llama-server's `/tokenize` (+~12 tokens per message; a 3-chars-per-token
 estimate without it; a reply's `prompt_n` only counts uncached tokens, so it

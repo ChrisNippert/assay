@@ -168,9 +168,6 @@ func (s *Server) compressTurn(ctx context.Context, t *turn, emit func(event) err
 	if t.dropped {
 		emit(event{Type: "uncompressed"})
 	}
-	if !t.compress {
-		return
-	}
 	est, ctxLen, err := s.promptSize(ctx, t.req.Model, t.req.Options, t.req.Messages)
 	if err != nil {
 		s.log.Warn("could not count the prompt", "chat", t.chat.ID, "err", err)
@@ -183,7 +180,20 @@ func (s *Server) compressTurn(ctx context.Context, t *turn, emit func(event) err
 			est += len(b) / 3
 		}
 	}
-	if !needsCompression(est, ctxLen, intOf(t.req.Options["num_predict"])) {
+	// Prune first: code the chat has since replaced costs context and cache.
+	if ctxLen > 0 && float64(est) >= pruneAt*float64(ctxLen) {
+		pruned := pruneMessages(t.req.Messages, compressKeep)
+		if _, ctxN, err := s.promptSize(ctx, t.req.Model, t.req.Options, pruned); err == nil && ctxN > 0 {
+			t.req.Messages = pruned
+		}
+		est, _, _ = s.promptSize(ctx, t.req.Model, t.req.Options, t.req.Messages)
+		if len(t.req.Tools) > 0 {
+			if b, err := json.Marshal(t.req.Tools); err == nil {
+				est += len(b) / 3
+			}
+		}
+	}
+	if !t.compress || !needsCompression(est, ctxLen, intOf(t.req.Options["num_predict"])) {
 		return
 	}
 	upTo := cutPoint(t.hist(s), ctxLen)
@@ -196,7 +206,7 @@ func (s *Server) compressTurn(ctx context.Context, t *turn, emit func(event) err
 		emit(event{Type: "status"})
 		return
 	}
-	t.req.Messages = buildMessages(t.system, t.chat.Compression, t.hist(s))
+	t.req.Messages = pruneMessages(buildMessages(t.system, t.chat.Compression, t.hist(s)), compressKeep)
 	emit(event{Type: "compressed", Compression: t.chat.Compression})
 }
 
