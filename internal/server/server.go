@@ -31,7 +31,9 @@ import (
 	"ollamui/internal/projects"
 	"ollamui/internal/pulls"
 	"ollamui/internal/scores"
+	"ollamui/internal/service"
 	"ollamui/internal/tools"
+	"ollamui/internal/update"
 	"ollamui/internal/voice"
 	"ollamui/web"
 )
@@ -97,6 +99,13 @@ type Options struct {
 	// VoiceLauncher, if set, starts the speech service on demand.
 	VoiceLauncher *voice.Launcher
 	Memory        hw.Memory
+	// Version is this build's version; Updates looks for a newer one (nil:
+	// never). Service manages start-on-boot (nil: not offered) and
+	// ServiceArgs are the flags it runs the app with.
+	Version     string
+	Updates     *update.Checker
+	Service     service.Service
+	ServiceArgs []string
 	// AllowHosts are extra hostnames (besides localhost and IP addresses)
 	// the UI may be reached by, e.g. a Tailscale machine name.
 	AllowHosts []string
@@ -120,15 +129,20 @@ type Server struct {
 	ragSt      *projects.SettingsStore
 	indexQueue chan indexJob
 	// toolSt holds the tool settings; fetcher and searcher run web tools.
-	toolSt   *tools.Store
-	limitSt  *limits.Store
-	fetcher  *tools.Fetcher
-	searcher *tools.Searcher
-	voice    *voice.Client
-	voiceSt  *voice.SettingsStore
-	speech   *voice.Launcher
-	search   searchCache
-	ctxBase  sync.Map // model name → measured weight memory, for picking context
+	toolSt  *tools.Store
+	limitSt *limits.Store
+	version string
+	updates *update.Checker
+	service service.Service
+	// serviceArgs are the flags start-on-boot runs the app with.
+	serviceArgs []string
+	fetcher     *tools.Fetcher
+	searcher    *tools.Searcher
+	voice       *voice.Client
+	voiceSt     *voice.SettingsStore
+	speech      *voice.Launcher
+	search      searchCache
+	ctxBase     sync.Map // model name → measured weight memory, for picking context
 	// ctxCap is model name → largest context worth trying, learned when a
 	// bigger one spilled onto the CPU.
 	ctxCap sync.Map
@@ -153,7 +167,7 @@ type Server struct {
 func New(opts Options) (*Server, error) {
 	s := &Server{
 		ollama: opts.Ollama, chats: opts.Chats, chatSt: opts.ChatSettings, presets: opts.Presets,
-		hf: opts.HF, pulls: opts.Pulls, llama: opts.LlamaCpp, scores: opts.Scores, bench: opts.Bench, projects: opts.Projects, ragSt: opts.RAGSettings, toolSt: opts.Tools, limitSt: opts.Limits, indexQueue: make(chan indexJob, 256), voice: opts.Voice, voiceSt: opts.VoiceSettings, speech: opts.VoiceLauncher, memory: opts.Memory, log: opts.Logger,
+		hf: opts.HF, pulls: opts.Pulls, llama: opts.LlamaCpp, scores: opts.Scores, bench: opts.Bench, projects: opts.Projects, ragSt: opts.RAGSettings, toolSt: opts.Tools, limitSt: opts.Limits, version: opts.Version, updates: opts.Updates, service: opts.Service, serviceArgs: opts.ServiceArgs, indexQueue: make(chan indexJob, 256), voice: opts.Voice, voiceSt: opts.VoiceSettings, speech: opts.VoiceLauncher, memory: opts.Memory, log: opts.Logger,
 		vramUsed: hw.VRAMUsed,
 	}
 	if s.bench == nil {
@@ -173,6 +187,9 @@ func New(opts Options) (*Server, error) {
 	}
 	if s.limitSt == nil {
 		s.limitSt, _ = limits.Open("")
+	}
+	if s.updates == nil {
+		s.updates = update.Open("", "", s.version) // no repo: never asks
 	}
 	if s.toolSt == nil {
 		s.toolSt, _ = tools.OpenStore("")
@@ -241,6 +258,10 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("GET /api/pick", s.handlePickInfo)
 	mux.HandleFunc("POST /api/pick", s.handlePick)
 	mux.HandleFunc("GET /api/fs", s.handleFS)
+	mux.HandleFunc("GET /api/service", s.handleService)
+	mux.HandleFunc("PUT /api/service", s.handleServiceSet)
+	mux.HandleFunc("GET /api/update", s.handleUpdate)
+	mux.HandleFunc("PUT /api/update", s.handleUpdateSet)
 	mux.HandleFunc("GET /api/models/folder", s.handleFolder)
 	mux.HandleFunc("POST /api/models/folder", s.handleFolderMove)
 	mux.HandleFunc("DELETE /api/models/folder", s.handleFolderCancel)
