@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -71,6 +72,7 @@ type ToolCall struct {
 	Result string `json:"result"` // what went back to the model (truncated)
 	Label  string `json:"label"`  // "Searched the web for “…” · 5 results"
 	Error  bool   `json:"error,omitempty"`
+	Trim   string `json:"trim,omitempty"` // the trim a forget call made
 	Said   string `json:"said,omitempty"`
 	Think  string `json:"think,omitempty"`
 }
@@ -108,10 +110,54 @@ type Chat struct {
 	Tools *bool `json:"tools,omitempty"`
 	// EditCode lets the model change an earlier code block with edit_code
 	// (see edit.go). Off unless the chat turns it on.
-	EditCode bool      `json:"editCode,omitempty"`
+	EditCode bool `json:"editCode,omitempty"`
+	// Forget lets the model leave earlier messages out of later prompts with
+	// the forget tool (see trim.go). Off unless the chat turns it on.
+	Forget bool `json:"forget,omitempty"`
+	// Trims are the messages left out of later prompts. The saved messages
+	// are not changed; a trim can be undone.
+	Trims    []Trim    `json:"trims,omitempty"`
 	Created  time.Time `json:"created"`
 	Updated  time.Time `json:"updated"`
 	Messages []Message `json:"messages"`
+}
+
+// Trim leaves messages out of later prompts: each one is sent as
+// "[trimmed: Note]". Messages are indexes into the chat's Messages.
+type Trim struct {
+	ID       string    `json:"id"`
+	Messages []int     `json:"messages"`
+	Note     string    `json:"note"`
+	Created  time.Time `json:"created"`
+}
+
+// DropTrimsFrom removes the trims of message i (counting from 0) and later
+// messages: an edit or regenerate from there replaces them.
+func (c *Chat) DropTrimsFrom(i int) {
+	var kept []Trim
+	for _, t := range c.Trims {
+		var idx []int
+		for _, m := range t.Messages {
+			if m < i {
+				idx = append(idx, m)
+			}
+		}
+		if len(idx) > 0 {
+			t.Messages = idx
+			kept = append(kept, t)
+		}
+	}
+	c.Trims = kept
+}
+
+// UndoTrim removes the trim with the given ID and reports whether it was there.
+func (c *Chat) UndoTrim(id string) bool {
+	i := slices.IndexFunc(c.Trims, func(t Trim) bool { return t.ID == id })
+	if i < 0 {
+		return false
+	}
+	c.Trims = slices.Delete(c.Trims, i, i+1)
+	return true
 }
 
 // Compression is a summary of a chat's oldest messages, sent in their

@@ -308,6 +308,7 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("PATCH /api/chats/{id}", s.handleRenameChat)
 	mux.HandleFunc("POST /api/chats/{id}/compress", s.handleCompress)
 	mux.HandleFunc("DELETE /api/chats/{id}/compression", s.handleUncompress)
+	mux.HandleFunc("DELETE /api/chats/{id}/trims/{trim}", s.handleUndoTrim)
 	mux.HandleFunc("GET /api/chats/settings", s.handleChatSettings)
 	mux.HandleFunc("PUT /api/chats/settings", s.handleChatSettings)
 	mux.HandleFunc("GET /api/voice", s.handleVoiceStatus)

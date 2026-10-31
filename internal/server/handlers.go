@@ -42,6 +42,7 @@ type tuneState struct {
 	Compress *bool          `json:"compress"`
 	Tools    *bool          `json:"tools"`
 	EditCode bool           `json:"editCode"`
+	Forget   bool           `json:"forget"`
 	// Compression is the chat's summary, if it has one; Messages counts the
 	// chat's messages.
 	Compression *chats.Compression `json:"compression"`
@@ -70,7 +71,7 @@ func (s *Server) handleChatPage(w http.ResponseWriter, r *http.Request) {
 		data.Running = s.getRun(c.ID) != nil
 		data.Model = c.Model
 		data.Preset = c.Preset
-		data.Tune = tuneState{Options: c.Options, System: c.System, Think: c.Think, Compress: c.Compress, Tools: c.Tools, EditCode: c.EditCode, Compression: c.Compression, Messages: len(c.Messages)}
+		data.Tune = tuneState{Options: c.Options, System: c.System, Think: c.Think, Compress: c.Compress, Tools: c.Tools, EditCode: c.EditCode, Forget: c.Forget, Compression: c.Compression, Messages: len(c.Messages)}
 		p.ChatID = c.ID
 		p.Title = c.Title
 	}
@@ -256,6 +257,8 @@ type sendRequest struct {
 	Tools *bool `json:"tools"`
 	// EditCode switches on the edit_code tool for this chat (off by default).
 	EditCode bool `json:"editCode"`
+	// Forget switches on the forget tool for this chat (off by default).
+	Forget bool `json:"forget"`
 	// FromUser, when set, drops that user message (counting user messages
 	// from 0) and everything after it before sending: edit and regenerate.
 	FromUser *int `json:"fromUser"`
@@ -405,7 +408,7 @@ type turn struct {
 
 // hist is the chat's messages with their attachments put in (see withFiles).
 func (t *turn) hist(s *Server) []chats.Message {
-	msgs, _ := s.withFiles(t.chat.ID, t.chat.Messages, t.vision, t.docChars)
+	msgs, _ := s.withFiles(t.chat.ID, trimmedMessages(t.chat.Messages, t.chat.Trims), t.vision, t.docChars)
 	return msgs
 }
 
@@ -496,11 +499,12 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 		// A summary of messages the edit cut (or of any before them) no
 		// longer stands for this chat.
 		dropped = c.DropCompressionFrom(at)
-		s.forgetChat(c.ID) // a saved cache may hold the messages just cut
+		c.DropTrimsFrom(at) // trims of cut messages go with them
+		s.forgetChat(c.ID)  // a saved cache may hold the messages just cut
 	}
 	c.Model = req.Model // switching models mid-chat is allowed
 	c.Preset, c.Options, c.System, c.Think, c.Compress, c.Tools = req.Preset, overrides, req.System, req.Think, req.Compress, req.Tools
-	c.EditCode = req.EditCode
+	c.EditCode, c.Forget = req.EditCode, req.Forget
 	if len(req.Attachments) > 0 {
 		added, err := s.chats.Adopt(c.ID, req.Attachments)
 		if err != nil {
@@ -585,7 +589,7 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 		ctxLen = intOf(saved["num_ctx"])
 	}
 	t.docChars = docBudget(ctxLen)
-	hist, cut := s.withFiles(c.ID, c.Messages, vision, t.docChars)
+	hist, cut := s.withFiles(c.ID, trimmedMessages(c.Messages, c.Trims), vision, t.docChars)
 	if last := &c.Messages[len(c.Messages)-1]; len(last.Attachments) > 0 {
 		changed := false
 		for i := range last.Attachments {

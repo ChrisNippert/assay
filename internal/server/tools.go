@@ -82,6 +82,9 @@ func (s *Server) turnTools(ctx context.Context, c *chats.Chat, want *bool, model
 	if c.EditCode { // opt-in per chat, so not in the Settings catalog
 		out = append(out, editCodeTool(c))
 	}
+	if c.Forget {
+		out = append(out, forgetTool(c))
+	}
 	return out
 }
 
@@ -190,6 +193,10 @@ func (s *Server) chatLoop(ctx context.Context, t *turn, emit func(event) error) 
 			}
 			text := tools.Clip(res.Text, toolResultLimit)
 			t.calls[idx].Result, t.calls[idx].Label, t.calls[idx].Error = text, res.Label, res.Err
+			if call.Name == "forget" && !res.Err && len(t.chat.Trims) > 0 {
+				// forget adds its trim to the chat when it succeeds; the call shows it.
+				t.calls[idx].Trim = t.chat.Trims[len(t.chat.Trims)-1].ID
+			}
 			results = append(results, ollama.Message{Role: "tool", Content: text, ToolCallID: call.ID})
 			if err = emit(event{Type: "toolresult", Call: &t.calls[idx]}); err != nil {
 				return "", "", stats, err

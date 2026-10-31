@@ -27,7 +27,7 @@
   let presets = JSON.parse(chatEl.dataset.presets || 'null') || [];
   const initial = JSON.parse(chatEl.dataset.tune || '{}');
   // This chat's own changes. Anything not in here is inherited.
-  const state = { options: { ...(initial.options || {}) }, system: initial.system || '', think: initial.think ?? null, compress: initial.compress ?? null, tools: initial.tools ?? null, editCode: !!initial.editCode };
+  const state = { options: { ...(initial.options || {}) }, system: initial.system || '', think: initial.think ?? null, compress: initial.compress ?? null, tools: initial.tools ?? null, editCode: !!initial.editCode, forget: !!initial.forget };
   // The chat's summary of its oldest messages (see server compress.go), and
   // how many messages it has on the page.
   const chatState = { compression: initial.compression || null, messages: initial.messages || 0 };
@@ -410,8 +410,10 @@
 
   // ---- opt-in tools ----
   // Off unless the chat switches them on; each adds one tool the model may call.
-  {
-    const def = { key: 'editCode', label: 'Edit code blocks', kind: 'optin', help: 'The model can change a code block from earlier in the chat by its exact text, instead of reprinting it' };
+  for (const def of [
+    { key: 'editCode', label: 'Edit code blocks', kind: 'optin', help: 'The model can change a code block from earlier in the chat by its exact text, instead of reprinting it' },
+    { key: 'forget', label: 'Trim old messages', kind: 'optin', help: 'The model can leave earlier messages out of later prompts, with a note in their place. Undo puts them back' },
+  ]) {
     const { row, sub, ctrl, reset } = rowShell(def);
     const sel = el('select', 'combo');
     sel.id = 'tp-' + def.key;
@@ -644,7 +646,7 @@
 
   // ---- rendering ----
   function changedCount() {
-    return Object.keys(state.options).length + (state.system ? 1 : 0) + (state.think !== null ? 1 : 0) + (state.compress !== null ? 1 : 0) + (state.tools !== null ? 1 : 0) + (state.editCode ? 1 : 0);
+    return Object.keys(state.options).length + (state.system ? 1 : 0) + (state.think !== null ? 1 : 0) + (state.compress !== null ? 1 : 0) + (state.tools !== null ? 1 : 0) + (state.editCode ? 1 : 0) + (state.forget ? 1 : 0);
   }
 
   function describe(inh) {
@@ -1064,6 +1066,7 @@
     state.compress = null;
     state.tools = null;
     state.editCode = false;
+    state.forget = false;
   }
 
   async function run(btn, fn) {
@@ -1117,7 +1120,7 @@
       return p ? { preset: p.name } : { model: select.value };
     },
     settings() {
-      return { options: state.options, system: state.system, think: state.think, compress: state.compress, tools: state.tools, editCode: state.editCode };
+      return { options: state.options, system: state.system, think: state.think, compress: state.compress, tools: state.tools, editCode: state.editCode, forget: state.forget };
     },
     // chat.js reports the chat's summary and how many messages it shows.
     setChat(c) {

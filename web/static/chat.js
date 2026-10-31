@@ -882,7 +882,7 @@
   const PENDING = {
     web_search: 'Searching the web…', fetch_url: 'Reading a page…', calculator: 'Calculating…',
     search_chats: 'Searching your chats…', search_project: 'Searching the project’s files…', current_time: 'Checking the time…',
-    edit_code: 'Editing a code block…',
+    edit_code: 'Editing a code block…', forget: 'Trimming earlier messages…',
   };
   function prettyJSON(s) {
     try { return JSON.stringify(JSON.parse(s), null, 2); } catch { return s; }
@@ -895,11 +895,34 @@
     box.append(body);
     return box;
   }
+  // The line under a forget call says what it left out; undo puts it back.
+  function trimLine(call) {
+    const line = el('div', 'trim-line');
+    const undo = el('button', 'trim-undo', 'undo');
+    undo.type = 'button';
+    undo.dataset.undoTrim = call.trim;
+    line.append(`${call.label} · `, undo);
+    return line;
+  }
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest?.('.trim-undo');
+    if (!b || !chatId) return;
+    b.disabled = true;
+    try {
+      const r = await fetch(`/api/chats/${encodeURIComponent(chatId)}/trims/${encodeURIComponent(b.dataset.undoTrim)}`, { method: 'DELETE' });
+      if (!r.ok) throw new Error(r.statusText);
+      b.parentElement.textContent = 'Trim undone: those messages are back in later prompts';
+    } catch {
+      b.disabled = false;
+      b.textContent = 'undo failed, try again';
+    }
+  });
   function fillTool(box, call) {
     box.classList.remove('pending');
     box.classList.toggle('err', !!call.error);
     box.querySelector('summary').textContent = call.label;
     if (call.name === 'edit_code') box.open = true; // the updated block is the point
+    if (call.trim) box.after(trimLine(call));
     box.querySelector('.tool-body').append(el('div', 'tool-k', 'Result'), el('pre', 'tool-pre', call.result));
   }
 

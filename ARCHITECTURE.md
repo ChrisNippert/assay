@@ -531,6 +531,8 @@ example.com, search_chats and DuckDuckGo search all called correctly.
 
 **Opt-in tools.** A chat's Tune row "Edit code blocks" (`Chat.EditCode`, sent as `editCode`, off by default) adds `edit_code` to the tools in `turnTools`; it lives in `internal/server/edit.go`, outside the Settings catalog. The model sends `{find, replace}`; `applyEdit` takes the latest fenced block (saved message or an earlier successful `edit_code` result) that contains `find`, requires exactly one occurrence, and returns the whole updated block. The saved messages are never changed: the block comes back as the call's result, which the chat shows open and the model sees in later prompts.
 
+**Opt-in forget.** Tune's "Trim old messages" (`Chat.Forget`, sent as `forget`) adds `forget` (`internal/server/trim.go`). The model sends `message_ids` or `from`/`to` (numbers count the chat's messages from 1) and a `note`; the chat gets a `Trim` (`Chat.Trims`: indexes plus the note). `trimmedMessages` applies the trims wherever the history is built (`prepareTurn`, `turn.hist`), so each trimmed message reads `[trimmed: note]` in later prompts, without thinking, tool calls or attachments; the last 4 messages are never trimmed. Saved messages never change. The trim applies from the next prompt, not later steps of the same reply. The reply's call shows "trimmed N messages · undo", and `DELETE /api/chats/{id}/trims/{trim}` undoes it. Editing from an earlier message drops the trims of the messages it cuts (`DropTrimsFrom`).
+
 ### Context compression
 
 Before compressing, `pruneMessages` (`internal/server/prune.go`) runs once the
