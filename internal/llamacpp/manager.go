@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -38,7 +38,8 @@ type Runner interface {
 type Job struct {
 	State       string  `json:"state"` // running, done, failed, canceled
 	Tag         string  `json:"tag"`
-	Phase       string  `json:"phase"` // Downloading, Unpacking, Installing
+	Build       string  `json:"build,omitempty"` // ID of the build being installed
+	Phase       string  `json:"phase"`           // Downloading, Unpacking, Installing
 	Completed   int64   `json:"completed"`
 	Total       int64   `json:"total"`
 	BytesPerSec float64 `json:"bytesPerSec"`
@@ -69,26 +70,47 @@ type Probe struct {
 type Status struct {
 	Path      string `json:"path"`
 	Source    string `json:"source"`
-	Custom    string `json:"custom,omitempty"` // the llama-server picked in Settings
+	Custom    string `json:"custom,omitempty"`    // the llama-server picked in Settings
 	OwnPath   string `json:"ownPath,omitempty"`   // the user's own build, if there is one
 	Installed string `json:"installed,omitempty"` // tag of the installed release
 	// PreferRelease: use the installed release even though there is an own build.
 	PreferRelease bool   `json:"preferRelease"`
 	Supported     bool   `json:"supported"`
-	Label         string `json:"label,omitempty"` // Vulkan, Metal…
-	Probe         *Probe `json:"probe,omitempty"` // only for the installed release in use
-	Job           *Job   `json:"job,omitempty"`
+	Label         string `json:"label,omitempty"` // the default build: Vulkan, Metal…
+	// InstalledBuild is the installed release's build ID, and InstalledLabel its name.
+	InstalledBuild string `json:"installedBuild,omitempty"`
+	InstalledLabel string `json:"installedLabel,omitempty"`
+	Probe          *Probe `json:"probe,omitempty"` // only for the installed release in use
+	Job            *Job   `json:"job,omitempty"`
+}
+
+// BuildInfo is a build on offer, for the page.
+type BuildInfo struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Note  string `json:"note"`
+	Size  int64  `json:"size"`
+	// Files are the downloads' names and URL the first one's address.
+	Files []string `json:"files"`
+	URL   string   `json:"url"`
 }
 
 // Check is what GitHub has, compared with what is installed.
 type Check struct {
 	Supported bool   `json:"supported"`
-	Label     string `json:"label,omitempty"`
+	Label     string `json:"label,omitempty"` // of the build that Size and an update refer to
 	Tag       string `json:"tag,omitempty"`
 	Size      int64  `json:"size,omitempty"`
 	Installed string `json:"installed,omitempty"`
 	UpToDate  bool   `json:"upToDate"`
+	// ReleaseURL is the release's page on GitHub.
+	ReleaseURL string `json:"releaseUrl,omitempty"`
+	// Builds is every build this release has for this system, default first.
+	Builds []BuildInfo `json:"builds,omitempty"`
 }
+
+// ReleasePage is where a release tag is described.
+const ReleasePage = "https://github.com/ggml-org/llama.cpp/releases/tag/"
 
 // RunningError says models are loaded from the binary about to be replaced.
 type RunningError struct{ Models []string }
@@ -113,7 +135,7 @@ type Manager struct {
 	cancel  context.CancelFunc
 	check   *Check
 	checkAt time.Time
-	rel     *Release
+	cat     *Catalog
 	probes  map[string]*Probe
 }
 
@@ -275,6 +297,8 @@ func (m *Manager) Status(ctx context.Context) Status {
 	goos, goarch := m.Inst.platform()
 	label := Label(goos, goarch)
 	st := Status{Path: path, Source: source, Custom: m.Custom(), OwnPath: m.ownBinary(), Installed: m.Inst.Installed(), PreferRelease: m.preferRelease(), Supported: label != "", Label: label}
+	st.InstalledBuild = m.Inst.InstalledBuild()
+	st.InstalledLabel = buildLabel(st.InstalledBuild, label)
 	if m.Eng != nil {
 		st.Path = m.Eng.ServerPath()
 		if st.Path != path {
@@ -359,40 +383,79 @@ func ProbeBinary(ctx context.Context, bin string) *Probe {
 	return p
 }
 
+// buildLabel names a build ID; def is for installs from before builds had IDs.
+func buildLabel(id, def string) string {
+	switch id {
+	case BuildCPU:
+		return "CPU"
+	case BuildVulkan:
+		return "Vulkan"
+	case BuildROCm:
+		return "ROCm (HIP)"
+	case BuildCUDA:
+		return "CUDA"
+	case BuildMetal:
+		return "Metal"
+	}
+	return def
+}
+
+// current is the build an update or "Check" refers to: the installed one,
+// else the default.
+func (c *Catalog) current(installed string) Build {
+	for _, b := range c.Builds {
+		if b.ID == installed {
+			return b
+		}
+	}
+	return c.Builds[0]
+}
+
+func (c *Catalog) check(installed, installedBuild string) *Check {
+	b := c.current(installedBuild)
+	out := &Check{Supported: true, Label: b.Label, Tag: c.Tag, Size: b.Size(), Installed: installed, ReleaseURL: ReleasePage + c.Tag}
+	out.UpToDate = installed != "" && TagNumber(installed) >= TagNumber(c.Tag)
+	for _, b := range c.Builds {
+		bi := BuildInfo{ID: b.ID, Label: b.Label, Note: b.Note, Size: b.Size(), URL: b.Asset.URL, Files: []string{b.Asset.Name}}
+		for _, e := range b.Extra {
+			bi.Files = append(bi.Files, e.Name)
+		}
+		out.Builds = append(out.Builds, bi)
+	}
+	return out
+}
+
+// Probe asks bin for its version and devices (remembered per file).
+func (m *Manager) Probe(ctx context.Context, bin string) *Probe { return m.probe(ctx, bin) }
+
 // Check looks for the newest release (at most every ten minutes unless
 // fresh) and compares it with the install.
 func (m *Manager) Check(ctx context.Context, fresh bool) (*Check, error) {
 	m.mu.Lock()
-	if !fresh && m.check != nil && time.Since(m.checkAt) < 10*time.Minute {
-		c := *m.check
-		c.Installed = m.Inst.Installed()
-		c.UpToDate = c.Installed != "" && TagNumber(c.Installed) >= TagNumber(c.Tag)
+	cat, at := m.cat, m.checkAt
+	m.mu.Unlock()
+	if fresh || cat == nil || time.Since(at) >= 10*time.Minute {
+		var err error
+		cat, err = m.Inst.Catalog(ctx)
+		if errors.Is(err, ErrUnsupported) {
+			return &Check{Supported: false}, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		m.mu.Lock()
+		m.cat, m.checkAt = cat, time.Now()
 		m.mu.Unlock()
-		return &c, nil
 	}
-	m.mu.Unlock()
-	goos, goarch := m.Inst.platform()
-	label := Label(goos, goarch)
-	rel, err := m.Inst.Latest(ctx)
-	if errors.Is(err, ErrUnsupported) {
-		return &Check{Supported: false}, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	c := &Check{Supported: true, Label: label, Tag: rel.Tag, Size: rel.Asset.Size, Installed: m.Inst.Installed()}
-	c.UpToDate = c.Installed != "" && TagNumber(c.Installed) >= TagNumber(c.Tag)
-	m.mu.Lock()
-	m.check, m.checkAt, m.rel = c, time.Now(), rel
-	m.mu.Unlock()
-	return c, nil
+	return cat.check(m.Inst.Installed(), m.Inst.InstalledBuild()), nil
 }
 
-// Install starts installing (or updating to) the newest release in the
-// background. If models are running from the install it would replace, it
-// fails with a *RunningError unless force is set, in which case they are
-// stopped just before the swap.
-func (m *Manager) Install(force bool) (*Job, error) {
+// Install starts installing (or updating to) the newest release of build
+// ("" keeps the installed build, else the default) in the background. If
+// models are running from the install it would replace, it fails with a
+// *RunningError unless force is set, in which case they are stopped just
+// before the swap.
+func (m *Manager) Install(force bool, build string) (*Job, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.job != nil && m.job.State == Running {
@@ -404,10 +467,13 @@ func (m *Manager) Install(force bool) (*Job, error) {
 			return nil, &RunningError{Models: names}
 		}
 	}
+	if build == "" {
+		build = m.Inst.InstalledBuild()
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
-	m.job = &Job{State: Running, Phase: "Looking for the latest release"}
-	go m.run(ctx)
+	m.job = &Job{State: Running, Phase: "Looking for the latest release", Build: build}
+	go m.run(ctx, build)
 	j := *m.job
 	return &j, nil
 }
@@ -423,7 +489,7 @@ func (m *Manager) Cancel() bool {
 	return true
 }
 
-func (m *Manager) run(ctx context.Context) {
+func (m *Manager) run(ctx context.Context, build string) {
 	var lastAt time.Time
 	var lastDone int64
 	update := func(f func(j *Job)) {
@@ -431,27 +497,9 @@ func (m *Manager) run(ctx context.Context) {
 		f(m.job)
 		m.mu.Unlock()
 	}
-	rel := func() (*Release, error) {
-		m.mu.Lock()
-		r := m.rel
-		fresh := r != nil && time.Since(m.checkAt) < 10*time.Minute
-		m.mu.Unlock()
-		if fresh {
-			return r, nil
-		}
-		if _, err := m.Check(ctx, true); err != nil {
-			return nil, err
-		}
-		m.mu.Lock()
-		defer m.mu.Unlock()
-		return m.rel, nil
-	}
-	r, err := rel()
-	if err == nil && r == nil {
-		err = ErrUnsupported
-	}
+	r, err := m.Inst.Latest(ctx, build)
 	if err == nil {
-		update(func(j *Job) { j.Tag, j.Phase = r.Tag, "Downloading" })
+		update(func(j *Job) { j.Tag, j.Build, j.Phase = r.Tag, r.Build, "Downloading" })
 		err = m.Inst.Install(ctx, r, func(p Progress) {
 			update(func(j *Job) {
 				j.Phase, j.Completed, j.Total = p.Phase, p.Done, p.Total

@@ -187,6 +187,7 @@ func run() error {
 		VoiceLauncher: launcher,
 		VoiceSettings: voiceSettings,
 		Memory:        mem,
+		SetupFile:     filepath.Join(*configDir, "setup.json"),
 		AllowHosts:    allowHosts,
 		Logger:        log,
 	})

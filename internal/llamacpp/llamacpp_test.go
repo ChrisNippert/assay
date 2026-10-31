@@ -63,6 +63,7 @@ type fakeGitHub struct {
 	hits    int
 	status  int // non-zero: answer the list with this
 	headers map[string]string
+	extra   []string // more files in the b100 release
 }
 
 func newFakeGitHub(t *testing.T) *fakeGitHub {
@@ -85,16 +86,20 @@ func newFakeGitHub(t *testing.T) *fakeGitHub {
 			}
 			return a
 		}
+		b100 := []any{
+			asset("llama-b100-bin-ubuntu-x64.tar.gz"),
+			asset("llama-b100-bin-ubuntu-vulkan-x64.tar.gz"),
+			asset("llama-b100-bin-macos-arm64.tar.gz"),
+			asset("llama-b100-bin-win-vulkan-x64.zip"),
+		}
+		for _, n := range g.extra {
+			b100 = append(b100, asset(n))
+		}
 		json.NewEncoder(w).Encode([]any{
 			// Newest has no Linux build yet (CI still running): skipped.
 			map[string]any{"tag_name": "b200", "assets": []any{asset("llama-b200-bin-win-vulkan-x64.zip")}},
 			map[string]any{"tag_name": "b150", "draft": true, "assets": []any{asset("llama-b150-bin-ubuntu-vulkan-x64.tar.gz")}},
-			map[string]any{"tag_name": "b100", "prerelease": true, "assets": []any{
-				asset("llama-b100-bin-ubuntu-x64.tar.gz"),
-				asset("llama-b100-bin-ubuntu-vulkan-x64.tar.gz"),
-				asset("llama-b100-bin-macos-arm64.tar.gz"),
-				asset("llama-b100-bin-win-vulkan-x64.zip"),
-			}},
+			map[string]any{"tag_name": "b100", "prerelease": true, "assets": b100},
 		})
 	})
 	mux.HandleFunc("/dl/", func(w http.ResponseWriter, r *http.Request) {
@@ -149,7 +154,7 @@ func TestPickAsset(t *testing.T) {
 func TestLatest(t *testing.T) {
 	g := newFakeGitHub(t)
 	g.files["llama-b100-bin-ubuntu-vulkan-x64.tar.gz"] = []byte("x")
-	rel, err := linuxInstaller(g, t.TempDir()).Latest(context.Background())
+	rel, err := linuxInstaller(g, t.TempDir()).Latest(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +163,7 @@ func TestLatest(t *testing.T) {
 	}
 	in := linuxInstaller(g, t.TempDir())
 	in.GOOS, in.GOARCH = "plan9", "mips"
-	if _, err := in.Latest(context.Background()); !errors.Is(err, ErrUnsupported) {
+	if _, err := in.Latest(context.Background(), ""); !errors.Is(err, ErrUnsupported) {
 		t.Errorf("unsupported system: %v", err)
 	}
 }
@@ -167,17 +172,17 @@ func TestLatestRateLimit(t *testing.T) {
 	g := newFakeGitHub(t)
 	g.status = http.StatusForbidden
 	g.headers = map[string]string{"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": fmt.Sprint(time.Now().Add(time.Hour).Unix())}
-	_, err := linuxInstaller(g, t.TempDir()).Latest(context.Background())
+	_, err := linuxInstaller(g, t.TempDir()).Latest(context.Background(), "")
 	var rl *RateLimitError
 	if !errors.As(err, &rl) || rl.Reset.IsZero() || !strings.Contains(err.Error(), "rate limit") {
 		t.Errorf("got %v", err)
 	}
 	g.status, g.headers = http.StatusForbidden, nil // a plain 403 is not a rate limit
-	if _, err = linuxInstaller(g, t.TempDir()).Latest(context.Background()); errors.As(err, &rl) {
+	if _, err = linuxInstaller(g, t.TempDir()).Latest(context.Background(), ""); errors.As(err, &rl) {
 		t.Errorf("plain 403 taken for a rate limit")
 	}
 	g.status = http.StatusTooManyRequests
-	if _, err = linuxInstaller(g, t.TempDir()).Latest(context.Background()); !errors.As(err, &rl) {
+	if _, err = linuxInstaller(g, t.TempDir()).Latest(context.Background(), ""); !errors.As(err, &rl) {
 		t.Errorf("429: got %v", err)
 	}
 }
@@ -193,7 +198,7 @@ func TestInstallSwapLeavesOwnBuildAlone(t *testing.T) {
 
 	in := linuxInstaller(g, filepath.Join(data, "llama.cpp-release"))
 	ctx := context.Background()
-	rel, err := in.Latest(ctx)
+	rel, err := in.Latest(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +226,7 @@ func TestInstallSwapLeavesOwnBuildAlone(t *testing.T) {
 	// Update: new content replaces the old one completely, nothing left over.
 	os.WriteFile(filepath.Join(in.Dir, "stale-file"), []byte("old"), 0o644)
 	g.files["llama-b100-bin-ubuntu-vulkan-x64.tar.gz"] = fakeTarGz(t, "", nil) // no top folder this time
-	rel, _ = in.Latest(ctx)
+	rel, _ = in.Latest(ctx, "")
 	if err := in.Install(ctx, rel, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -260,7 +265,7 @@ func TestFailedInstallKeepsTheOldOne(t *testing.T) {
 	g.files[name] = fakeTarGz(t, "llama-b100", nil)
 	in := linuxInstaller(g, filepath.Join(t.TempDir(), "llama.cpp-release"))
 	ctx := context.Background()
-	rel, _ := in.Latest(ctx)
+	rel, _ := in.Latest(ctx, "")
 	if err := in.Install(ctx, rel, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -328,7 +333,7 @@ func TestInstallWindowsZip(t *testing.T) {
 	g.files["llama-b200-bin-win-vulkan-x64.zip"] = fakeZip(t)
 	in := linuxInstaller(g, filepath.Join(t.TempDir(), "llama.cpp-release"))
 	in.GOOS = "windows"
-	rel, err := in.Latest(context.Background())
+	rel, err := in.Latest(context.Background(), "")
 	if err != nil || rel.Tag != "b200" {
 		t.Fatalf("%+v %v", rel, err)
 	}
@@ -344,7 +349,7 @@ func TestCancelledInstall(t *testing.T) {
 	g := newFakeGitHub(t)
 	g.files["llama-b100-bin-ubuntu-vulkan-x64.tar.gz"] = fakeTarGz(t, "llama-b100", nil)
 	in := linuxInstaller(g, filepath.Join(t.TempDir(), "llama.cpp-release"))
-	rel, _ := in.Latest(context.Background())
+	rel, _ := in.Latest(context.Background(), "")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := in.Install(ctx, rel, nil); !errors.Is(err, context.Canceled) {
@@ -450,7 +455,7 @@ func TestManagerInstallSwitchesTheEngine(t *testing.T) {
 		t.Errorf("cached check hit GitHub again (%d hits, %v)", g.hits, err)
 	}
 
-	if _, err := m.Install(false); err != nil {
+	if _, err := m.Install(false, ""); err != nil {
 		t.Fatal(err)
 	}
 	j := waitJob(t, m)
@@ -473,11 +478,11 @@ func TestUpdateWithRunningModels(t *testing.T) {
 	g := newFakeGitHub(t)
 	g.files["llama-b100-bin-ubuntu-vulkan-x64.tar.gz"] = fakeTarGz(t, "llama-b100", nil)
 	m, fr, _ := newTestManager(t, g, "")
-	m.Install(false)
+	m.Install(false, "")
 	waitJob(t, m)
 
 	fr.loaded = []string{"qwen3:8b"}
-	_, err := m.Install(false)
+	_, err := m.Install(false, "")
 	var re *RunningError
 	if !errors.As(err, &re) || re.Models[0] != "qwen3:8b" {
 		t.Fatalf("want RunningError, got %v", err)
@@ -485,7 +490,7 @@ func TestUpdateWithRunningModels(t *testing.T) {
 	if fr.stopped != 0 {
 		t.Error("stopped models without being told to")
 	}
-	if _, err := m.Install(true); err != nil {
+	if _, err := m.Install(true, ""); err != nil {
 		t.Fatal(err)
 	}
 	if j := waitJob(t, m); j.State != Done {
@@ -505,7 +510,7 @@ func TestRunningModelsOnOwnBuildDontBlockInstall(t *testing.T) {
 	os.WriteFile(own, []byte("mine"), 0o755)
 	m.apply()
 	fr.loaded = []string{"gemma"}
-	if _, err := m.Install(false); err != nil {
+	if _, err := m.Install(false, ""); err != nil {
 		t.Fatal(err)
 	}
 	if j := waitJob(t, m); j.State != Done {
@@ -527,7 +532,7 @@ func TestManagerInstallFailure(t *testing.T) {
 	g.status = http.StatusForbidden
 	g.headers = map[string]string{"X-RateLimit-Remaining": "0"}
 	m, _, _ := newTestManager(t, g, "")
-	m.Install(false)
+	m.Install(false, "")
 	j := waitJob(t, m)
 	if j.State != Failed || !strings.Contains(j.Error, "rate limit") {
 		t.Errorf("job %+v", j)
@@ -548,7 +553,7 @@ func TestUnsupportedSystem(t *testing.T) {
 	if st := m.Status(context.Background()); st.Supported {
 		t.Error("status says supported")
 	}
-	m.Install(false)
+	m.Install(false, "")
 	if j := waitJob(t, m); j.State != Failed {
 		t.Errorf("job %+v", j)
 	}

@@ -843,7 +843,9 @@ a.tag-link:hover { border-color: var(--accent-line); color: var(--accent-text); 
 
 /* llama.cpp install row (Settings -> Models) */
 .lc-row[hidden] { display: none; }
-.lc-row .row-ctrl { flex-wrap: wrap; justify-content: flex-end; }
+.lc-row .row-ctrl { flex-wrap: wrap; justify-content: flex-end; max-width: 55%; }
+.lc-row #lc-build { max-width: 100%; }
+@media (max-width: 760px) { .lc-row .row-ctrl { max-width: none; } }
 .lc-bar { margin-top: var(--s2); height: 6px; border-radius: 3px; background: var(--soft); overflow: hidden; }
 .lc-bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; }
 
@@ -1404,4 +1406,52 @@ html:has(.content-chat) { overscroll-behavior: none; }
   /* A path input with a Browse… button: the field on its own line, buttons below it */
   .row-ctrl:has(> [data-browse]) { flex-wrap: wrap; justify-content: flex-end; }
   .row .row-ctrl:has(> [data-browse]) > input[type="text"] { flex: 1 1 100%; width: 100%; min-width: 100%; box-sizing: border-box; }
+}
+
+/* First-run setup (/setup) */
+.setup { display: flex; flex-direction: column; gap: var(--s3); }
+.su-lead { margin: 0; }
+.su-steps { display: flex; gap: var(--s2); margin: 0; padding: 0; list-style: none; }
+.su-steps li { flex: 1; min-width: 0; }
+.su-step { font: inherit; width: 100%; display: flex; align-items: center; gap: var(--s2); padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--muted); cursor: pointer; text-align: left; }
+.su-step:hover { background: var(--soft); }
+.su-num { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--soft); font-size: var(--fs-xs); font-weight: 600; }
+.su-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); }
+.su-step.seen .su-num { background: var(--accent-soft); color: var(--accent-text); }
+.su-step.current { color: var(--text); border-color: var(--accent-line); background: var(--accent-soft); }
+.su-step.current .su-num { background: var(--accent); color: #fff; }
+.su-panel { display: flex; flex-direction: column; gap: var(--s3); }
+.su-panel > .group-title { margin: 0; }
+.su-panel[hidden] { display: none; }
+.su-panel > p, .su-block > p { margin: 0; }
+.su-block { display: flex; flex-direction: column; gap: var(--s3); margin-top: var(--s2); }
+#su-engine { display: flex; flex-direction: column; gap: var(--s3); }
+.su-sub { font-size: var(--fs-sm); font-weight: 600; margin: var(--s2) 0 0; }
+.su-row .row-sub { overflow-wrap: anywhere; }
+.su-row .row-ctrl { flex-wrap: wrap; justify-content: flex-end; }
+.su-row .row-ctrl input[type="text"] { width: 18rem; max-width: 100%; }
+.su-build { cursor: pointer; }
+.su-build:hover { background: var(--soft); }
+.su-build input { accent-color: var(--accent); margin: 0; flex: none; }
+.su-size { flex: none; white-space: nowrap; }
+.su-badge { margin-left: var(--s2); padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-text); font-size: var(--fs-xs); font-weight: 500; }
+.su-files { display: block; font-size: var(--fs-xs); }
+.su-actions { display: flex; }
+.su-note { margin: 0; }
+.su-ok { color: var(--good); font-weight: 500; }
+.su-nav { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s3); }
+.su-exit { margin: 0; }
+.linklike { font: inherit; padding: 0; border: none; background: none; color: var(--accent-text); cursor: pointer; text-decoration: underline; }
+.su-more { margin: 0; }
+@media (max-width: 760px) {
+  .su-steps { gap: var(--s1); }
+  .su-step { flex-direction: column; gap: 2px; padding: 8px 4px; align-items: center; text-align: center; }
+  .su-name { max-width: 100%; font-size: var(--fs-xs); }
+  /* Controls go under their label so the text gets the width. */
+  .su-row { flex-wrap: wrap; }
+  .su-row .row-ctrl { flex: 1 1 100%; justify-content: flex-start; }
+  .su-row .row-ctrl input[type="text"] { flex: 1 1 100%; width: 100%; box-sizing: border-box; }
+  .su-build { flex-wrap: nowrap; }
+  .su-actions .btn { width: 100%; justify-content: center; white-space: normal; text-align: center; padding: 10px 12px; }
+  .su-nav .btn { min-height: 44px; }
 }

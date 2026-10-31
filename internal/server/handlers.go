@@ -48,6 +48,10 @@ type tuneState struct {
 }
 
 func (s *Server) handleChatPage(w http.ResponseWriter, r *http.Request) {
+	if r.PathValue("id") == "" && s.firstRun(r.Context()) {
+		http.Redirect(w, r, "/setup", http.StatusFound)
+		return
+	}
 	p := s.basePage(r.Context(), "chat", "Chat")
 	data := &chatPageData{Preset: r.URL.Query().Get("preset")}
 	if id := r.PathValue("id"); id != "" {
