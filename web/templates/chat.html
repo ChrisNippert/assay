@@ -51,14 +51,6 @@
 
   <div class="chat-body">
     <div class="chat-main">
-      <div class="chat-numbers" id="chat-numbers" role="group" aria-label="Speed, context and GPU memory">
-        <a class="num num-speed" id="num-speed" href="/compare" title="Speed of the last reply. Open Compare to measure models side by side"><b id="num-tps" class="n">–</b> <span class="lab">tok/s</span></a>
-        <span class="num-ctx-wrap" id="ctx-meter">
-          <button type="button" class="num num-ctx" id="ctx-open" title="How much of the model's context this chat fills. Open Tune to change the context length."><span class="lab">Context</span><span class="ctx-bar"><span id="ctx-fill"></span></span><span class="ctx-used-part"><b id="ctx-used" class="n">0</b> <span class="lab">of</span></span> <b id="ctx-max" class="n">–</b></button>
-          <button type="button" class="num-link" id="ctx-compress" hidden title="Summarize the oldest messages to free up context">Compress</button>
-        </span>
-        <button type="button" class="num num-gpu" id="num-gpu" title="GPU memory used by the loaded model. Click to see what is using it"><span class="gpu-on"><span class="lab">GPU</span> <b id="gpu-used" class="n">–</b> <span class="lab">of</span> <b id="gpu-total" class="n">–</b> <span class="lab">GB</span></span><span class="gpu-off lab">GPU not loaded</span></button>
-      </div>
       <div class="messages" id="messages">
         <div class="column" id="message-list">
           {{with .Data.Chat}}{{$c := .}}{{range $i, $msg := .Messages}}
@@ -129,6 +121,14 @@
           </div>
         </div>
       </form>
+      <div class="chat-numbers column" id="chat-numbers" role="group" aria-label="Speed, context and GPU memory">
+        <a class="num num-speed" id="num-speed" href="/compare" title="Speed of the last reply. Open Compare to measure models side by side"><b id="num-tps" class="n">–</b> <span class="lab">tok/s</span></a>
+        <span class="num-ctx-wrap" id="ctx-meter">
+          <button type="button" class="num num-ctx" id="ctx-open" title="How much of the model's context this chat fills. Open Tune to change the context length."><span class="lab">Context</span><span class="ctx-bar"><span id="ctx-fill"></span></span><span class="ctx-used-part"><b id="ctx-used" class="n">0</b> <span class="lab">of</span></span> <b id="ctx-max" class="n">–</b></button>
+          <button type="button" class="num-link" id="ctx-compress" hidden title="Summarize the oldest messages to free up context">Compress</button>
+        </span>
+        <button type="button" class="num num-gpu" id="num-gpu" title="GPU memory used by the loaded model. Click to see what is using it"><span class="gpu-on"><span class="lab">GPU</span> <b id="gpu-used" class="n">–</b> <span class="lab">of</span> <b id="gpu-total" class="n">–</b> <span class="lab">GB</span></span><span class="gpu-off lab">GPU not loaded</span></button>
+      </div>
       <div class="voice-bar column" id="voice-bar" hidden>
         <span class="voice-dot" id="voice-dot" aria-hidden="true"></span>
         <span class="voice-state" id="voice-state" role="status"></span>

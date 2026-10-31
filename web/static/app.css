@@ -1758,7 +1758,9 @@ html:has(.content-chat) { overscroll-behavior: none; }
 }
 
 /* ---- chat header numbers (speed, context, GPU) and reply stats ---- */
-.chat-numbers { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s2) var(--s5); padding: var(--s2) var(--s5) 0; font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
+/* One quiet line under the composer. */
+.chat-numbers { flex: none; display: flex; flex-wrap: nowrap; align-items: center; justify-content: center; gap: var(--s5); padding: 0 var(--s2) var(--s3); min-width: 0; overflow: hidden; font-size: var(--fs-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+.composer.column { padding-bottom: 6px; }
 .chat-numbers .num, .chat-numbers .num-link { font: inherit; color: inherit; background: none; border: 0; padding: 2px 4px; margin: 0 -4px; border-radius: var(--radius, 6px); cursor: pointer; text-decoration: none; display: inline-flex; align-items: baseline; gap: 5px; white-space: nowrap; transition: background var(--dur-1, 120ms) var(--ease, ease); }
 .chat-numbers .num:hover, .chat-numbers .num-link:hover, .chat-numbers .num:focus-visible, .chat-numbers .num-link:focus-visible { background: var(--soft); }
 .chat-numbers .n { font-weight: 500; color: var(--text); display: inline-block; min-width: 2ch; text-align: right; }
@@ -1784,7 +1786,8 @@ html:has(.content-chat) { overscroll-behavior: none; }
 .msg-action.txt svg { display: none; }
 .msg-action.txt:hover { background: none; text-decoration: underline; text-underline-offset: 3px; }
 @media (max-width: 760px) {
-  .chat-numbers { justify-content: center; gap: 2px var(--s4); padding: 6px 12px 0; font-size: 11.5px; }
+  .chat-numbers { gap: var(--s4); padding: 0 12px 6px; font-size: 11.5px; }
+  .chat-numbers .num-gpu { display: none; }
   .ctx-bar { width: 44px; }
 }
 
@@ -1850,24 +1853,35 @@ html:has(.content-chat) { overscroll-behavior: none; }
 .md .code pre { border-radius: 0; }
 .msg-error { background: var(--bad-soft); padding: 6px 10px; border-radius: var(--radius); }
 
-/* Composer: one rounded card, text on top, controls in a row below. */
+/* Composer: one rounded card on one line: attach and project on the left,
+   the text in the middle (it grows upward), dictate and send on the right. */
 .composer.column { display: block; padding-top: 0; }
 .composer-card {
-  display: flex; flex-direction: column; gap: 2px; padding: 12px 10px 8px 16px; border-radius: var(--radius-lg); background: var(--panel);
+  display: flex; flex-direction: row; align-items: flex-end; gap: 6px; padding: 7px 8px 7px 8px; border-radius: var(--radius-lg); background: var(--panel);
   box-shadow: 0 0 0 1px var(--border-strong), 0 6px 20px rgba(0, 0, 0, .07);
   transition: box-shadow var(--dur-2) var(--ease);
 }
 .composer-card:focus-within { box-shadow: 0 0 0 1px var(--accent-line), 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent), 0 6px 20px rgba(0, 0, 0, .07); }
 .composer .composer-card textarea,
 .composer .composer-card textarea:focus {
-  width: 100%; flex: none; border: 0; box-shadow: none; outline: none; background: transparent; border-radius: 0; padding: 0 6px 0 0;
-  min-height: 48px; height: 48px; max-height: 240px; line-height: 1.5; overflow-y: auto;
+  order: 2; flex: 1 1 auto; min-width: 0; width: auto; border: 0; box-shadow: none; outline: none; background: transparent; border-radius: 0; padding: 6px 4px;
+  min-height: 34px; height: 34px; max-height: 240px; line-height: 1.5; overflow-y: auto; resize: none;
 }
-.composer-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.composer-row { display: contents; }
+.composer-row > .grow { display: none; }
+.composer-row .attach-btn { order: 0; }
+.composer-row .proj-chip { order: 1; }
+.composer-row .mic-btn { order: 3; }
+.composer-row #send { order: 4; }
+.composer-row > * { margin-bottom: 1px; }
+/* No project: just the folder icon; the invisible select still takes the click. */
+.composer-row .proj-chip:not(.on) { width: 32px; padding: 0; justify-content: center; background: none; border: 0; }
+.composer-row .proj-chip:not(.on):hover { background: var(--raised); color: var(--text); }
+.composer-row .proj-chip:not(.on) select { position: absolute; inset: 0; width: 100%; opacity: 0; }
 .composer .composer-row .icon-btn { width: 32px; height: 32px; min-height: 0; min-width: 0; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--muted); justify-content: center; align-items: center; flex: none; }
 .composer .composer-row .icon-btn:hover { background: var(--raised); color: var(--text); }
 .composer .composer-row .mic-btn[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
-.composer-row .proj-chip { height: 28px; max-width: 45%; }
+.composer-row .proj-chip { height: 32px; max-width: 30%; flex: none; }
 .composer .composer-row .btn#send {
   width: 32px; height: 32px; min-height: 0; padding: 0; border-radius: 50%; flex: none; justify-content: center; align-items: center;
   transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease), opacity var(--dur-1) var(--ease);
@@ -1903,8 +1917,9 @@ html:has(.content-chat) { overscroll-behavior: none; }
   .composer.column {
     width: calc(100% - 20px); max-width: 720px; padding: 0; margin: 0 auto 8px; background: none; border: 0; box-shadow: none; border-radius: 0; display: block;
   }
-  .composer-card { padding: 10px 8px 6px 12px; border-radius: 20px; }
-  .composer .composer-card textarea, .composer .composer-card textarea:focus { padding: 0 4px 0 0; min-height: 40px; height: 40px; max-height: 152px; font-size: 16px; }
+  .composer-card { padding: 4px 4px 4px 4px; border-radius: 24px; }
+  .composer .composer-card textarea, .composer .composer-card textarea:focus { padding: 8px 4px; min-height: 40px; height: 40px; max-height: 152px; font-size: 16px; }
+  .composer-row .proj-chip:not(.on) { width: 40px; }
   .composer .composer-row .icon-btn, .composer .composer-row .btn#send { width: 40px; height: 40px; border-radius: 50%; }
   .composer-row .proj-chip { height: 32px; }
   /* One column rather than the sideways carousel: nothing to clip or scroll. */
