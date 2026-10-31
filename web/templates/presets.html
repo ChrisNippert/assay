@@ -1,30 +1,36 @@
 {{define "appbar"}}<h1 class="appbar-title">Presets</h1><span class="muted small">{{len .Presets}} saved · tune a chat, then “Save as new preset”</span>{{end}}
 {{define "content"}}
-<div class="page">
+<div class="page presets">
 
   {{if .Presets}}
-  <div class="table-wrap">
-    <table class="models presets-table">
-      <thead><tr><th>Preset</th><th>Base model</th><th>Settings</th><th>In the API</th><th><span class="sr-only">Actions</span></th></tr></thead>
-      <tbody>
-      {{range .Presets}}
-        <tr data-preset="{{.Name}}">
-          <td class="name"><a class="row-link" href="/chat?preset={{.Name}}" title="Chat with this preset">{{.Name}}</a>{{with .System}}<div class="muted small ellipsis" title="{{.}}">{{.}}</div>{{end}}</td>
-          <td class="mono small">{{$b := .Base}}{{with hfRepo .Base}}<a class="row-link" href="/discover/{{.}}" title="Open on Discover">{{$b}}</a>{{else}}<a class="row-link" href="/chat?model={{.Base}}" title="Chat with {{.Base}}">{{.Base}}</a>{{end}}</td>
-          <td class="small settings-cell">{{range $k, $v := .Options}}<span class="tag mono">{{$k}} {{$v}}</span> {{end}}{{if .Think}}<span class="tag">think {{if deref .Think}}on{{else}}off{{end}}</span>{{end}}{{if .Tools}}<span class="tag">tools {{if deref .Tools}}on{{else}}off{{end}}</span>{{end}}{{if not .Options}}<span class="muted">model defaults</span>{{end}}</td>
-          <td><span class="mono small">{{.Name}}</span></td>
-          <td><div class="actions">
-            <a class="btn" href="/chat?preset={{.Name}}">Chat</a>
-            <button type="button" class="btn danger" data-delete-preset="{{.Name}}">Delete</button>
-          </div></td>
-        </tr>
-      {{end}}
-      </tbody>
-    </table>
+  <div class="pr-table">
+    <div class="lib-head pr-head" role="presentation">
+      <span class="lib-th left">Preset</span>
+      <span class="lib-th left">Base model</span>
+      <span class="lib-th left">Settings</span>
+      <span></span>
+    </div>
+    {{range .Presets}}
+    <div class="pr" data-preset="{{.Name}}">
+      <div class="pr-main">
+        <a class="pr-name" href="/chat?preset={{.Name}}" title="Chat with this preset">{{.Name}}</a>
+        {{with .System}}<div class="pr-sub" title="{{.}}">{{.}}</div>{{else}}<div class="pr-sub">No system prompt</div>{{end}}
+      </div>
+      <div class="pr-base">
+        {{$b := .Base}}{{with hfRepo .Base}}<a class="pr-link" href="/discover/{{.}}" title="Open {{$b}} on Discover">{{prettyTitle $b}}</a>{{else}}<a class="pr-link" href="/chat?model={{.Base}}" title="Chat with {{.Base}}">{{prettyTitle .Base}}</a>{{end}}
+        <div class="pr-sub" title="{{.Base}}">{{.Base}}</div>
+      </div>
+      <div class="pr-set">{{range $k, $v := .Options}}<span class="tag">{{$k}} {{$v}}</span>{{end}}{{if .Think}}<span class="tag">think {{if deref .Think}}on{{else}}off{{end}}</span>{{end}}{{if .Tools}}<span class="tag">tools {{if deref .Tools}}on{{else}}off{{end}}</span>{{end}}{{if and (not .Options) (not .Think) (not .Tools)}}<span class="muted small">Model defaults</span>{{end}}</div>
+      <div class="pr-actions">
+        <a class="btn primary" href="/chat?preset={{.Name}}">Chat</a>
+        <button type="button" class="btn danger" data-delete-preset="{{.Name}}">Delete</button>
+      </div>
+    </div>
+    {{end}}
   </div>
-  <p class="muted small">Every preset is listed as a model in Assay's OpenAI-compatible API, under its own name, with these settings and system prompt applied. Point Zed or any other app at <span class="mono" data-api-url>/v1</span>.</p>
+  <p class="muted small pr-note">Every preset is listed as a model in Assay's OpenAI-compatible API, under its own name, with these settings and system prompt applied. Point Zed or any other app at <span class="mono" data-api-url>/v1</span>.</p>
   {{else}}
-  <div class="empty">
+  <div class="empty pr-empty">
     <p>No presets yet. Open a chat, press <strong>Tune</strong>, adjust settings, then choose <strong>Save as new preset</strong>.</p>
   </div>
   {{end}}

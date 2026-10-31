@@ -592,7 +592,7 @@ The look is design "D, Calm numbers". `web/static/app.css` starts with the token
 - **Shell.** The sidebar sits on the page background with no border; the content is a rounded panel (`.content`) with a hairline ring. Inter (variable, latin and latin-ext, `static/fonts`, OFL text beside it) is the font; monospace is only for quant names and code. The block at the end of `app.css` restyles the shared classes (cards, popovers, chips, segmented controls, fields) in one place.
 - **Motion.** Hovers and presses use `--dur-1`, panels and popovers `--dur-2` with a short slide and fade (`pop-in`, `slide-in-right`). Only background, colour, box-shadow, transform and opacity are transitioned. `prefers-reduced-motion` sets both durations to 0.
 - **Page changes.** `@view-transition { navigation: auto }` cross-fades the main panel in about 150 ms; the sidebar and app bar have fixed `view-transition-name`s so they stay put (the old sidebar snapshot is hidden, so the chat list does not flash). `layout.html` also restores the sidebar and chat-list scroll position from `sessionStorage` before first paint. Speculation rules in `layout.html` prerender same-origin links on hover (`eagerness: moderate`), skipping `/api/*`, `/v1/*`, `/static/*`, `/settings*`, `/setup*`, model pages (`/discover/*/*`) and anything marked `data-no-prerender`. Browsers without these features (Firefox) just navigate as before.
-- **Prerender gating.** A prerendered page runs its scripts, so work that polls, loads, or reattaches to a running reply must wait until the page is shown: wrap it in `window.assayWhenVisible(fn)` (defined in `theme.js`; runs `fn` now, or on `prerenderingchange` if `document.prerendering`). It is used for the loaded-models refresh, the GPU sampler, the downloads poll and running-chat tracking in `app.js`, the stream reattach in `chat.js`, the search in `discover.js` and the scan in `found.js`. New page scripts that fetch or poll on load should do the same.
+- **Prerender gating.** A prerendered page runs its scripts, so work that polls, loads, or reattaches to a running reply must wait until the page is shown: wrap it in `window.assayWhenVisible(fn)` (defined in `theme.js`; runs `fn` now, or on `prerenderingchange` if `document.prerendering`). It is used for the loaded-models refresh, the GPU sampler, the downloads poll and running-chat tracking in `app.js`, the stream reattach in `chat.js`, the search in `discover.js`, the scan in `found.js`, setup, and the startup loads on Settings and project pages. New page scripts that fetch or poll on load should do the same.
 
 ## Platforms and releases
 
@@ -703,19 +703,43 @@ Design reference: direction **F** on the design canvas
   start during one, and when done unloads what it loaded and reloads what was
   loaded (unpinned) before. The progress line polls every 1.5 s and fills
   numbers in as they land.
-- **Discover**: filters (total params range, dense/MoE, architecture,
-  capabilities, fits on GPU, Ollama can run it, author), sort (intelligence,
-  speed on my GPU, size, newest, downloads). Results as rows, each with an
-  intelligence bar, the best quant that fits and an add-to-compare checkbox.
-- **Model page**: intelligence score and rank, quant picker rows (size,
-  memory bar, quality, estimated speed), model-card benchmarks, specs,
-  similar-size models.
+- **Discover** (design D; `discover.html`, `discover.js`): filters as calm
+  groups on the left (sentence-case titles, chips, a segmented Type control,
+  switches for the yes/no filters, styled checkboxes for architectures), the
+  search field with "From" and "Sort" drop-downs, and result rows with number
+  columns: downloads (or likes, trending or updated, following the sort), the
+  Q4 size estimate, fit label with a thin bar, and the intelligence score or
+  "not rated". Column heads sort. Names come from `prettyModel` (`title` and
+  `tags` in `/api/hf/search`); the author, size, architecture, takes/makes
+  and 128k facts under a name are buttons that narrow the list. With the
+  detail panel open the numbers drop under the name. **Loading**: while a
+  search runs the old rows stay (dimmed); if there are none, eight placeholder
+  rows shaped like real ones appear, but only after 200 ms, so a fast search
+  never flashes them, and nothing moves when the results replace them.
+- **Drop-downs** (`dropdown.js`): `<select data-dd data-dd-label="Sort">` is
+  kept as the state (value, options, `change`) and hidden; a button and a
+  fixed-position menu (keyboard: arrows, Home/End, Esc) stand in for it.
+  Setting `select.value`, `selectedIndex` or the options from script
+  repaints it. Used by Discover, Compare, project and Settings; a page that
+  builds a select later calls `window.assayDropdown(select, {label})`.
+- **Model page**: readable title (and tags) over the repository name, quant
+  rows (name, size, fit label with bar and a "best fit" chip, quality,
+  Download or Chat; the "Not enough disk space" note stays under the row),
+  recommended settings, specs and the intelligence score.
 - **Compare** (`/compare?m=a&m=b`, up to 4 installed models): specs from
   Ollama (parameters, quant + rule-of-thumb quality, disk, architecture,
   longest context, capabilities), the context that fits on the GPU, the
-  intelligence score, and speed measured here. Each section names its
-  source; the best value in a row is highlighted. Not yet: card benchmarks,
-  quant loss (KLD).
+  intelligence score, and speed measured here, as sections with a muted
+  source. Values are in the text colour with muted units; the best value in
+  a row is in the accent. Parameters and architecture link to Discover, disk
+  to the Library, the fitting context to a chat, the score to Artificial
+  Analysis. Not yet: card benchmarks, quant loss (KLD).
+- **Presets, projects, Settings, Setup** share one boxed-row shape
+  (`.boxed-list` and `.row`: title and muted detail on the left, control on
+  the right, a faint rule between rows). Presets are Library-style rows (name
+  and system prompt, readable base model, settings chips, Chat and Delete on
+  hover). Checkboxes on these pages are the same styled box; switches are
+  `input.switch`.
 
 ## Benchmarks (M4)
 

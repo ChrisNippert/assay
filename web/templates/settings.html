@@ -42,7 +42,7 @@
       const clear = document.getElementById('lc-custom-clear');
       const sub = document.getElementById('lc-custom-sub');
       const show = (st) => { input.value = st.custom || ''; clear.hidden = !st.custom; };
-      fetch('/api/llamacpp').then((r) => (r.ok ? r.json() : null)).then((st) => st && show(st)).catch(() => {});
+      window.assayWhenVisible(() => fetch('/api/llamacpp').then((r) => (r.ok ? r.json() : null)).then((st) => st && show(st)).catch(() => {}));
       async function set(path) {
         use.disabled = clear.disabled = true;
         try {
@@ -133,14 +133,14 @@
   <div class="boxed-list" id="kn-list" data-current="{{.Current}}" data-has-files="{{.HasFiles}}">
     <div class="row">
       <div class="row-text"><span class="row-title">Embedding model</span><span class="row-sub">{{if .Models}}Used to index project files and to find the right excerpts for a question.{{else}}None installed yet. Download one below.{{end}}</span></div>
-      <div class="row-ctrl"><select id="kn-model" aria-label="Embedding model">
+      <div class="row-ctrl"><select id="kn-model" data-dd aria-label="Embedding model">
         <option value="">None</option>
         {{range .Models}}<option value="{{.Name}}"{{if .Selected}} selected{{end}}>{{.Name}} · {{bytes .Size}}</option>{{end}}
       </select></div>
     </div>
     <div class="row">
       <div class="row-text"><span class="row-title">Excerpts per answer</span><span class="row-sub">How many pieces of your files go into each prompt. More gives more to work with but uses more context.</span></div>
-      <div class="row-ctrl"><select id="kn-topk" aria-label="Excerpts per answer">{{$k := .TopK}}{{range .TopKs}}<option value="{{.}}"{{if eq . $k}} selected{{end}}>{{.}}</option>{{end}}</select></div>
+      <div class="row-ctrl"><select id="kn-topk" data-dd aria-label="Excerpts per answer">{{$k := .TopK}}{{range .TopKs}}<option value="{{.}}"{{if eq . $k}} selected{{end}}>{{.}}</option>{{end}}</select></div>
     </div>
   </div>
   <p class="small muted" id="kn-note" role="status">{{if .Notice}}<span{{if .NoticeBad}} class="settings-warn"{{end}}>{{.Notice}}</span>{{end}}</p>
@@ -169,7 +169,7 @@
   <div class="boxed-list" id="ch-list">
     <div class="row">
       <div class="row-text"><span class="row-title">Compress long chats</span><span class="row-sub">When a chat nears the context length, the model summarizes its oldest messages so the chat can go on. The full history stays on the page. A chat or preset can choose otherwise in Tune.</span></div>
-      <div class="row-ctrl"><select id="ch-compress" aria-label="Compress long chats"><option value="on"{{if .Data.CompressAuto}} selected{{end}}>On</option><option value="off"{{if not .Data.CompressAuto}} selected{{end}}>Off</option></select></div>
+      <div class="row-ctrl"><select id="ch-compress" data-dd aria-label="Compress long chats"><option value="on"{{if .Data.CompressAuto}} selected{{end}}>On</option><option value="off"{{if not .Data.CompressAuto}} selected{{end}}>Off</option></select></div>
     </div>
   </div>
   <p class="small muted" id="ch-note" role="status"></p>
@@ -179,7 +179,7 @@
   <div class="boxed-list" id="tl-list" data-settings="{{json .Settings}}">
     <div class="row">
       <div class="row-text"><span class="row-title">Web search</span><span class="row-sub" id="tl-search-sub"></span></div>
-      <div class="row-ctrl"><select id="tl-search" aria-label="Web search">
+      <div class="row-ctrl"><select id="tl-search" data-dd aria-label="Web search">
         <option value="off">Off</option>
         <option value="searxng">SearXNG</option>
         <option value="duckduckgo">DuckDuckGo</option>
@@ -224,24 +224,24 @@
       <div class="row-text"><span class="row-title">Voice</span><span class="row-sub">Kokoro voices, all English.</span></div>
       <div class="row-ctrl">
         <button type="button" class="btn subtle" id="v-preview">Preview</button>
-        <select id="v-voice" aria-label="Voice"><option value="">Default</option>{{range .Voices}}<option value="{{.ID}}">{{.Label}}</option>{{end}}</select>
+        <select id="v-voice" data-dd aria-label="Voice"><option value="">Default</option>{{range .Voices}}<option value="{{.ID}}">{{.Label}}</option>{{end}}</select>
       </div>
     </div>
     <div class="row">
       <div class="row-text"><span class="row-title">Speed</span></div>
-      <div class="row-ctrl"><select id="v-speed" aria-label="Speed">{{range .Speeds}}<option value="{{.}}">{{if eq . 1.0}}Normal{{else}}{{.}}×{{end}}</option>{{end}}</select></div>
+      <div class="row-ctrl"><select id="v-speed" data-dd aria-label="Speed">{{range .Speeds}}<option value="{{.}}">{{if eq . 1.0}}Normal{{else}}{{.}}×{{end}}</option>{{end}}</select></div>
     </div>
     <div class="row">
       <div class="row-text"><span class="row-title">Pause after a sentence</span></div>
-      <div class="row-ctrl"><select id="v-pause" aria-label="Pause after a sentence">{{range .Pauses}}<option value="{{.}}">{{.}} ms</option>{{end}}</select></div>
+      <div class="row-ctrl"><select id="v-pause" data-dd aria-label="Pause after a sentence">{{range .Pauses}}<option value="{{.}}">{{.}} ms</option>{{end}}</select></div>
     </div>
     <div class="row">
       <div class="row-text"><span class="row-title">Speech recognition</span><span class="row-sub">Bigger models hear better but take longer. A new one downloads the first time it's used.</span></div>
-      <div class="row-ctrl"><select id="v-stt" aria-label="Speech recognition model"><option value="">Default</option>{{range .STTModels}}<option value="{{.Name}}">{{.Name}} · {{.Note}}</option>{{end}}</select></div>
+      <div class="row-ctrl"><select id="v-stt" data-dd aria-label="Speech recognition model"><option value="">Default</option>{{range .STTModels}}<option value="{{.Name}}">{{.Name}} · {{.Note}}</option>{{end}}</select></div>
     </div>
     <div class="row">
       <div class="row-text"><span class="row-title">Speech detection</span><span class="row-sub">How readily dictation decides you're talking.</span></div>
-      <div class="row-ctrl"><select id="v-sens" aria-label="Speech detection">
+      <div class="row-ctrl"><select id="v-sens" data-dd aria-label="Speech detection">
         <option value="low">Low: ignores more noise</option>
         <option value="normal">Normal</option>
         <option value="high">High: catches quiet speech</option>
@@ -399,7 +399,7 @@
     } catch (err) { say(err.message, true); f('mf-go').disabled = false; }
   });
   f('mf-cancel').addEventListener('click', () => fetch('/api/models/folder', { method: 'DELETE' }));
-  load();
+  window.assayWhenVisible(load);
 })();
 (() => {
   // ---- models with their own settings ----
@@ -664,7 +664,7 @@
     start(custom, name);
   });
   document.getElementById('kn-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('kn-dl').click(); });
-  refresh();
+  window.assayWhenVisible(() => { refresh(); });
   // Pick up downloads already running (started here earlier, or from the downloads menu).
   fetch('/api/pulls').then(r => r.json()).then(jobs => {
     for (const j of jobs) if (j.state === 'running') {
@@ -806,7 +806,7 @@
       render();
     }, 600);
   }
-  (async () => {
+  window.assayWhenVisible(async () => {
     try { st = await api('/api/llamacpp'); } catch { return; }
     render();
     const running = st.job && st.job.state === 'running';
@@ -815,7 +815,8 @@
       try { chk = await api('/api/llamacpp/check'); } catch (err) { chk = { error: err.message }; }
       if (!(st.job && st.job.state === 'running')) render();
     }
-  })();
+  });
 })();
 </script>
+<script src="/static/dropdown.js"></script>
 {{end}}

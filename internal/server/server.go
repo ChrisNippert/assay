@@ -606,6 +606,7 @@ var templateFuncs = template.FuncMap{
 		}
 		return strings.ToLower(s[:1]) + s[1:]
 	},
+	"prettyTitle": func(name string) string { t, _ := prettyModel(name); return t },
 	"hasChoice": func(list []string, v string) bool { return slices.Contains(list, v) },
 	"billions": func(n int64) string {
 		if n <= 0 {

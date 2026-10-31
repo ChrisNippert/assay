@@ -2,15 +2,16 @@
 {{define "appbar-end"}}{{with .Data.Project}}<a class="btn primary" href="/chat?project={{.ID}}">New chat</a>{{end}}{{end}}
 {{define "content"}}
 <style>
-.proj-title { cursor: text; }
-.proj-title-input { font: inherit; font-size: 17px; font-weight: 600; padding: 2px 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--surface); color: var(--text); min-width: 0; }
-.proj-instructions { width: 100%; box-sizing: border-box; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; line-height: 1.5; margin-bottom: var(--s3); }
-.drop { display: flex; align-items: center; justify-content: center; gap: var(--s2); padding: var(--s5); margin-bottom: var(--s3); border: 1.5px dashed var(--border-strong); border-radius: 10px; color: var(--muted); cursor: pointer; text-align: center; }
-.drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); }
+.proj-title { cursor: text; border-radius: 6px; transition: background var(--dur-1) var(--ease); }
+.proj-title:hover { background: var(--sunk); }
+.proj-title-input { font: inherit; font-size: 17px; font-weight: 600; padding: 2px 8px; border: 0; border-radius: 6px; background: var(--sunk); color: var(--text); min-width: 0; box-shadow: 0 0 0 2px var(--accent); outline: none; }
+.proj-instructions { width: 100%; box-sizing: border-box; resize: vertical; padding: 14px 16px; border: 0; border-radius: var(--radius-lg); background: var(--sunk); color: var(--text); font: inherit; line-height: 1.55; margin-bottom: var(--s2); transition: box-shadow var(--dur-1) var(--ease); }
+.proj-instructions:focus { outline: none; box-shadow: 0 0 0 2px var(--accent); }
+.drop { display: flex; align-items: center; justify-content: center; gap: var(--s2); padding: var(--s5); margin-bottom: var(--s2); border: 1.5px dashed color-mix(in srgb, var(--border-strong) 80%, transparent); border-radius: var(--radius-lg); color: var(--muted); cursor: pointer; text-align: center; transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+.drop:hover, .drop.over, .drop:focus-within { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); }
 .drop.busy { opacity: .6; pointer-events: none; }
 .proj-file[data-status="indexing"] .row-sub, .proj-file[data-status="queued"] .row-sub { color: var(--accent-text); }
 .row-link-row { color: var(--text); text-decoration: none; }
-.row-link-row:hover { background: var(--soft); }
 </style>
 {{$d := .Data}}{{$p := $d.Project}}
 <div class="column settings proj" id="proj" data-id="{{$p.ID}}" data-embedder="{{if $d.Embedder}}1{{end}}">
@@ -29,7 +30,7 @@
   <div class="boxed-list">
     <div class="row">
       <div class="row-text"><span class="row-title">New chats start with</span><span class="row-sub">A model or preset for chats started here.</span></div>
-      <div class="row-ctrl"><select id="proj-model" aria-label="Model for new chats">
+      <div class="row-ctrl"><select id="proj-model" data-dd aria-label="Model for new chats">
         <option value="">Whatever was used last</option>
         {{with .Presets}}<optgroup label="Presets">{{range .}}<option value="preset:{{.Name}}"{{if eq .Name $p.Preset}} selected{{end}}>{{.Name}}</option>{{end}}</optgroup>{{end}}
         <optgroup label="Models">{{range .ModelGroups}}<option value="{{.Primary.Name}}"{{if and (not $p.Preset) (.Has $p.Model)}} selected{{end}}>{{.Primary.Name}}</option>{{end}}</optgroup>
@@ -184,9 +185,10 @@
     try { await api('', { method: 'DELETE' }); location.href = '/chat'; } catch (err) { saved.textContent = err.message; }
   });
 
-  refresh();
+  window.assayWhenVisible(refresh);
 })();
 </script>
+<script src="/static/dropdown.js"></script>
 {{end}}
 
 {{define "proj-file"}}<div class="row proj-file" data-status="{{.Status}}"><div class="row-text"><span class="row-title">{{.Name}}</span><span class="row-sub">{{bytes .Size}} · {{.Status}}</span></div></div>{{end}}

@@ -399,17 +399,17 @@ table.models { width: 100%; border-collapse: collapse; }
 .checklist { max-height: 232px; overflow-y: auto; overflow-x: hidden; }
 .checklist .arch-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .checklist .count { font-variant-numeric: tabular-nums; }
-input.check {
+input.check, .settings input[type="checkbox"]:not(.switch), .setup input[type="checkbox"]:not(.switch), .model-page input[type="checkbox"], .detail-panel input[type="checkbox"], .proj input[type="checkbox"] {
   appearance: none; flex: none; width: 16px; height: 16px; margin: 0; border-radius: 5px; background: var(--track); cursor: pointer; position: relative;
   transition: background var(--dur-1) var(--ease);
 }
-input.check::after {
+input.check::after, .settings input[type="checkbox"]:not(.switch)::after, .setup input[type="checkbox"]:not(.switch)::after, .model-page input[type="checkbox"]::after, .detail-panel input[type="checkbox"]::after, .proj input[type="checkbox"]::after {
   content: ""; position: absolute; left: 5px; top: 2px; width: 4px; height: 8px; border: solid var(--on-accent); border-width: 0 2px 2px 0;
   transform: rotate(45deg) scale(0); transition: transform var(--dur-1) var(--ease);
 }
-input.check:checked { background: var(--accent); }
-input.check:checked::after { transform: rotate(45deg) scale(1); }
-input.check:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input.check:checked, .settings input[type="checkbox"]:not(.switch):checked, .setup input[type="checkbox"]:not(.switch):checked, .model-page input[type="checkbox"]:checked, .detail-panel input[type="checkbox"]:checked, .proj input[type="checkbox"]:checked { background: var(--accent); }
+input.check:checked::after, .settings input[type="checkbox"]:not(.switch):checked::after, .setup input[type="checkbox"]:not(.switch):checked::after, .model-page input[type="checkbox"]:checked::after, .detail-panel input[type="checkbox"]:checked::after, .proj input[type="checkbox"]:checked::after { transform: rotate(45deg) scale(1); }
+input.check:focus-visible, .settings input[type="checkbox"]:not(.switch):focus-visible, .setup input[type="checkbox"]:not(.switch):focus-visible, .model-page input[type="checkbox"]:focus-visible, .detail-panel input[type="checkbox"]:focus-visible, .proj input[type="checkbox"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .results-pane { flex: 999 1 360px; min-width: 0; max-width: 900px; padding: var(--s4) var(--s5) var(--s5); display: flex; flex-direction: column; gap: var(--s2); }
 .search-row { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin-bottom: var(--s1); }
@@ -588,8 +588,6 @@ input.check:focus-visible { outline: 2px solid var(--accent); outline-offset: 2p
 }
 
 /* ---- presets ---- */
-.settings-cell { white-space: normal !important; max-width: 420px; }
-.settings-cell .tag { margin: 1px 0; }
 
 .settings-warn { color: var(--warn); }
 .mf-path { word-break: break-all; }
@@ -752,15 +750,6 @@ input.switch:checked::after { transform: translateX(20px); }
   #filters-toggle { display: inline-flex; }
   /* Discover's model panel takes the whole screen (the sidebar is a drawer). */
   .discover.panel-open .detail-panel { left: 0; padding: var(--s4); }
-  /* Presets as cards: a wide table would scroll sideways. */
-  .presets-table, .presets-table tbody, .presets-table tr, .presets-table td { display: block; }
-  .presets-table thead { display: none; }
-  .presets-table tr { padding: var(--s3) var(--s4); }
-  .presets-table tr + tr { border-top: 1px solid var(--border); }
-  .presets-table td { padding: 2px 0; border: none; white-space: normal; overflow-wrap: anywhere; min-width: 0; }
-  .presets-table td.name { min-width: 0; }
-  .presets-table .actions { justify-content: flex-start; margin-top: var(--s2); }
-  .presets-table .settings-cell { max-width: none; }
   .filters { flex: 1 1 100%; max-width: none; }
 }
 
@@ -1179,18 +1168,6 @@ a.lr-num:hover, .lr-scorebtn.lr-num:hover { text-decoration: underline; }
 .settings .group-title[id] { scroll-margin-top: calc(var(--appbar-h) + 56px); }
 /* A page's boxed content can't push the page sideways. */
 .content-presets .page { min-width: 0; max-width: 1100px; width: 100%; margin: 0 auto; box-sizing: border-box; }
-@media (max-width: 1100px) {
-  /* Presets as cards whenever the table would scroll sideways. */
-  .presets-table, .presets-table tbody, .presets-table tr, .presets-table td { display: block; }
-  .presets-table thead { display: none; }
-  .presets-table tr { padding: var(--s3) var(--s4); }
-  .presets-table tr + tr { border-top: 1px solid var(--border); }
-  .presets-table td { padding: 2px 0; border: none !important; white-space: normal; overflow-wrap: anywhere; min-width: 0; }
-  .presets-table td.name { min-width: 0; }
-  .presets-table td:nth-child(4) { display: none; }
-  .presets-table .actions { justify-content: flex-start; margin-top: var(--s2); }
-  .presets-table .settings-cell { max-width: none; }
-}
 @media (max-width: 760px) {
   /* Buttons in a settings row go under the description, like selects do. */
   .settings .row:has(.row-ctrl .btn, input[type="url"]) { flex-wrap: wrap; }
@@ -1893,4 +1870,92 @@ select.combo, .spin { background-color: var(--raised); border-radius: var(--radi
   .model-page .quality { grid-column: 2; grid-row: 2; text-align: right; }
   .model-page .split-note { grid-column: 1 / -1; grid-row: 3; }
   .model-page .draft-row .tag { grid-column: 1 / 3; grid-row: 2; }
+}
+
+/* =====================================================================
+   D · Calm numbers: the rest of the pages (presets, settings, projects, setup).
+   Boxed rows are one shape everywhere: a quiet block, a title with a line of
+   muted detail on the left, the control on the right, a faint rule between rows.
+   ===================================================================== */
+.boxed-list { background: var(--sunk); border: 0; border-radius: var(--radius-lg); overflow: hidden; box-shadow: none; }
+.row { min-height: 60px; padding: 12px 16px; gap: var(--s4); transition: background var(--dur-1) var(--ease); }
+.row + .row, .boxed-list > * + *, .expander-body > .row { border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent); }
+.row-text { gap: 2px; }
+.row-sub { font-size: var(--fs-sm); line-height: 1.45; }
+a.row, a.row-link-row, .expander > summary { transition: background var(--dur-1) var(--ease); }
+a.row:hover, a.row-link-row:hover, .expander > summary:hover { background: var(--raised); }
+a.row:focus-visible, a.row-link-row:focus-visible, .expander > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.expander-body { border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent); }
+
+/* settings: calm groups */
+.settings { gap: var(--s3); }
+.settings h2.group-title { font-size: 17px; font-weight: 600; margin: 36px 0 0; letter-spacing: -0.005em; }
+.settings h2.group-title:first-of-type { margin-top: var(--s4); }
+.settings .group-title:not(h2) { font-size: var(--fs-sm); font-weight: 500; color: var(--muted); margin: 20px 0 0; }
+.settings > p.muted { max-width: 62ch; line-height: 1.5; }
+.settings-nav { gap: 2px; padding: var(--s2) 0 var(--s3); }
+.settings-nav a { background: transparent; color: var(--muted); padding: 6px 12px; }
+.settings-nav a:hover { background: var(--sunk); color: var(--text); }
+.settings-nav a:focus-visible { outline: 2px solid var(--accent); }
+.settings .row-ctrl input[type="text"], .settings .row-ctrl input[type="url"], .settings .row-ctrl input[type="search"], .settings .row-ctrl input[type="number"], .settings .row-ctrl input[type="password"] {
+  height: 34px; padding: 0 12px; background-color: var(--panel); border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+.settings .row-ctrl input:hover { background-color: var(--panel); border-color: var(--border-strong); }
+.settings .row-ctrl .dd-btn { height: 34px; background: var(--panel); }
+.settings .row-ctrl .dd-btn:hover, .settings .row-ctrl .dd-btn[aria-expanded="true"] { background: var(--raised); }
+.settings .row-ctrl select { height: 34px; background-color: var(--panel); border: 1px solid color-mix(in srgb, var(--border) 70%, transparent); }
+.row-ctrl .btn:not(.primary):not(.subtle):not(.danger) { background: var(--panel); }
+.row-ctrl .btn:not(.primary):not(.subtle):not(.danger):hover { background: var(--raised); }
+.segmented { background: var(--panel); }
+.segmented button.on { background: var(--raised); box-shadow: none; }
+#mf-edit, #mf-edit > * + *, #mf-edit .row + .row, #mf-mounts > .row { border-top-color: color-mix(in srgb, var(--border) 55%, transparent); }
+
+/* presets: rows like the Library's, actions on hover */
+.presets { max-width: 1000px; }
+.pr-table { display: flex; flex-direction: column; gap: 2px; }
+.pr-head, .pr { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1.3fr) 150px; gap: 20px; align-items: center; }
+.pr-head { padding: 4px 16px; font-size: var(--fs-xs); }
+.pr-head .lib-th { cursor: default; }
+.pr-head .lib-th:hover { color: var(--muted); }
+.pr { position: relative; padding: 12px 16px; min-height: 64px; border-radius: var(--radius); transition: background var(--dur-1) var(--ease); }
+.pr:hover, .pr:focus-within { background: var(--sunk); }
+.pr-main, .pr-base { min-width: 0; }
+.pr-name, .pr-link { color: var(--text); text-decoration: none; border-radius: 3px; }
+.pr-name { font-weight: 500; }
+.pr-name:hover, .pr-link:hover { text-decoration: underline; }
+.pr-name:focus-visible, .pr-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pr-sub { margin-top: 2px; font-size: var(--fs-sm); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pr-set { display: flex; flex-wrap: wrap; gap: 4px 6px; font-variant-numeric: tabular-nums; }
+.pr-actions { display: flex; justify-content: flex-end; gap: 4px; opacity: 0; transition: opacity var(--dur-1) var(--ease); }
+.pr:hover .pr-actions, .pr:focus-within .pr-actions { opacity: 1; }
+.pr-note { margin-top: var(--s4); padding: 0 16px; max-width: 70ch; }
+.pr-empty { padding: 64px 0; text-align: center; }
+@media (hover: none) { .pr-actions { opacity: 1; } }
+@media (max-width: 900px) {
+  .pr-head { display: none; }
+  .pr { grid-template-columns: minmax(0, 1fr) auto; gap: 6px var(--s3); }
+  .pr-main { grid-column: 1; }
+  .pr-actions { grid-column: 2; grid-row: 1 / span 3; opacity: 1; flex-direction: column; align-self: start; }
+  .pr-base, .pr-set { grid-column: 1; }
+  .pr-sub { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+}
+
+/* setup */
+.setup { gap: var(--s4); }
+.su-step { border: 0; background: var(--sunk); border-radius: var(--radius); transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease); }
+.su-step:hover { background: var(--raised); color: var(--text); }
+.su-step:focus-visible { outline: 2px solid var(--accent); }
+.su-num { background: var(--track); }
+.su-step.current { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.su-panel { gap: var(--s2); }
+.su-panel > .group-title { font-size: 17px; font-weight: 600; margin: var(--s3) 0 0; }
+.su-panel > .boxed-list, .su-panel > div > .boxed-list { margin-top: var(--s2); }
+.su-build { transition: background var(--dur-1) var(--ease); }
+.su-build:hover { background: var(--raised); }
+.su-build:focus-within { background: var(--raised); }
+.su-nav { margin-top: var(--s4); }
+
+@media (prefers-reduced-motion: reduce) {
+  .row, .pr, .pr-actions, .su-step, .su-build, .dd-btn, .dd-chev, .dd-item, .dd-menu, .result-row, .results, .r-facet, .chip, .quant-row { transition: none !important; animation: none !important; }
+  .sk { animation: none; }
 }
