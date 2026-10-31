@@ -32,6 +32,8 @@ type searchResult struct {
 	ID      string   `json:"id"`
 	Author  string   `json:"author"`
 	Name    string   `json:"name"`
+	Title   string   `json:"title"`          // readable name (prettyModel)
+	Tags    []string `json:"tags,omitempty"` // QAT, MoE... pulled out of the name
 	Params  int64    `json:"params"`
 	Arch    string   `json:"arch"`
 	Context int      `json:"context"`
@@ -99,6 +101,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 			Updated:   repo.LastModified,
 			Installed: installed[strings.ToLower(repo.ID)],
 		}
+		res.Title, res.Tags = prettyModel(repo.Name())
 		res.In, res.Out = repo.Modalities()
 		res.Generator, res.CantRun = repo.Generator(), repo.CantRun()
 		res.Score, res.ScoreOf = s.scoreFor(repo.Tags)
@@ -306,6 +309,8 @@ type setting struct {
 
 type modelPageData struct {
 	Repo    *hf.Repo
+	Title   string // readable name, Tags its chips (QAT...)
+	Tags    []string
 	Quants  []quantRow
 	MoE     bool
 	Vision  bool
@@ -379,6 +384,7 @@ func (s *Server) handleModelPage(w http.ResponseWriter, r *http.Request) {
 		data.Error = "Couldn't list files: " + fileErr.Error()
 	}
 	data.Repo = repo
+	data.Title, data.Tags = prettyModel(repo.Name())
 	data.MoE = hf.IsMoE(repo.Arch(), repo.ID)
 	data.ScoreURL = scores.AttributionURL
 	if sc, of := s.scoreFor(repo.Tags); sc != nil && !repo.IsDraft() {

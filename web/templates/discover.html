@@ -4,8 +4,7 @@
     <div class="filters-head"><span class="filters-title">Filters</span><button type="button" class="link-btn" id="f-clear">Clear all</button></div>
 
     <fieldset>
-      <legend>Takes → Makes</legend>
-      <p class="muted small hint">Image → text is vision; audio → text is speech recognition.</p>
+      <legend>Takes and makes</legend>
       <div class="io-row">
         <span class="muted small">Takes</span>
         <div class="chips" id="f-takes" role="group" aria-label="Takes">
@@ -24,18 +23,19 @@
           <button type="button" class="chip" data-mod="audio" aria-pressed="false">Audio</button>
         </div>
       </div>
+      <p class="muted small hint">Image to text is vision; audio to text is speech recognition.</p>
       <p class="muted small hint" id="f-io-note" hidden>Image, video and audio makers are shown but marked: Assay can't run them yet.</p>
     </fieldset>
 
     <fieldset>
-      <legend>Size (total params)</legend>
+      <legend>Size</legend>
       <div class="range-row">
-        <label class="sr-only" for="f-min">Minimum, billions</label>
+        <label class="sr-only" for="f-min">Minimum, billions of parameters</label>
         <input id="f-min" type="number" min="0" step="0.5" placeholder="0" inputmode="decimal">
         <span class="muted">to</span>
-        <label class="sr-only" for="f-max">Maximum, billions</label>
+        <label class="sr-only" for="f-max">Maximum, billions of parameters</label>
         <input id="f-max" type="number" min="0" step="0.5" placeholder="any" inputmode="decimal">
-        <span class="muted">B</span>
+        <span class="muted small" title="Billions of parameters">B</span>
       </div>
       <div class="chips" id="f-size-chips">
         <button type="button" class="chip" data-min="" data-max="4">&lt;4B</button>
@@ -57,25 +57,24 @@
 
     <fieldset>
       <legend>Architecture</legend>
-      <p class="muted small hint">Tick some to show only those</p>
       <div id="f-arch" class="checklist"><span class="muted small">Search to see architectures</span></div>
     </fieldset>
 
     <fieldset>
-      <legend>Can do</legend>
-      <div class="checklist">
-        <label><input type="checkbox" id="f-longctx">128k+ context</label>
-        <label><input type="checkbox" id="f-rated">Has intelligence score</label>
+      <legend>Show only</legend>
+      <div class="switchlist">
+        <label><span>128k+ context</span><input type="checkbox" class="switch" id="f-longctx"></label>
+        <label><span>Has intelligence score</span><input type="checkbox" class="switch" id="f-rated"></label>
+        <label title="At Q4 with an 8k context"><span>Fits on my GPU</span><input type="checkbox" class="switch" id="f-fits"></label>
       </div>
     </fieldset>
 
     <fieldset>
-      <legend>My machine</legend>
-      <div class="checklist">
-        <label><input type="checkbox" id="f-fits">Fits on GPU (Q4, 8k context)</label>
-        <label><input type="checkbox" id="f-hide-installed">Hide installed</label>
-        <label><input type="checkbox" id="f-hide-gated">Hide gated</label>
-        <label title="Small helpers for speculative decoding (DSpark, DFlash, EAGLE) that can't chat on their own"><input type="checkbox" id="f-hide-drafts">Hide draft models</label>
+      <legend>Hide</legend>
+      <div class="switchlist">
+        <label><span>Installed</span><input type="checkbox" class="switch" id="f-hide-installed"></label>
+        <label><span>Gated</span><input type="checkbox" class="switch" id="f-hide-gated"></label>
+        <label title="Small helpers for speculative decoding (DSpark, DFlash, EAGLE) that can't chat on their own"><span>Draft models</span><input type="checkbox" class="switch" id="f-hide-drafts"></label>
       </div>
       <p class="muted small" id="memory-line"></p>
     </fieldset>
@@ -84,16 +83,16 @@
   <section class="results-pane">
     <div class="search-row">
       <button type="button" class="btn" id="filters-toggle" hidden aria-expanded="false" aria-controls="filters">Filters</button>
-      <label class="sr-only" for="q">Search Hugging Face</label>
-      <input id="q" type="search" placeholder="Search GGUF models on Hugging Face" autocomplete="off">
-      <label class="sr-only" for="author">Uploader</label>
-      <select id="author">
+      <label class="lib-search">
+        {{template "icon-search"}}
+        <input id="q" type="search" class="lib-filter" placeholder="Search GGUF models on Hugging Face" aria-label="Search Hugging Face" autocomplete="off">
+      </label>
+      <select id="author" data-dd aria-label="Uploader" data-dd-label="From">
         <option value="unsloth">unsloth</option>
         <option value="bartowski">bartowski</option>
         <option value="">anyone</option>
       </select>
-      <label for="sort" class="muted">Sort</label>
-      <select id="sort">
+      <select id="sort" data-dd aria-label="Sort" data-dd-label="Sort">
         <option value="downloads">Downloads</option>
         <option value="trendingScore">Trending</option>
         <option value="likes">Likes</option>
@@ -103,14 +102,22 @@
         <option value="params-asc">Size, smallest</option>
       </select>
     </div>
-    <div class="result-meta muted small" id="result-meta" aria-live="polite"></div>
-    <div class="score-credit muted small">Intelligence scores: <a href="https://artificialanalysis.ai" target="_blank" rel="noopener" title="Artificial Analysis Intelligence Index, via OpenRouter">Artificial Analysis ↗</a><span id="score-note"></span></div>
-    <div class="results" id="results"></div>
+    <div class="result-meta muted small" id="result-meta" aria-live="polite">&nbsp;</div>
+    <div class="results-head" id="results-head" role="presentation">
+      <span></span>
+      <button type="button" class="lib-th right" data-sortto="downloads" id="th-pop">Downloads</button>
+      <button type="button" class="lib-th right" data-sortto="size">Size</button>
+      <span class="lib-th left">Fits</span>
+      <button type="button" class="lib-th right" data-sortto="score" title="Artificial Analysis Intelligence Index">Score</button>
+    </div>
+    <div class="results" id="results" aria-live="off"></div>
     <button type="button" class="btn show-more" id="show-more" hidden></button>
+    <p class="score-credit muted small">Intelligence scores come from the <a href="https://artificialanalysis.ai" target="_blank" rel="noopener" title="Artificial Analysis Intelligence Index, via OpenRouter">Artificial Analysis ↗</a> Intelligence Index<span id="score-note"></span>.</p>
   </section>
 
   <aside class="detail-panel" id="detail-panel" aria-label="Model details" hidden>
     <div id="detail-body"></div>
   </aside>
 </div>
+<script src="/static/dropdown.js"></script>
 {{end}}

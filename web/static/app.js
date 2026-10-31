@@ -704,7 +704,7 @@ window.assaySheets = (() => {
     const name = del.dataset.deletePreset;
     if (!confirm(`Delete the preset “${name}”? Apps that use it through the API lose it too.`)) return;
     const res = await fetch('/api/presets/' + encodeURIComponent(name), { method: 'DELETE' });
-    if (res.ok) del.closest('tr')?.remove();
+    if (res.ok) del.closest('tr, .pr')?.remove();
     else alert(`Couldn't delete: ${await errorText(res)}`);
   });
 

@@ -33,7 +33,6 @@
   const archs = new Set(); // selected architectures; empty means any
   let limit = PAGE;
   let controller = null;
-  let topScore = 0; // highest score in the filtered list, for scaling bars
   let openId = null; // repo shown in the detail panel
   let detailController = null;
   const panel = $('detail-panel');
@@ -94,7 +93,7 @@
     if (makes.size) params.set('makes', [...makes].join(','));
     fetched = ioKey();
     saveURL();
-    meta.textContent = 'Searching Hugging Face…';
+    startLoading();
     try {
       const res = await fetch('/api/hf/search?' + params, { signal: controller.signal });
       if (!res.ok) throw new Error(await errorText(res));
@@ -103,15 +102,47 @@
       truncated = body.truncated;
       max = body.max || max;
       limit = PAGE;
+      stopLoading();
       buildArchFilter();
       render();
     } catch (err) {
       if (err.name === 'AbortError') return;
+      stopLoading();
       results = [];
       list.replaceChildren();
       more.hidden = true;
       meta.textContent = `Search failed: ${err.message}`;
     }
+  }
+
+  // Slow searches show placeholder rows shaped like real ones, but only after
+  // 200 ms: a fast answer never flashes them. Rows already on screen stay,
+  // dimmed, until the new ones arrive.
+  let loadTimer = 0;
+  function startLoading() {
+    clearTimeout(loadTimer);
+    list.setAttribute('aria-busy', 'true');
+    $('score-note').textContent = '';
+    loadTimer = setTimeout(() => {
+      meta.textContent = '\u00a0';
+      if (list.querySelector('.result-row:not(.ghost)')) { list.classList.add('stale'); return; }
+      list.replaceChildren(...Array.from({ length: 8 }, (_, i) => ghost(i)));
+      more.hidden = true;
+    }, 200);
+  }
+  function stopLoading() {
+    clearTimeout(loadTimer);
+    list.removeAttribute('aria-busy');
+    list.classList.remove('stale');
+  }
+  function ghost(i) {
+    const item = el('div', 'result-row ghost');
+    item.setAttribute('aria-hidden', 'true');
+    const main = el('div', 'r-main');
+    const w = (n) => { const b = el('span', 'sk'); b.style.width = n + '%'; return b; };
+    main.append(w(34 + ((i * 17) % 28)), w(46 + ((i * 11) % 22)));
+    item.append(main, el('span', 'sk num'), el('span', 'sk num'), el('span', 'sk fit'), el('span', 'sk num'));
+    return item;
   }
 
   // ---- filters ----
@@ -164,12 +195,13 @@
       const label = el('label');
       const box = el('input');
       box.type = 'checkbox';
+      box.className = 'check';
       box.checked = archs.has(arch);
       box.addEventListener('change', () => {
         if (box.checked) archs.add(arch); else archs.delete(arch);
         changed();
       });
-      label.append(box, document.createTextNode(arch), el('span', 'grow'), el('span', 'count', String(n)));
+      label.append(box, el('span', 'arch-name', arch), el('span', 'count', String(n)));
       archBox.append(label);
     }
   }
@@ -212,16 +244,14 @@
     score: (a, b) => (b.score ?? -1) - (a.score ?? -1) || b.downloads - a.downloads,
   };
 
-  // What the current sort is ranking by, shown on the right of each row.
-  function sortFact(r) {
-    switch (sort.value) {
-      case 'likes': return `${compact.format(r.likes)} likes`;
-      case 'lastModified': return `updated ${ago(r.updated)}`;
-      case 'trendingScore': return `trending ${Math.round(r.trending)}`;
-      case 'params-desc': case 'params-asc': return `${compact.format(r.downloads)} downloads`;
-      default: return `${compact.format(r.downloads)} downloads`;
-    }
-  }
+  // The first number column follows the sort when it ranks by something
+  // other than downloads.
+  const POP = {
+    likes: ['Likes', (r) => compact.format(r.likes), ''],
+    lastModified: ['Updated', (r) => ago(r.updated), ''],
+    trendingScore: ['Trending', (r) => String(Math.round(r.trending)), ''],
+  };
+  const popCol = () => POP[sort.value] || ['Downloads', (r) => compact.format(r.downloads), ''];
 
   // Any filter or sort change starts the list from the top again.
   function changed() {
@@ -232,19 +262,23 @@
 
   function render() {
     const shown = results.filter(passes).sort(sorters[sort.value] || sorters.downloads);
-    // Bars are scaled to the best score among the models on screen.
-    topScore = Math.max(0, ...shown.map((r) => r.score || 0));
     if (!results.length) {
       meta.textContent = 'No GGUF repos match that search.';
     } else {
-      const scope = truncated ? `the ${results.length} most downloaded of many matches. Narrow the search to see others` : `${results.length} on Hugging Face`;
       meta.textContent = shown.length === results.length
-        ? `${shown.length} models (${scope})`
-        : `${shown.length} of ${results.length} match your filters${truncated ? ` (searched ${scope})` : ''}`;
+        ? (truncated ? `${shown.length} most downloaded models. Narrow the search to see others` : `${shown.length} models on Hugging Face`)
+        : `${shown.length} of ${results.length} match your filters`;
     }
 
     const rated = shown.filter((r) => r.score != null).length;
-    $('score-note').textContent = shown.length ? ` · ${rated} of ${shown.length} rated` : '';
+    $('score-note').textContent = shown.length ? `, ${rated} of ${shown.length} shown are rated` : '';
+
+    $('th-pop').textContent = popCol()[0];
+    const by = sort.value;
+    for (const b of document.querySelectorAll('#results-head [data-sortto]')) {
+      const to = b.dataset.sortto;
+      b.classList.toggle('on', to === 'size' ? by.startsWith('params') : to === 'score' ? by === 'score' : by === 'downloads' || !!POP[by]);
+    }
 
     for (const chip of document.querySelectorAll('#f-size-chips .chip')) {
       chip.classList.toggle('on', chip.dataset.min === minIn.value && chip.dataset.max === maxIn.value);
@@ -257,113 +291,142 @@
     more.textContent = `Show ${Math.min(left, PAGE)} more · ${left} left`;
   }
 
-  // Tags are buttons that narrow the list to things like them.
-  function filterTag(text, title, apply, cls) {
-    const b = el('button', 'tag tag-btn' + (cls ? ' ' + cls : ''), text);
+  // Facts under a name are quiet buttons that narrow the list to things like it.
+  function facet(text, title, apply) {
+    const b = el('button', 'r-facet', text);
     b.type = 'button';
     b.title = title;
     b.addEventListener('click', apply);
     return b;
   }
 
-  // Intelligence score: a thin bar scaled to the best in view. It links to
-  // Artificial Analysis, where the score comes from.
-  function scoreChip(r) {
-    if (r.score == null) {
-      const none = el('div', 'muted', 'not rated');
-      none.title = 'No Intelligence Index score for this model';
-      return none;
-    }
-    const a = el('a', 'r-score');
-    a.href = 'https://artificialanalysis.ai';
-    a.target = '_blank';
-    a.rel = 'noopener';
-    a.title = `Artificial Analysis Intelligence Index of ${r.scoreOf}`;
-    const bar = el('span', 'bar');
-    const fill = el('span');
-    fill.style.width = `${topScore ? Math.round((r.score / topScore) * 100) : 0}%`;
-    bar.append(fill);
-    a.append(el('span', 'muted', 'Intelligence'), bar, el('b', null, r.score.toFixed(0)));
-    return a;
-  }
+  function numCell(cls) { return el('div', 'r-cell ' + cls); }
 
   function row(r) {
     const item = el('div', 'result-row');
-
-    const main = el('div', 'r-main');
     item.dataset.id = r.id;
-    const name = el('a', 'r-name', r.name);
+
+    // name, status chips, then facts
+    const main = el('div', 'r-main');
+    const head = el('div', 'r-title');
+    const name = el('a', 'r-name', r.title || r.name);
     name.href = '/discover/' + r.id;
+    name.title = r.id;
     name.addEventListener('click', (e) => {
       if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return; // let the browser open it
       e.preventDefault();
       openPanel(r.id);
     });
-    main.append(name);
+    head.append(name);
+    for (const t of r.tags || []) head.append(el('span', 'tag', t));
+    if (r.installed) head.append(el('span', 'tag good', 'installed'));
+    if (r.gated) head.append(el('span', 'tag warn', 'gated'));
+    if (r.draft) {
+      const t = el('span', 'tag draft', 'draft model');
+      t.title = 'A small helper for speculative decoding, not a model to chat with';
+      head.append(t);
+    }
+    if (r.cantRun) {
+      const t = el('span', 'tag draft', 'not runnable here');
+      t.title = r.cantRun;
+      head.append(t);
+    }
+    main.append(head);
 
-    const tags = el('div', 'tags');
-    tags.append(filterTag(r.author, `Only show models from ${r.author}`, () => {
+    const facts = el('div', 'r-facts');
+    facts.append(facet(r.author, `Only show models from ${r.author}`, () => {
       if (author.value === r.author) return;
       if (![...author.options].some((o) => o.value === r.author)) author.append(new Option(r.author, r.author));
       author.value = r.author;
       search();
-    }, 'plain'));
+    }));
     if (r.params) {
-      tags.append(filterTag(`${r.moe ? 'MoE' : 'dense'} ${billions(r.params)}`, `Only ${r.moe ? 'MoE' : 'dense'} models`, () => {
+      facts.append(facet(`${r.moe ? 'MoE' : 'dense'} ${billions(r.params)}`, `Only ${r.moe ? 'MoE' : 'dense'} models`, () => {
         setType(r.moe ? 'moe' : 'dense');
         changed();
       }));
     }
     if (r.arch) {
-      tags.append(filterTag(r.arch, `Only ${r.arch} models`, () => {
+      facts.append(facet(r.arch, `Only ${r.arch} models`, () => {
         archs.clear();
         archs.add(r.arch);
         buildArchFilter();
         changed();
       }));
     }
-    {
-      const io = `${r.in.join('+') || 'nothing'} \u2192 ${r.out.join('+') || 'embeddings'}`;
-      tags.append(filterTag(io, 'Only models that take and make this', () => setIO(r.in, r.out), r.generator ? 'generator' : ''));
-    }
+    const io = `${r.in.join('+') || 'nothing'} → ${r.out.join('+') || 'embeddings'}`;
+    const iof = facet(io, 'Only models that take and make this', () => setIO(r.in, r.out));
+    if (r.generator) iof.classList.add('generator');
+    facts.append(iof);
     if (r.context >= 131072) {
-      tags.append(filterTag(`${Math.round(r.context / 1024)}k ctx`, 'Only models with 128k+ context', () => { $('f-longctx').checked = true; changed(); }));
+      facts.append(facet(`${Math.round(r.context / 1024)}k ctx`, 'Only models with 128k+ context', () => { $('f-longctx').checked = true; changed(); }));
     }
-    if (r.cantRun) {
-      const t = el('span', 'tag draft', 'not runnable here');
-      t.title = r.cantRun;
-      tags.append(t);
-    }
-    if (r.draft) {
-      const t = el('span', 'tag draft', 'draft model');
-      t.title = 'A small helper for speculative decoding, not a model to chat with';
-      tags.append(t);
-    }
-    if (r.installed) tags.append(el('span', 'tag good', 'installed'));
-    if (r.gated) tags.append(el('span', 'tag warn', 'gated'));
-    main.append(tags);
+    main.append(facts);
 
-    const side = el('div', 'r-side small');
+    // downloads (or whatever the sort ranks by)
+    const pop = numCell('pop');
+    const [, popText] = popCol();
+    const pb = el('button', 'r-num', popText(r));
+    pb.type = 'button';
+    pb.title = sort.value === 'downloads' || !POP[sort.value] ? `${r.downloads.toLocaleString()} downloads · ${r.likes.toLocaleString()} likes` : `${compact.format(r.downloads)} downloads`;
+    pb.addEventListener('click', () => setSort(POP[sort.value] ? sort.value : 'downloads'));
+    pop.append(pb);
+
+    // size and fit
+    const size = numCell('size');
+    const fit = numCell('fit');
     if (r.cantRun) {
-      const fit = el('div', 'r-fit fit-draft', 'Can\u2019t run here');
-      fit.title = r.cantRun;
-      side.append(fit, el('div', 'muted', r.generator ? `makes ${r.out.join(' and ')}` : 'needs whisper.cpp'));
+      size.append(el('span', 'muted', '–'));
+      const f = el('span', 'r-fit fit-draft', 'Can’t run here');
+      f.title = r.cantRun;
+      fit.append(f, el('span', 'r-fit-sub', r.generator ? `makes ${r.out.join(' and ')}` : 'needs whisper.cpp'));
     } else if (r.draft) {
-      const fit = el('div', 'r-fit fit-draft', 'Draft model');
-      fit.title = 'Speeds up another model through speculative decoding; it can\u2019t chat on its own';
-      side.append(fit, el('div', 'muted', r.draftFor ? `for ${r.draftFor.split('/').pop()}` : 'not the actual model'));
+      size.append(el('span', 'muted', '–'));
+      const f = el('span', 'r-fit fit-draft', 'Draft model');
+      f.title = 'Speeds up another model through speculative decoding; it can’t chat on its own';
+      fit.append(f, el('span', 'r-fit-sub', r.draftFor ? `for ${r.draftFor.split('/').pop()}` : 'not the actual model'));
     } else if (r.q4Size) {
-      const fit = el('div', `r-fit fit-${r.fit.level}`, r.fit.label);
-      fit.title = `~${fmtBytes(r.q4Size)} at Q4 with 8k context`;
-      side.append(fit, el('div', 'muted', `~${fmtBytes(r.q4Size)} · ${sortFact(r)}`));
+      const sb = el('button', 'r-num');
+      sb.type = 'button';
+      sb.append('~' + (r.q4Size / 1e9).toFixed(r.q4Size >= 1e10 ? 0 : 1), el('span', 'r-unit', ' GB'));
+      sb.title = `About ${fmtBytes(r.q4Size)} at Q4 with an 8k context. Click to sort by size.`;
+      sb.addEventListener('click', () => setSort(sort.value === 'params-desc' ? 'params-asc' : 'params-desc'));
+      size.append(sb);
+      const f = el('span', `r-fit ${r.fit.level}`, r.fit.label);
+      f.title = `~${fmtBytes(r.q4Size)} at Q4 with 8k context`;
+      const track = el('span', 'lib-track thin');
+      const fill = el('span', `lib-fill fit-${r.fit.level}`);
+      fill.style.width = `${r.fit.percent}%`;
+      track.append(fill);
+      fit.append(f, track);
     } else {
-      side.append(el('div', 'muted', 'size unknown'), el('div', 'muted', sortFact(r)));
+      size.append(el('span', 'muted', '–'));
+      fit.append(el('span', 'r-fit', 'Size unknown'));
     }
 
-    side.append(scoreChip(r));
+    // intelligence score, linking to where it comes from
+    const score = numCell('score');
+    if (r.score == null) {
+      const none = el('span', 'r-none', 'not rated');
+      none.title = 'No Intelligence Index score for this model';
+      score.append(none);
+    } else {
+      const a = el('a', 'r-num', r.score.toFixed(0));
+      a.href = 'https://artificialanalysis.ai';
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.title = `Artificial Analysis Intelligence Index of ${r.scoreOf}. Click to see where it comes from.`;
+      score.append(a);
+    }
 
-    item.append(main, side);
+    item.append(main, pop, size, fit, score);
     return item;
+  }
+
+  function setSort(v) {
+    if (sort.value === v) return;
+    sort.value = v;
+    changed();
   }
 
   // ---- detail panel: the model page's fragment, shown beside the list ----
@@ -454,6 +517,14 @@
   q.addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(search, 350); });
   q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { clearTimeout(debounce); search(); } });
   author.addEventListener('change', search);
+  for (const b of document.querySelectorAll('#results-head [data-sortto]')) {
+    b.addEventListener('click', () => {
+      const to = b.dataset.sortto;
+      if (to === 'size') setSort(sort.value === 'params-desc' ? 'params-asc' : 'params-desc');
+      else if (to === 'downloads') setSort(POP[sort.value] ? sort.value : 'downloads');
+      else setSort(to);
+    });
+  }
   sort.addEventListener('change', changed);
   more.addEventListener('click', () => { limit += PAGE; render(); });
 

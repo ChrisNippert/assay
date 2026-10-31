@@ -136,6 +136,33 @@ func (compareColumn) Secs(ms int64) string {
 	return fmt.Sprintf("%.1f s", float64(ms)/1000)
 }
 
+// SecsNum and SecsUnit split Secs so the page can set the unit in muted text.
+func (compareColumn) SecsNum(ms int64) string {
+	if ms < 1000 {
+		return fmt.Sprintf("%d", ms)
+	}
+	return fmt.Sprintf("%.1f", float64(ms)/1000)
+}
+
+func (compareColumn) SecsUnit(ms int64) string {
+	if ms < 1000 {
+		return "ms"
+	}
+	return "s"
+}
+
+// TitleText is the readable name for the column heading, TitleTags its chips
+// (QAT, MoE…).
+func (c compareColumn) TitleText() string   { t, _ := c.title(); return t }
+func (c compareColumn) TitleTags() []string { _, t := c.title(); return t }
+
+func (c compareColumn) title() (string, []string) {
+	if c.Group.HFRepo != "" {
+		return prettyModel(c.Group.ShortName())
+	}
+	return prettyModel(c.Group.Primary.Name)
+}
+
 // best finds the winning value of each row; with one column there's
 // nothing to compare, so nothing is highlighted.
 func (d *compareData) best() {

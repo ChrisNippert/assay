@@ -3,9 +3,9 @@
 {{$d := .Data}}
 <div class="page cmp">
   <div class="cmp-pick">
-    {{range $d.Picked}}<span class="chip on cmp-chip">{{.}}<button type="button" class="cmp-x" data-remove="{{.}}" aria-label="Remove {{.}}" title="Remove from the comparison">×</button></span>{{end}}
+    {{range $d.Columns}}<span class="chip on cmp-chip" title="{{.Group.Primary.Name}}">{{.TitleText}}<button type="button" class="cmp-x" data-remove="{{.Group.Primary.Name}}" aria-label="Remove {{.TitleText}}" title="Remove from the comparison">×</button></span>{{end}}
     {{if lt (len $d.Picked) 4}}{{if .Models}}
-    <select id="cmp-add" aria-label="Add a model">
+    <select id="cmp-add" data-dd aria-label="Add a model">
       <option value="">{{if $d.Picked}}Add a model…{{else}}Choose a model…{{end}}</option>
       {{range .ModelGroups}}{{if not (hasChoice $d.Picked .Primary.Name)}}<option value="{{.Primary.Name}}">{{.Primary.Name}}{{with .Primary.Details.ParameterSize}} · {{.}}{{end}} · {{bytes .Primary.Size}}</option>{{end}}{{end}}
     </select>
@@ -25,46 +25,50 @@
     <div class="cmp-corner"></div>
     {{range $d.Columns}}{{$m := .Group.Primary}}
     <div class="cmp-head">
-      <a class="cmp-name row-link" href="/chat?model={{$m.Name}}" title="Chat with {{$m.Name}}">{{if .Group.HFRepo}}{{.Group.ShortName}}{{else}}{{$m.Name}}{{end}}</a>
-      {{with .Group.PrimaryOwner}}<span class="muted small">{{.}}</span>{{end}}
-      {{if .Group.Loaded}}<span class="tag good">● Loaded</span>{{end}}
+      <div class="cmp-title">
+        <a class="cmp-name" href="/chat?model={{$m.Name}}" title="Chat with {{$m.Name}}">{{.TitleText}}</a>
+        {{range .TitleTags}}<span class="tag">{{.}}</span>{{end}}
+        {{if .Group.Loaded}}<span class="cmp-dot" role="img" aria-label="Loaded in memory" title="Loaded in memory"></span>{{end}}
+      </div>
+      {{with .Group.PrimaryOwner}}<a class="cmp-owner" href="/discover?author={{.}}" title="More from {{.}}">{{.}}</a>{{end}}
     </div>
     {{end}}
 
-    <div class="cmp-section">Model <span class="cmp-src">from the model file</span></div>
+    <div class="cmp-section">The model <span class="cmp-src">from the model file</span></div>
     <div class="cmp-label">Parameters</div>
-    {{range $d.Columns}}<div class="cmp-cell">{{or .Group.Primary.Details.ParameterSize "–"}}</div>{{end}}
+    {{range $d.Columns}}{{$c := .}}<div class="cmp-cell">{{with $c.Group.Primary.Details.ParameterSize}}{{if $c.Group.HFRepo}}<a class="cmp-val cmp-link" href="/discover/{{$c.Group.HFRepo}}" title="Open on Discover">{{.}}</a>{{else}}<span class="cmp-val">{{.}}</span>{{end}}{{else}}<span class="muted">–</span>{{end}}</div>{{end}}
     <div class="cmp-label">Quantization</div>
-    {{range $d.Columns}}<div class="cmp-cell">{{with .Group.Primary.Details.QuantizationLevel}}<span class="mono">{{.}}</span>{{else}}–{{end}}{{with .Quality}}<span class="muted"> · {{.}}</span>{{end}}</div>{{end}}
+    {{range $d.Columns}}<div class="cmp-cell">{{with .Group.Primary.Details.QuantizationLevel}}<span class="mono">{{.}}</span>{{else}}<span class="muted">–</span>{{end}}{{with .Quality}}<span class="muted"> · {{.}}</span>{{end}}</div>{{end}}
     <div class="cmp-label">On disk</div>
-    {{range $d.Columns}}<div class="cmp-cell">{{bytes .Group.Primary.Size}}</div>{{end}}
+    {{range $d.Columns}}<div class="cmp-cell"><a class="cmp-val cmp-link" href="/library" title="See it in the Library">{{bytes .Group.Primary.Size}}</a></div>{{end}}
     <div class="cmp-label">Architecture</div>
-    {{range $d.Columns}}<div class="cmp-cell">{{or .Group.Primary.Details.Family "–"}}</div>{{end}}
+    {{range $d.Columns}}{{$c := .}}<div class="cmp-cell">{{with $c.Group.Primary.Details.Family}}{{if $c.Group.PrimaryOwner}}<a class="cmp-val cmp-link" href="/discover?author={{$c.Group.PrimaryOwner}}&arch={{.}}" title="More {{.}} models on Discover">{{.}}</a>{{else}}<span class="cmp-val">{{.}}</span>{{end}}{{else}}<span class="muted">–</span>{{end}}</div>{{end}}
     <div class="cmp-label">Longest context</div>
-    {{range $d.Columns}}<div class="cmp-cell">{{if .MaxCtx}}{{kib .MaxCtx}}k tokens{{else}}–{{end}}</div>{{end}}
+    {{range $d.Columns}}<div class="cmp-cell">{{if .MaxCtx}}<span class="cmp-val">{{kib .MaxCtx}}k</span> <span class="cmp-unit">tokens</span>{{else}}<span class="muted">–</span>{{end}}</div>{{end}}
     <div class="cmp-label">Can do</div>
     {{range $d.Columns}}<div class="cmp-cell cmp-caps">{{range .Caps}}<span class="tag">{{.}}</span>{{else}}<span class="muted">text</span>{{end}}{{with .Err}}<span class="settings-warn small">{{.}}</span>{{end}}</div>{{end}}
 
     <div class="cmp-section">On your GPU <span class="cmp-src">Assay's estimate</span></div>
     <div class="cmp-label">Context that fits</div>
-    {{range $d.Columns}}<div class="cmp-cell{{if and $d.BestCtx (eq .Auto.Ctx $d.BestCtx)}} best{{end}}">{{if .Auto.Ctx}}{{kib .Auto.Ctx}}k, all on the GPU{{else}}<span class="muted">{{or .Auto.Reason "unknown"}}</span>{{end}}</div>{{end}}
+    {{range $d.Columns}}<div class="cmp-cell{{if and $d.BestCtx (eq .Auto.Ctx $d.BestCtx)}} best{{end}}">{{if .Auto.Ctx}}<a class="cmp-val cmp-link" href="/chat?model={{.Group.Primary.Name}}" title="Chat with this model at this context">{{kib .Auto.Ctx}}k</a> <span class="cmp-unit">all on the GPU</span>{{else}}<span class="muted">{{or .Auto.Reason "unknown"}}</span>{{end}}</div>{{end}}
 
     <div class="cmp-section">Intelligence <span class="cmp-src"><a href="{{$d.ScoreURL}}" target="_blank" rel="noopener">Artificial Analysis ↗</a></span></div>
     <div class="cmp-label">Score</div>
-    {{range $d.Columns}}<div class="cmp-cell{{if and .Rated (eq .Score $d.BestScore)}} best{{end}}">{{if .Rated}}
-      <span class="cmp-score"><b>{{printf "%.0f" .Score}}</b><span class="bar"><span style="width: {{.ScorePct}}%"></span></span></span>
-      <span class="muted small">of <a href="https://huggingface.co/{{.ScoreOf}}" target="_blank" rel="noopener">{{.ScoreOf}}</a></span>
+    {{range $d.Columns}}<div class="cmp-cell cmp-scorecell{{if and .Rated (eq .Score $d.BestScore)}} best{{end}}">{{if .Rated}}
+      <a class="cmp-val cmp-link" href="{{$d.ScoreURL}}" target="_blank" rel="noopener" title="Artificial Analysis Intelligence Index. Click to see where it comes from.">{{printf "%.0f" .Score}}</a>
+      <span class="lib-track thin"><span class="lib-fill{{if and .Rated (eq .Score $d.BestScore)}} accent{{end}}" style="width: {{.ScorePct}}%"></span></span>
+      <span class="cmp-unit">of <a href="https://huggingface.co/{{.ScoreOf}}" target="_blank" rel="noopener">{{.ScoreOf}}</a></span>
     {{else}}<span class="muted">Not rated</span>{{end}}</div>{{end}}
 
     <div class="cmp-section">Speed <span class="cmp-src">measured on this machine</span></div>
     <div class="cmp-label">Writing</div>
-    {{range $d.Columns}}<div class="cmp-cell{{if and .Bench (eq .Bench.GenTPS $d.BestGen)}} best{{end}}">{{with .Bench}}<b>{{printf "%.1f" .GenTPS}}</b> tokens/s{{else}}<span class="muted">–</span>{{end}}</div>{{end}}
+    {{range $d.Columns}}<div class="cmp-cell{{if and .Bench (eq .Bench.GenTPS $d.BestGen)}} best{{end}}">{{with .Bench}}<span class="cmp-val">{{printf "%.1f" .GenTPS}}</span> <span class="cmp-unit">tokens/s</span>{{else}}<span class="muted">–</span>{{end}}</div>{{end}}
     <div class="cmp-label">Reading the prompt</div>
-    {{range $d.Columns}}<div class="cmp-cell{{if and .Bench (eq .Bench.PromptTPS $d.BestPrompt)}} best{{end}}">{{with .Bench}}{{printf "%.0f" .PromptTPS}} tokens/s{{else}}<span class="muted">–</span>{{end}}</div>{{end}}
+    {{range $d.Columns}}<div class="cmp-cell{{if and .Bench (eq .Bench.PromptTPS $d.BestPrompt)}} best{{end}}">{{with .Bench}}<span class="cmp-val">{{printf "%.0f" .PromptTPS}}</span> <span class="cmp-unit">tokens/s</span>{{else}}<span class="muted">–</span>{{end}}</div>{{end}}
     <div class="cmp-label">First word after</div>
-    {{range $d.Columns}}{{$c := .}}<div class="cmp-cell{{if and .Bench (eq .Bench.TTFTMs $d.BestTTFT)}} best{{end}}">{{with .Bench}}{{$c.Secs .TTFTMs}}{{else}}<span class="muted">–</span>{{end}}</div>{{end}}
+    {{range $d.Columns}}{{$c := .}}<div class="cmp-cell{{if and .Bench (eq .Bench.TTFTMs $d.BestTTFT)}} best{{end}}">{{with .Bench}}<span class="cmp-val">{{$c.SecsNum .TTFTMs}}</span> <span class="cmp-unit">{{$c.SecsUnit .TTFTMs}}</span>{{else}}<span class="muted">–</span>{{end}}</div>{{end}}
     <div class="cmp-label">Loading</div>
-    {{range $d.Columns}}{{$c := .}}<div class="cmp-cell{{if and .Bench (eq .Bench.LoadMs $d.BestLoad)}} best{{end}}">{{with .Bench}}{{$c.Secs .LoadMs}}{{else}}<span class="muted">–</span>{{end}}</div>{{end}}
+    {{range $d.Columns}}{{$c := .}}<div class="cmp-cell{{if and .Bench (eq .Bench.LoadMs $d.BestLoad)}} best{{end}}">{{with .Bench}}<span class="cmp-val">{{$c.SecsNum .LoadMs}}</span> <span class="cmp-unit">{{$c.SecsUnit .LoadMs}}</span>{{else}}<span class="muted">–</span>{{end}}</div>{{end}}
     <div class="cmp-label"></div>
     {{range $d.Columns}}<div class="cmp-cell cmp-run">
       {{with .Bench}}<span class="muted small">{{ago .At}} · {{kib .Ctx}}k context{{if lt .GPUPct 100}} · {{.GPUPct}}% on GPU{{end}}</span>{{end}}
@@ -72,9 +76,10 @@
     </div>{{end}}
   </div>
   </div>
-  <p class="muted small cmp-foot" id="cmp-status" role="status">The speed test loads the model fresh at the context chats use, reads a prompt of about a thousand tokens and writes 256 tokens with thinking off. Other models are unloaded first, so each model has the GPU to itself. Highlighted values are the best in each row.</p>
+  <p class="muted small cmp-foot" id="cmp-status" role="status">The speed test loads the model fresh at the context chats use, reads a prompt of about a thousand tokens and writes 256 tokens with thinking off. Other models are unloaded first, so each model has the GPU to itself. The best value in each row is in the accent colour.</p>
   {{end}}
 </div>
+<script src="/static/dropdown.js"></script>
 <script>
 (() => {
   const picked = {{$d.Picked}} || [];

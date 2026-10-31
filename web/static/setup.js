@@ -327,7 +327,7 @@
   root.querySelectorAll('.su-step').forEach((b) => { b.onclick = () => go(Number(b.dataset.go)); });
   root.querySelectorAll('[data-skip-setup]').forEach((a) => a.addEventListener('click', (ev) => { ev.preventDefault(); finish(a.getAttribute('href')); }));
 
-  (async () => {
+  window.assayWhenVisible(async () => {
     try { await refresh(); } catch (err) { $('su-system').replaceChildren(row('Couldn’t read this computer', err.message)); return; }
     // An install already under way (the page was reloaded) is picked up.
     try {
@@ -336,5 +336,5 @@
     } catch {}
     const want = Number(new URLSearchParams(location.search).get('step'));
     go(want >= 1 && want <= 4 ? want : 1);
-  })();
+  });
 })();

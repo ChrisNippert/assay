@@ -16,7 +16,8 @@
   {{if $.Data.Generator}}<div class="banner draft-banner" role="note"><strong>This model makes {{join $.Data.Out " and "}}, which Assay can't run.</strong> Assay can't run image, video or audio generators yet: llama.cpp runs text models, plus image and some audio input through an mmproj file. The files are on <a href="https://huggingface.co/{{.ID}}" target="_blank" rel="noopener">Hugging Face ↗</a> for other tools.</div>{{else if $.Data.CantRun}}<div class="banner draft-banner" role="note"><strong>{{$.Data.CantRun}}.</strong> The files are on <a href="https://huggingface.co/{{.ID}}" target="_blank" rel="noopener">Hugging Face ↗</a> for other tools.</div>{{end}}
   <header class="model-head">
     <div class="model-title">
-      <h1>{{.Name}}</h1>
+      <h1>{{or $.Data.Title .Name}}{{range $.Data.Tags}} <span class="tag">{{.}}</span>{{end}}</h1>
+      {{if $.Data.Title}}<div class="model-raw muted small" title="The repository's name on Hugging Face">{{.ID}}</div>{{end}}
       <div class="tags">
         <a class="row-link muted" href="/discover?author={{.Author}}" title="More from {{.Author}}">{{.Author}}</a>
         {{with billions .Params}}<a class="tag tag-link" href="/discover?author={{$.Data.Repo.Author}}&type={{if $.Data.MoE}}moe{{else}}dense{{end}}" title="More {{if $.Data.MoE}}MoE{{else}}dense{{end}} models">{{if $.Data.MoE}}MoE {{else}}dense {{end}}{{.}}</a>{{end}}
@@ -53,17 +54,18 @@
       {{end}}
       {{if $.Data.CantRun}}<p class="muted">No download is offered: {{$.Data.CantRun}}.</p>{{end}}
       <div class="quant-list">
+        {{if $.Data.Quants}}<div class="quant-head" role="presentation"><span>Quant</span><span class="r">Size</span><span>Fits</span><span>Quality</span><span></span></div>{{end}}
         {{range $.Data.Quants}}
         <div class="quant-row{{if .Best}} best{{end}}" data-tag="{{.Tag}}">
-          <span class="quant-name mono">{{.Name}}{{if .Best}} <span class="star" title="Largest that fits on your GPU">★</span>{{end}}</span>
+          <span class="quant-name mono">{{.Name}}</span>
           <span class="quant-size">{{bytes .Size}}</span>
-          <span class="fit fit-{{.Fit.Level}}">
-            <span class="bar"><span style="width: {{.Fit.Percent}}%"></span></span>
-            <span class="fit-label">{{.Fit.Label}}</span>
+          <span class="fit">
+            <span class="fit-label fit-{{.Fit.Level}}">{{.Fit.Label}}{{if .Best}} <span class="best-chip" title="Largest that fits on your GPU">best fit</span>{{end}}</span>
+            <span class="lib-track thin"><span class="lib-fill fit-{{.Fit.Level}}" style="width: {{.Fit.Percent}}%"></span></span>
           </span>
-          <span class="quality muted small">quality: {{.Quality}}</span>
+          <span class="quality">{{.Quality}}</span>
           <span class="quant-action">
-            {{if .Installed}}<a class="btn" href="/chat?model={{.Tag}}">Installed · Chat</a>
+            {{if .Installed}}<a class="btn" href="/chat?model={{.Tag}}"><span class="installed-dot" aria-hidden="true"></span>Chat</a>
             {{else}}<button type="button" class="btn{{if and .Best (not .NoRoom)}} primary{{end}}" data-pull="{{.Tag}}" data-alias="{{.Alias}}"{{if .NoRoom}} title="Not enough disk space"{{end}}>Download</button>{{end}}
           </span>
           {{if .NoRoom}}<span class="split-note small">Not enough disk space: needs {{bytes .Size}} plus 1 GB spare, {{bytes $.Data.Free}} free.</span>{{end}}
@@ -121,7 +123,7 @@
         {{if $.Data.Score}}
         <a class="score-big" href="{{$.Data.ScoreURL}}" target="_blank" rel="noopener" title="Artificial Analysis Intelligence Index of {{$.Data.ScoreOf}}">
           <b>{{printf "%.0f" $.Data.Score}}</b>
-          <span class="bar"><span style="width: {{$.Data.ScorePct}}%"></span></span>
+          <span class="lib-track"><span class="lib-fill accent" style="width: {{$.Data.ScorePct}}%"></span></span>
         </a>
         <p class="muted small">Scores run roughly 0 to 50; the bar is against the best known. Rated for <a href="https://huggingface.co/{{$.Data.ScoreOf}}" target="_blank" rel="noopener">{{$.Data.ScoreOf}}</a>, which this was quantized from.</p>
         {{else}}
