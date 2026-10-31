@@ -160,5 +160,5 @@
   }
 
   document.getElementById('found-refresh')?.addEventListener('click', () => run('', () => load(true)));
-  load(false);
+  window.assayWhenVisible(() => load(false));
 })();
