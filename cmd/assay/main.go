@@ -20,8 +20,8 @@ import (
 
 	"assay/internal/bench"
 	"assay/internal/chats"
-	"assay/internal/evals"
 	"assay/internal/engine"
+	"assay/internal/evals"
 	"assay/internal/hf"
 	"assay/internal/hw"
 	"assay/internal/limits"
