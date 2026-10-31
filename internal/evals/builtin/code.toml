@@ -1,4 +1,5 @@
 name = "Code reading"
+short = "Code"
 description = "What does this Python program print? Tests careful reading of real semantics: aliasing, scope, slicing, generators."
 check = "exact"
 

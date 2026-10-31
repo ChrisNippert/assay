@@ -56,6 +56,8 @@ type Question struct {
 type Set struct {
 	ID          string `toml:"-" json:"id"`
 	Name        string `toml:"name" json:"name"`
+	// Short labels the set's column in tables; default: the name.
+	Short       string `toml:"short,omitempty" json:"short,omitempty"`
 	Description string `toml:"description,omitempty" json:"description,omitempty"`
 	// Check is the default check for its questions.
 	Check string `toml:"check,omitempty" json:"check,omitempty"`
@@ -67,6 +69,14 @@ type Set struct {
 	// Hash changes whenever a question, answer or check changes, so old
 	// results can be told apart from current ones.
 	Hash string `toml:"-" json:"hash"`
+}
+
+// ShortName is the column label.
+func (s *Set) ShortName() string {
+	if s.Short != "" {
+		return s.Short
+	}
+	return s.Name
 }
 
 // CheckOf is the check a question uses.

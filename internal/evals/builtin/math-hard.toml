@@ -1,0 +1,115 @@
+name = "Hard math"
+short = "Hard math"
+description = "Competition-style counting and number theory, the kind that needs careful reasoning. Graded on the final number."
+check = "number"
+
+[[questions]]
+id = "unit-fractions"
+prompt = "How many ordered pairs (a, b) of positive integers satisfy 1/a + 1/b = 1/12?"
+answer = "15"
+
+[[questions]]
+id = "square-divisors"
+prompt = "How many positive divisors of 2^4 · 3^3 · 5^2 are perfect squares?"
+answer = "12"
+
+[[questions]]
+id = "square-quadratic"
+prompt = "Find the sum of all positive integers n for which n² − 19n + 99 is a perfect square."
+answer = "38"
+
+[[questions]]
+id = "last-digits"
+prompt = "What number do the last three digits of 3^2026 form? (For example, if they were 007, the answer would be 7.)"
+answer = "329"
+
+[[questions]]
+id = "digit-sum-9"
+prompt = "How many five-digit positive integers have digits that add up to 9?"
+answer = "495"
+
+[[questions]]
+id = "dominoes"
+prompt = "In how many ways can a 2 × 10 board be tiled completely with 1 × 2 dominoes?"
+answer = "89"
+
+[[questions]]
+id = "no-consecutive"
+prompt = "How many subsets of {1, 2, …, 12}, including the empty set, contain no two consecutive integers?"
+answer = "377"
+
+[[questions]]
+id = "factorial-zeros"
+prompt = "What is the smallest positive integer n such that n! is divisible by 10^10?"
+answer = "45"
+
+[[questions]]
+id = "odd-digits"
+prompt = "How many integers from 1 to 10,000 inclusive have only odd digits?"
+answer = "780"
+
+[[questions]]
+id = "power-sum-mod"
+prompt = "What is the remainder when 1^1 + 2^2 + 3^3 + … + 100^100 is divided by 7?"
+answer = "0"
+
+[[questions]]
+id = "derangements"
+prompt = "How many permutations of 1, 2, 3, 4, 5, 6 leave no number in its original position?"
+answer = "265"
+
+[[questions]]
+id = "base-12-zeros"
+prompt = "How many zeros does 2026! end with when written in base 12?"
+answer = "1009"
+
+[[questions]]
+id = "floor-sum"
+prompt = "For how many integers n from 1 to 2026 does ⌊n/2⌋ + ⌊n/3⌋ + ⌊n/6⌋ = n hold?"
+answer = "337"
+
+[[questions]]
+id = "digits-of-power"
+prompt = "How many digits does 2^2026 have?"
+answer = "610"
+
+[[questions]]
+id = "largest-prime-factor"
+prompt = "What is the largest prime factor of 2^20 − 1?"
+answer = "41"
+
+[[questions]]
+id = "bounded-sum"
+prompt = "How many ordered triples of integers (x, y, z) with 0 ≤ x, y, z ≤ 7 satisfy x + y + z = 15?"
+answer = "28"
+
+[[questions]]
+id = "coupon"
+prompt = "A fair six-sided die is rolled until every face has appeared at least once. What is the expected number of rolls? Give it to two decimal places."
+answer = "14.7"
+tolerance = 0.01
+
+[[questions]]
+id = "lattice-circle"
+prompt = "How many points (x, y) with integer coordinates satisfy x² + y² < 50?"
+answer = "149"
+
+[[questions]]
+id = "handshake-colors"
+prompt = "Each of 8 people shakes hands with every other person exactly once. Each handshake is either firm or limp. In how many of the possible ways of assigning firm or limp to all handshakes does every person give an even number of firm handshakes?"
+answer = "2097152"
+
+[[questions]]
+id = "sum-gcd"
+prompt = "What is the sum gcd(1, 60) + gcd(2, 60) + gcd(3, 60) + … + gcd(60, 60)?"
+answer = "360"
+
+[[questions]]
+id = "triangle-count"
+prompt = "How many non-congruent triangles with integer side lengths have a perimeter of 30?"
+answer = "19"
+
+[[questions]]
+id = "ap-primes"
+prompt = "What is the smallest prime p such that p, p + 6, p + 12, p + 18 and p + 24 are all prime?"
+answer = "5"

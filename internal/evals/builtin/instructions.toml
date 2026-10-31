@@ -1,4 +1,5 @@
 name = "Instruction following"
+short = "Format"
 description = "Exact format rules: word counts, letter case, lists, JSON. Graded by pattern on the whole reply."
 check = "regex"
 

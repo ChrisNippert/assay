@@ -1,4 +1,5 @@
 name = "Math word problems"
+short = "Math"
 description = "Multi-step arithmetic, algebra and counting. Graded on the final number."
 check = "number"
 

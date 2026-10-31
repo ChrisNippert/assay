@@ -34,7 +34,7 @@
   }
   const pct = (x) => Math.round(x * 100);
   const setName = (id) => (data.sets.find((s) => s.id === id) || { name: id }).name;
-  const shortName = (s) => s.name.replace(/^(General|Math) /, '').replace(/ (word problems|and reasoning|following)$/, '');
+  const shortName = (s) => s.short || s.name;
 
   // ---- loading ----
   let loadTimer = 0;
@@ -86,7 +86,7 @@
 
   function cellFor(row, set) {
     const c = row.cells[set.id];
-    const item = run.items.find((it) => it.model === row.name && it.set === set.id && (it.state === 'running' || (run.running && it.state === 'pending')));
+    const item = run.running && run.think === think && run.items.find((it) => it.model === row.name && it.set === set.id && (it.state === 'running' || it.state === 'pending'));
     const box = el('div', 'bm-cell');
     if (item && item.state === 'running') {
       box.classList.add('busy');
@@ -166,7 +166,10 @@
       name.append(sub);
       row.append(name);
       sets.forEach((s) => row.append(cellFor(r, s)));
-      row.append(el('div', 'bm-cell bm-big', r.overall != null ? `${pct(r.overall)}%` : '–'));
+      const ov = el('div', 'bm-cell bm-big');
+      ov.append(r.overall != null ? `${pct(r.overall)}%` : el('span', 'muted', '–'));
+      if (r.overall == null) ov.title = 'Finish every highlighted set for an overall score';
+      row.append(ov);
       const idx = el('div', 'bm-cell');
       if (r.index != null) {
         const l = el('a', 'bm-plain', Math.round(r.index).toString());
@@ -196,7 +199,7 @@
     const f = data.fit || {};
     const W = 360, H = 220, L = 34, R = 10, T = 10, B = 30;
     const pts = data.rows.filter((r) => r.overall != null && (r.index != null || r.estimate != null));
-    const ymax = Math.max(10, ...pts.map((r) => (r.index != null ? r.index : r.estimate || 0))) * 1.1;
+    const ymax = Math.max(20, Math.ceil((Math.max(0, ...pts.map((r) => (r.index != null ? r.index : r.estimate || 0))) * 1.1) / 20) * 20);
     const x = (v) => L + v * (W - L - R);
     const y = (v) => H - B - (v / ymax) * (H - T - B);
     const parts = [];
@@ -281,7 +284,7 @@
     const line = el('div', 'lib-progress-line');
     line.append(el('span', 'lib-spin'));
     const txt = el('span');
-    txt.textContent = cur ? `${cur.title} · ${cur.setName}: ${cur.answered} of ${cur.total} asked, ${cur.correct} right` : 'Starting…';
+    txt.textContent = (cur ? `${cur.title} · ${cur.setName}: ${cur.answered} of ${cur.total} asked, ${cur.correct} right` : 'Starting…') + (run.think === 'off' ? ' · thinking off' : '');
     const stop = el('button', 'lib-linkbtn', 'Stop');
     stop.type = 'button';
     stop.onclick = async () => { stop.disabled = true; run = await api('DELETE', '/api/evals/run'); };

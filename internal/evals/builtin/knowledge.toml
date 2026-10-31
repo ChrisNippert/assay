@@ -1,4 +1,5 @@
 name = "General knowledge"
+short = "Knowledge"
 description = "Science, history, geography and culture facts that don't change. Multiple choice."
 check = "choice"
 

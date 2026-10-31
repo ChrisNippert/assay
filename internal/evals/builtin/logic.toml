@@ -1,4 +1,5 @@
 name = "Logic and reasoning"
+short = "Logic"
 description = "Short puzzles: syllogisms, ordering, knights and knaves, probability traps. Multiple choice."
 check = "choice"
 

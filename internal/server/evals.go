@@ -387,6 +387,7 @@ func (s *Server) askEval(ctx context.Context, model string, set *evals.Set, q ev
 type evalSetJSON struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
+	Short       string `json:"short"`
 	Description string `json:"description,omitempty"`
 	Check       string `json:"check,omitempty"`
 	Questions   int    `json:"questions"`
@@ -395,7 +396,7 @@ type evalSetJSON struct {
 }
 
 func setJSON(st *evals.Set) evalSetJSON {
-	return evalSetJSON{ID: st.ID, Name: st.Name, Description: st.Description, Check: st.Check, Questions: len(st.Questions), BuiltIn: st.BuiltIn, Hash: st.Hash}
+	return evalSetJSON{ID: st.ID, Name: st.Name, Short: st.ShortName(), Description: st.Description, Check: st.Check, Questions: len(st.Questions), BuiltIn: st.BuiltIn, Hash: st.Hash}
 }
 
 func (s *Server) evalSets() ([]evalSetJSON, map[string]string) {
@@ -548,7 +549,7 @@ func (s *Server) evalResultsFor(ctx context.Context, think string, suite []strin
 		if isEmbeddingName(g.Primary.Name) {
 			continue
 		}
-		row := evalRow{Name: g.Primary.Name, Title: groupTitle(g), Quant: g.Primary.Details.QuantizationLevel, Digest: g.Primary.Digest, Params: float64(parseParams(g.Primary.Details.ParameterSize)) / 1e9, Cells: map[string]evalCell{}}
+		row := evalRow{Name: g.Primary.Name, Title: groupTitle(g), Quant: quantOf(g), Digest: g.Primary.Digest, Params: float64(parseParams(g.Primary.Details.ParameterSize)) / 1e9, Cells: map[string]evalCell{}}
 		for _, r := range byDigest[g.Primary.Digest] {
 			c := evalCell{Score: r.Score(), Correct: r.Correct, Answered: len(r.Answers), Total: r.Total, Done: r.Done(), At: r.At}
 			c.Stale = hashes[r.Set] != "" && hashes[r.Set] != r.SetHash
