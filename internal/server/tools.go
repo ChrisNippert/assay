@@ -2,8 +2,8 @@ package server
 
 import (
 	"context"
-	"errors"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"slices"
 	"strconv"
