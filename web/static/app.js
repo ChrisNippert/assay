@@ -683,7 +683,7 @@ window.ollamuiSheets = (() => {
     const del = e.target.closest('[data-delete-preset]');
     if (!del) return;
     const name = del.dataset.deletePreset;
-    if (!confirm(`Delete the preset “${name}”? If it's available to other apps, ollamui/${name} is removed from Ollama too.`)) return;
+    if (!confirm(`Delete the preset “${name}”? Apps that use it through the API lose it too.`)) return;
     const res = await fetch('/api/presets/' + encodeURIComponent(name), { method: 'DELETE' });
     if (res.ok) del.closest('tr')?.remove();
     else alert(`Couldn't delete: ${await errorText(res)}`);

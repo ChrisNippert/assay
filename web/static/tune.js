@@ -636,7 +636,7 @@
       case 'saved': return 'Saved for the model';
       case 'model': return 'Model’s recommendation';
       case 'auto': return 'Auto';
-      case 'engine': return perModel() ? 'llama.cpp default' : 'Ollama default';
+      case 'engine': return perModel() ? 'llama.cpp default' : 'Default';
       default: return 'Default';
     }
   }
