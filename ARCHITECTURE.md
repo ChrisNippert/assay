@@ -357,6 +357,13 @@ parts by name. Unsloth's `params` file becomes the model's default
 settings. The short name is an alias in the manifest (`engine.Copy`). Other
 names (the Ollama library) are refused with a hint to use an `hf.co/` name.
 
+Before fetching, `Pull` and `PullMTP` check free space in the models folder
+(`engine/space.go`): what's still missing (finished files count nothing, a
+`.partial` counts what's left) plus 1 GB to spare must fit, after subtracting
+what other downloads in progress still need (`Engine.reserved`). Otherwise
+the download fails at once with the sizes and folder. The model page flags
+quants that won't fit (`quantRow.NoRoom`) but still offers the button.
+
 ### Load and eject
 
 Loading from the UI starts the model's llama-server and pins it

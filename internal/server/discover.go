@@ -296,6 +296,7 @@ type quantRow struct {
 	Fit       hw.Fit
 	Installed bool
 	Best      bool
+	NoRoom    bool // not enough free disk space to download it
 }
 
 type setting struct {
@@ -332,8 +333,9 @@ type modelPageData struct {
 	ScorePct int // Score as a percentage of the best known score
 	ScoreURL string
 	Error    string
-	Partial  bool // render only the detail block, for the Discover panel
-	SplitsOK bool // split quants can be downloaded
+	Partial  bool  // render only the detail block, for the Discover panel
+	SplitsOK bool  // split quants can be downloaded
+	Free     int64 // free space in the models folder, 0 if unknown
 }
 
 var ctxChoices = []int{4096, 8192, 16384, 32768, 65536, 131072}
@@ -443,6 +445,15 @@ func (s *Server) handleModelPage(w http.ResponseWriter, r *http.Request) {
 			Fit:       hw.Classify(hw.EstimateKV(q.Size, repo.Params(), data.Ctx, data.MoE, kvf), s.memory),
 			Installed: installed[strings.ToLower(tag)],
 		})
+	}
+	if mf, ok := s.ollama.(modelFolder); ok {
+		if free, err := engine.DiskFree(mf.Store().Blob("")); err == nil {
+			data.Free = free
+			for i := range data.Quants {
+				q := &data.Quants[i]
+				q.NoRoom = !q.Installed && q.Size+data.MTP+engine.SpareSpace > free
+			}
+		}
 	}
 	// Assay's own engine downloads split GGUFs; Ollama may not.
 	_, data.SplitsOK = s.ollama.(fitter)

@@ -145,6 +145,16 @@ func (e *Engine) Pull(ctx context.Context, name string, fn func(ollama.PullProgr
 		m.MTP = dest(mtp, false)
 		jobs = append(jobs, job{mtp, m.MTP})
 	}
+	var want []hf.File
+	var dsts []string
+	for _, j := range jobs {
+		want, dsts = append(want, byPath[j.src]), append(dsts, e.store.Blob(j.dst))
+	}
+	release, err := e.reserve(m.Name, need(want, dsts))
+	if err != nil {
+		return err
+	}
+	defer release()
 	for _, j := range jobs {
 		f := byPath[j.src]
 		m.Size += f.Size
@@ -408,6 +418,11 @@ func (e *Engine) PullMTP(ctx context.Context, name string, fn func(ollama.PullPr
 	if f.SHA256() != "" {
 		dst = "sha256-" + f.SHA256() + ".gguf"
 	}
+	release, err := e.reserve(m.Name+" MTP head", need([]hf.File{f}, []string{e.store.Blob(dst)}))
+	if err != nil {
+		return err
+	}
+	defer release()
 	if err := e.download(ctx, m.Repo, f, e.store.Blob(dst), fn); err != nil {
 		return err
 	}

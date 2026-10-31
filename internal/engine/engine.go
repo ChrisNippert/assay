@@ -70,6 +70,8 @@ type Engine struct {
 	Finder *Finder
 	// HF downloads models (Pull); nil turns downloads off.
 	HF HF
+	// Free replaces DiskFree in tests.
+	Free func(path string) (int64, error)
 
 	store *Store
 	// Folder says where the models folder is remembered.
@@ -86,6 +88,9 @@ type Engine struct {
 	loading sync.Mutex
 	// files are the downloads in progress, by destination (see lockFile).
 	files map[string]*sync.Mutex
+	// reserved is what downloads in progress still need to write (under
+	// mu), so two at once don't both count the same free space.
+	reserved int64
 	// pending is the load in progress, if any (under mu), so Running can
 	// show it and Unload can cancel it.
 	pending *pendingLoad

@@ -64,8 +64,9 @@
           <span class="quality muted small">quality: {{.Quality}}</span>
           <span class="quant-action">
             {{if .Installed}}<a class="btn" href="/chat?model={{.Tag}}">Installed · Chat</a>
-            {{else}}<button type="button" class="btn{{if .Best}} primary{{end}}" data-pull="{{.Tag}}" data-alias="{{.Alias}}">Download</button>{{end}}
+            {{else}}<button type="button" class="btn{{if and .Best (not .NoRoom)}} primary{{end}}" data-pull="{{.Tag}}" data-alias="{{.Alias}}"{{if .NoRoom}} title="Not enough disk space"{{end}}>Download</button>{{end}}
           </span>
+          {{if .NoRoom}}<span class="split-note small">Not enough disk space: needs {{bytes .Size}} plus 1 GB spare, {{bytes $.Data.Free}} free.</span>{{end}}
           {{if and .Split (not $.Data.SplitsOK)}}<span class="split-note small">Split into {{len .Files}} files. This one may not download.</span>{{end}}
         </div>
         {{end}}

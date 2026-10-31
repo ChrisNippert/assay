@@ -216,3 +216,41 @@ func TestPullMTPForImportedModel(t *testing.T) {
 		t.Fatalf("%d files downloaded, want only the head", n)
 	}
 }
+
+func TestPullChecksDiskSpace(t *testing.T) {
+	h := &fakeHF{files: map[string][]byte{"M-Q4_K_M.gguf": []byte("weights")}}
+	e := testEngine(t, h)
+	e.Free = func(string) (int64, error) { return SpareSpace + 3, nil }
+	noop := func(ollama.PullProgress) error { return nil }
+	err := e.Pull(context.Background(), "hf.co/o/M-GGUF", noop)
+	if err == nil || !strings.Contains(err.Error(), "not enough disk space") {
+		t.Fatalf("err = %v, want a disk space error", err)
+	}
+	if _, err := os.Stat(e.store.Blob("")); err == nil {
+		if ents, _ := os.ReadDir(e.store.Blob("")); len(ents) > 0 {
+			t.Errorf("wrote %d files with no room", len(ents))
+		}
+	}
+
+	// Another download holding the room blocks this one too.
+	e.Free = func(string) (int64, error) { return SpareSpace + 10, nil }
+	release, err := e.reserve("other", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Pull(context.Background(), "hf.co/o/M-GGUF", noop); err == nil {
+		t.Error("pull went ahead while another download held the space")
+	}
+	release()
+	if err := e.Pull(context.Background(), "hf.co/o/M-GGUF", noop); err != nil {
+		t.Fatalf("pull with room: %v", err)
+	}
+	if e.reserved != 0 {
+		t.Errorf("reserved = %d after the pull, want 0", e.reserved)
+	}
+	// Already downloaded: needs nothing, even with no free space.
+	e.Free = func(string) (int64, error) { return 0, nil }
+	if err := e.Pull(context.Background(), "hf.co/o/M-GGUF", noop); err != nil {
+		t.Errorf("pull of a model already there: %v", err)
+	}
+}
