@@ -22,6 +22,7 @@ import (
 
 	"assay/internal/bench"
 	"assay/internal/chats"
+	"assay/internal/evals"
 	"assay/internal/hf"
 	"assay/internal/hw"
 	"assay/internal/limits"
@@ -84,6 +85,10 @@ type Options struct {
 	Scores *scores.Store
 	// Bench keeps speed tests; without it they aren't saved.
 	Bench *bench.Store
+	// Evals holds benchmark sets and EvalResults their runs; nil keeps only
+	// the built-in sets and no results.
+	Evals       *evals.Library
+	EvalResults *evals.Results
 	// Projects and RAGSettings hold projects, their files and the RAG
 	// preferences. Nil keeps them in a temporary folder / in memory.
 	Projects    *projects.Store
@@ -157,6 +162,12 @@ type Server struct {
 	// measure is the Library's measure-all run; benchFn runs one speed test
 	// (nil: runBench; tests swap it).
 	measure measureJob
+	// evalLib, evalRes and evalJob are the benchmarks (see evals.go);
+	// evalFn runs one model × set (nil: runEvalItem; tests swap it).
+	evalLib *evals.Library
+	evalRes *evals.Results
+	evalJob evalJob
+	evalFn  func(ctx context.Context, item int, redo bool) error
 	benchFn func(ctx context.Context, name string, keepPinned bool) (bench.Result, error)
 	// otherVRAM is the last measured VRAM used outside Ollama (desktop etc.).
 	otherVRAM atomic.Int64
@@ -185,6 +196,16 @@ func New(opts Options) (*Server, error) {
 	}
 	if s.bench == nil {
 		s.bench = bench.Open("")
+	}
+	s.evalLib, s.evalRes = opts.Evals, opts.EvalResults
+	if s.evalLib == nil {
+		var err error
+		if s.evalLib, err = evals.OpenLibrary(""); err != nil {
+			return nil, err
+		}
+	}
+	if s.evalRes == nil {
+		s.evalRes = evals.OpenResults("")
 	}
 	if s.projects == nil {
 		dir, err := os.MkdirTemp("", "assay-projects-")
@@ -218,7 +239,7 @@ func New(opts Options) (*Server, error) {
 		s.log = slog.Default()
 	}
 	s.pages = map[string]*template.Template{}
-	for _, name := range []string{"chat", "library", "discover", "model", "presets", "settings", "compare", "project", "setup"} {
+	for _, name := range []string{"chat", "library", "discover", "model", "presets", "settings", "compare", "project", "setup", "benchmarks"} {
 		t, err := template.New("").Funcs(templateFuncs).ParseFS(web.FS, "templates/layout.html", "templates/"+name+".html")
 		if err != nil {
 			return nil, fmt.Errorf("parse %s template: %w", name, err)
@@ -251,6 +272,17 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("GET /api/setup/models", s.handleSetupModels)
 	mux.HandleFunc("POST /api/setup/done", s.handleSetupDone)
 	mux.HandleFunc("GET /compare", s.handleComparePage)
+	mux.HandleFunc("GET /benchmarks", s.handleBenchmarksPage)
+	mux.HandleFunc("GET /api/evals/sets", s.handleEvalSets)
+	mux.HandleFunc("GET /api/evals/sets/{id}", s.handleEvalSet)
+	mux.HandleFunc("PUT /api/evals/sets/{id}", s.handleEvalSetSave)
+	mux.HandleFunc("DELETE /api/evals/sets/{id}", s.handleEvalSetDelete)
+	mux.HandleFunc("GET /api/evals/results", s.handleEvalResults)
+	mux.HandleFunc("GET /api/evals/result", s.handleEvalResult)
+	mux.HandleFunc("DELETE /api/evals/result", s.handleEvalResultDelete)
+	mux.HandleFunc("GET /api/evals/run", s.handleEvalRunState)
+	mux.HandleFunc("POST /api/evals/run", s.handleEvalRunStart)
+	mux.HandleFunc("DELETE /api/evals/run", s.handleEvalRunCancel)
 	mux.HandleFunc("GET /projects/{id}", s.handleProjectPage)
 	mux.HandleFunc("POST /api/projects", s.handleProjectCreate)
 	mux.HandleFunc("GET /api/projects/{id}", s.handleProjectGet)

@@ -1,0 +1,104 @@
+{{define "appbar"}}<h1 class="appbar-title">Benchmarks</h1>{{end}}
+{{define "content"}}
+<div class="page bm" id="bm">
+  <div class="lib-stats bm-stats">
+    <a class="lib-stat" href="#bm-sets" title="The question sets">
+      <span class="lib-stat-label">Sets</span>
+      <span class="lib-stat-value" id="st-sets">–</span>
+      <span class="bm-stat-note" id="st-sets-note"></span>
+    </a>
+    <a class="lib-stat" href="#bm-results" title="Results per model">
+      <span class="lib-stat-label">Models tested</span>
+      <span class="lib-stat-value" id="st-tested">–</span>
+      <span class="lib-track"><span class="lib-fill accent" id="st-tested-bar" style="width: 0%"></span></span>
+    </a>
+    <a class="lib-stat" href="#bm-fit" title="How well your benchmarks predict the Intelligence Index">
+      <span class="lib-stat-label">Index estimate</span>
+      <span class="lib-stat-value" id="st-fit">–</span>
+      <span class="bm-stat-note" id="st-fit-note"></span>
+    </a>
+  </div>
+
+  <div class="lib-tools">
+    <div class="bm-seg" role="radiogroup" aria-label="Thinking">
+      <span class="muted small">Thinking</span>
+      <button type="button" class="lib-sortchip" role="radio" data-think="">Model's default</button>
+      <button type="button" class="lib-sortchip" role="radio" data-think="off">Off</button>
+    </div>
+    <div class="lib-measure"><button type="button" class="btn primary" id="bm-run-open">Run benchmarks…</button></div>
+  </div>
+  <div class="lib-progress" id="bm-status" role="status" aria-live="polite" hidden></div>
+
+  <section id="bm-results" class="bm-section">
+    <div class="bm-scroll"><div class="bm-table" id="bm-table"></div></div>
+    <p class="muted bm-empty" id="bm-none" hidden></p>
+  </section>
+
+  <section id="bm-fit" class="bm-section">
+    <h2 class="bm-h">Placing models on the Intelligence Index</h2>
+    <div class="bm-fit">
+      <svg class="bm-plot" id="bm-plot" viewBox="0 0 360 220" role="img" aria-label="Your score against the published index"></svg>
+      <div class="bm-fit-text" id="bm-fit-text"></div>
+    </div>
+  </section>
+
+  <section id="bm-sets" class="bm-section">
+    <div class="bm-h-row"><h2 class="bm-h">Sets</h2><button type="button" class="btn" id="bm-new">New set</button></div>
+    <div class="boxed-list" id="bm-setlist"></div>
+    <p class="muted small" id="bm-set-errors" hidden></p>
+  </section>
+
+  <dialog class="bm-dialog" id="bm-run" aria-labelledby="bm-run-title">
+    <form method="dialog" class="bm-dlg-body" id="bm-run-form">
+      <h2 class="bm-dlg-title" id="bm-run-title">Run benchmarks</h2>
+      <div class="bm-dlg-cols">
+        <fieldset class="bm-pick"><legend>Models</legend><div id="bm-run-models" class="bm-checks"></div></fieldset>
+        <fieldset class="bm-pick"><legend>Sets</legend><div id="bm-run-sets" class="bm-checks"></div></fieldset>
+      </div>
+      <label class="bm-check"><input type="checkbox" id="bm-run-redo"> Run again where there's a finished result</label>
+      <p class="muted small" id="bm-run-note"></p>
+      <div class="bm-dlg-actions"><button type="button" class="btn ghost" value="cancel" data-close>Cancel</button><button type="submit" class="btn primary" id="bm-run-go">Start</button></div>
+    </form>
+  </dialog>
+
+  <dialog class="bm-dialog wide" id="bm-answers" aria-labelledby="bm-ans-title">
+    <div class="bm-dlg-body">
+      <div class="bm-dlg-head"><h2 class="bm-dlg-title" id="bm-ans-title"></h2><button type="button" class="icon-btn" data-close aria-label="Close">×</button></div>
+      <div class="bm-ans-sub muted small" id="bm-ans-sub"></div>
+      <div class="bm-ans-filter" role="group" aria-label="Show">
+        <button type="button" class="lib-sortchip on" data-show="all">All</button>
+        <button type="button" class="lib-sortchip" data-show="wrong">Wrong</button>
+        <button type="button" class="lib-sortchip" data-show="right">Right</button>
+      </div>
+      <div id="bm-ans-list" class="bm-ans-list"></div>
+      <div class="bm-dlg-actions"><button type="button" class="btn danger" id="bm-ans-delete">Delete this result</button><span class="grow"></span><button type="button" class="btn" id="bm-ans-rerun">Run again</button></div>
+    </div>
+  </dialog>
+
+  <dialog class="bm-dialog wide" id="bm-edit" aria-labelledby="bm-edit-title">
+    <form method="dialog" class="bm-dlg-body" id="bm-edit-form">
+      <div class="bm-dlg-head"><h2 class="bm-dlg-title" id="bm-edit-title">Set</h2><button type="button" class="icon-btn" data-close aria-label="Close">×</button></div>
+      <label class="bm-field"><span>Id <span class="muted small">(file name: lowercase letters, digits, dashes)</span></span><input type="text" id="bm-edit-id" pattern="[a-z0-9][a-z0-9\-]{0,63}" required autocomplete="off" spellcheck="false"></label>
+      <textarea id="bm-edit-toml" class="bm-toml" spellcheck="false" rows="18" aria-label="The set as TOML"></textarea>
+      <details class="bm-help"><summary>How to write a set</summary>
+        <div class="small">
+          <p>A set has a <code>name</code>, an optional <code>description</code>, a default <code>check</code>, an optional <code>system</code> message and <code>[[questions]]</code>, each with a <code>prompt</code> and an <code>answer</code>. Checks:</p>
+          <ul>
+            <li><b>number</b>: the final answer is this number (<code>tolerance</code> sets how close; fractions like 5/36 work).</li>
+            <li><b>exact</b>: the final answer is this text, ignoring case, spacing and end punctuation. <code>accept</code> lists other right answers.</li>
+            <li><b>choice</b>: give <code>choices</code>; the answer is a letter. They're shown as A, B, C….</li>
+            <li><b>contains</b>: the reply contains this text. <b>regex</b>: the whole reply matches this pattern. Add <code>not = true</code> to fail a match instead.</li>
+          </ul>
+          <p>For number, exact and choice the model is asked to end with a line “Answer: …”. Thinking is not graded.</p>
+        </div>
+      </details>
+      <p class="bm-edit-err" id="bm-edit-err" role="alert" hidden></p>
+      <div class="bm-dlg-actions"><button type="button" class="btn danger" id="bm-edit-delete" hidden>Delete set</button><span class="grow"></span><button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" class="btn primary" id="bm-edit-save">Save</button></div>
+    </form>
+  </dialog>
+
+  <p class="muted small bm-foot">Each question is asked once, at temperature 0, one model at a time. Runs wait while a chat reply is being written, and pick up where they stopped. The estimate fits a straight line from your overall score to the <a href="https://artificialanalysis.ai" target="_blank" rel="noopener">Artificial Analysis</a> Intelligence Index of the models that have one; it's an estimate, not a published score.</p>
+  <script>window.assayBench = {{.Data.Initial}};</script>
+  <script src="/static/benchmarks.js" defer></script>
+</div>
+{{end}}

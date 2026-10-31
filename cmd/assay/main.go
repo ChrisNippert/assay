@@ -20,6 +20,7 @@ import (
 
 	"assay/internal/bench"
 	"assay/internal/chats"
+	"assay/internal/evals"
 	"assay/internal/engine"
 	"assay/internal/hf"
 	"assay/internal/hw"
@@ -104,6 +105,10 @@ func run() error {
 	}
 	mem := hw.Detect()
 	log.Info("memory", "gpu", mem.GPU, "vram_gb", float64(mem.VRAM)/1e9, "ram_gb", float64(mem.RAM)/1e9)
+	evalLib, err := evals.OpenLibrary(filepath.Join(*dataDir, "evals", "sets"))
+	if err != nil {
+		return fmt.Errorf("benchmark sets: %w", err)
+	}
 	scoreStore := scores.Open(scores.DefaultURL, filepath.Join(*dataDir, "scores.json"), log)
 	var speech *voice.Client
 	if *voiceURL != "" {
@@ -192,6 +197,8 @@ func run() error {
 		LlamaCpp:      llama,
 		Scores:        scoreStore,
 		Bench:         bench.Open(filepath.Join(*dataDir, "bench")),
+		Evals:         evalLib,
+		EvalResults:   evals.OpenResults(filepath.Join(*dataDir, "evals", "results")),
 		Voice:         speech,
 		VoiceLauncher: launcher,
 		VoiceSettings: voiceSettings,

@@ -1,0 +1,190 @@
+package server
+
+import (
+	"context"
+	"math"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"assay/internal/evals"
+)
+
+func waitEvals(t *testing.T, s *Server) evalState {
+	t.Helper()
+	for range 500 {
+		if st := s.evalJob.state(); !st.Running {
+			return st
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("benchmark run never finished")
+	return evalState{}
+}
+
+const twoQuestions = `name = "Two"
+check = "number"
+[[questions]]
+id = "a"
+prompt = "What is 17 × 23?"
+answer = "391"
+[[questions]]
+id = "b"
+prompt = "Eggs for 10?"
+answer = "7.5"
+`
+
+func TestEvalRun(t *testing.T) {
+	s, fake, _ := newTestServer(t)
+	fake.tags = threeModels
+	lib, _ := evals.OpenLibrary(t.TempDir())
+	s.evalLib, s.evalRes = lib, evals.OpenResults(t.TempDir())
+	if _, err := lib.Save("two", []byte(twoQuestions)); err != nil {
+		t.Fatal(err)
+	}
+	fake.reply = `{"message":{"role":"assistant","thinking":"17*23 = 391"}}
+{"message":{"role":"assistant","content":"So:\nAnswer: 391"}}
+{"done":true,"done_reason":"stop","eval_count":12}
+`
+	st, err := s.startEvals(context.Background(), evalRunRequest{Models: []string{"small:q4", "embed:0.6b"}, Sets: []string{"two"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Items) != 2 || st.Items[1].State != itemSkipped {
+		t.Fatalf("items %+v", st.Items)
+	}
+	st = waitEvals(t, s)
+	if it := st.Items[0]; it.State != itemDone || it.Answered != 2 || it.Correct != 1 {
+		t.Fatalf("item %+v", it)
+	}
+	r, ok := s.evalRes.Get("d1", "two", "")
+	if !ok || !r.Done() || r.Correct != 1 || r.Answers[0].Got != "391" || r.Answers[0].Thinking == "" || r.Answers[1].Correct || r.Answers[0].Tokens != 12 {
+		t.Fatalf("result %+v", r)
+	}
+	// Temperature 0, the limit for thinking runs, and no think field.
+	fake.mu.Lock()
+	req := fake.chatReqs[len(fake.chatReqs)-1]
+	fake.mu.Unlock()
+	if req.Options["temperature"] != float64(0) || req.Options["num_predict"] != float64(evalTokensThink) || req.Think != nil {
+		t.Errorf("request %+v think %v", req.Options, req.Think)
+	}
+	// Done already: nothing to run unless asked to redo.
+	if _, err := s.startEvals(context.Background(), evalRunRequest{Models: []string{"small:q4"}, Sets: []string{"two"}}); err == nil {
+		t.Error("ran a finished set again")
+	}
+	// Thinking off is a separate result.
+	if _, err := s.startEvals(context.Background(), evalRunRequest{Models: []string{"small:q4"}, Sets: []string{"two"}, Think: "off"}); err != nil {
+		t.Fatal(err)
+	}
+	waitEvals(t, s)
+	fake.mu.Lock()
+	req = fake.chatReqs[len(fake.chatReqs)-1]
+	fake.mu.Unlock()
+	if req.Think != false || req.Options["num_predict"] != float64(evalTokensNoThink) {
+		t.Errorf("think off request: %v %v", req.Think, req.Options)
+	}
+	if _, ok := s.evalRes.Get("d1", "two", "off"); !ok {
+		t.Error("no think-off result")
+	}
+
+	// The table shows the cell; with the user's set as the suite, an overall.
+	res, err := s.evalResultsFor(context.Background(), "", []string{"two"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, row := range res.Rows {
+		if row.Name == "small:q4" {
+			found = true
+			if c := row.Cells["two"]; !c.Done || c.Score != 0.5 || row.Overall == nil || *row.Overall != 0.5 {
+				t.Errorf("row %+v", row)
+			}
+		}
+		if row.Name == "embed:0.6b" {
+			t.Error("embedding model listed")
+		}
+	}
+	if !found || res.Rows[0].Name != "small:q4" {
+		t.Errorf("rows %+v", res.Rows)
+	}
+
+	// Editing the set marks the result stale and drops the overall.
+	lib.Save("two", []byte(strings.Replace(twoQuestions, `"7.5"`, `"8"`, 1)))
+	res, _ = s.evalResultsFor(context.Background(), "", []string{"two"})
+	for _, row := range res.Rows {
+		if row.Name == "small:q4" && (!row.Cells["two"].Stale || row.Overall != nil) {
+			t.Errorf("not stale: %+v", row)
+		}
+	}
+}
+
+func TestEvalResumes(t *testing.T) {
+	s, fake, _ := newTestServer(t)
+	fake.tags = threeModels
+	lib, _ := evals.OpenLibrary(t.TempDir())
+	s.evalLib, s.evalRes = lib, evals.OpenResults(t.TempDir())
+	set, _ := lib.Save("two", []byte(twoQuestions))
+	s.evalRes.Put(&evals.Result{Model: "small:q4", Digest: "d1", Set: "two", SetHash: set.Hash, Total: 2, MaxTokens: 100, Answers: []evals.Answer{{ID: "a", Correct: true}}, Correct: 1})
+	fake.reply = `{"message":{"role":"assistant","content":"Answer: 7.5"}}
+{"done":true,"done_reason":"length","eval_count":100}
+`
+	if _, err := s.startEvals(context.Background(), evalRunRequest{Models: []string{"small:q4"}, Sets: []string{"two"}}); err != nil {
+		t.Fatal(err)
+	}
+	waitEvals(t, s)
+	r, _ := s.evalRes.Get("d1", "two", "")
+	if len(r.Answers) != 2 || r.Correct != 2 || !r.Answers[1].Cut || r.MaxTokens != 100 {
+		t.Errorf("resumed %+v", r)
+	}
+	fake.mu.Lock()
+	n := len(fake.chatReqs)
+	fake.mu.Unlock()
+	if n != 1 {
+		t.Errorf("asked %d questions, want 1", n)
+	}
+}
+
+func TestFitRows(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	rows := []evalRow{
+		{Name: "a", Overall: f(0.2), Index: f(10), Of: "x/a"},
+		{Name: "a2", Overall: f(0.4), Index: f(10), Of: "x/a"}, // same base: counted once at 0.3
+		{Name: "b", Overall: f(0.5), Index: f(20), Of: "x/b"},
+		{Name: "c", Overall: f(0.7), Index: f(30), Of: "x/c"},
+		{Name: "d", Overall: f(0.9)},
+		{Name: "e"},
+	}
+	fit := fitRows(rows)
+	if !fit.OK || fit.N != 3 || math.Abs(fit.B-50) > 1e-9 || fit.R2 < 0.999 {
+		t.Fatalf("fit %+v", fit)
+	}
+	if rows[4].Estimate == nil || math.Abs(*rows[4].Estimate-40) > 1e-9 || !rows[4].Outside || rows[4].Anchor {
+		t.Errorf("d: %+v", rows[4])
+	}
+	if !rows[1].Anchor || rows[5].Estimate != nil {
+		t.Errorf("anchor/none: %+v %+v", rows[1], rows[5])
+	}
+	if fit := fitRows(rows[:2]); fit.OK || fit.Comment == "" {
+		t.Errorf("too few: %+v", fit)
+	}
+}
+
+func TestBenchmarksPage(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, httptest.NewRequest("GET", "http://localhost/benchmarks", nil))
+	if rec.Code != 200 {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+	for _, want := range []string{`id="bm-table"`, `window.assayBench = {`, `"Math word problems"`, `/static/benchmarks.js`, `class="nav-item active"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("page lacks %s", want)
+		}
+	}
+	rec = httptest.NewRecorder()
+	s.ServeHTTP(rec, httptest.NewRequest("PUT", "http://localhost/api/evals/sets/math", strings.NewReader(twoQuestions)))
+	if rec.Code != 400 {
+		t.Errorf("saved over a built-in set: %d", rec.Code)
+	}
+}

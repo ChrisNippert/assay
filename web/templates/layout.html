@@ -34,6 +34,7 @@
   <a href="/library" class="nav-item{{if eq .Active "library"}} active{{end}}">{{template "icon-library"}}Library<span class="grow"></span><span class="count">{{len .ModelGroups}}</span></a>
   <a href="/discover" class="nav-item{{if eq .Active "discover"}} active{{end}}">{{template "icon-search"}}Discover</a>
   <a href="/compare" class="nav-item{{if eq .Active "compare"}} active{{end}}">{{template "icon-chart"}}Compare</a>
+  <a href="/benchmarks" class="nav-item{{if eq .Active "benchmarks"}} active{{end}}">{{template "icon-check"}}Benchmarks</a>
   <a href="/presets" class="nav-item{{if eq .Active "presets"}} active{{end}}">{{template "icon-sliders"}}Presets<span class="grow"></span><span class="count">{{len .Presets}}</span></a>
 
   <div class="section-label chats-head"><span>Chats</span><span class="chats-actions"><button type="button" class="icon-btn chats-new" id="new-project" aria-label="New project" title="New project">{{template "icon-folder-plus"}}</button><a href="/chat" class="icon-btn chats-new" aria-label="New chat" title="New chat">{{template "icon-plus"}}</a></span></div>
@@ -111,7 +112,7 @@
     {{block "appbar-end" .}}{{end}}
   </header>
   {{if .ModelsErr}}<div class="banner error" role="alert">Couldn't read the installed models. <span class="muted">({{.ModelsErr}})</span></div>{{end}}
-  {{if or (eq .Active "library") (eq .Active "settings") (eq .Active "presets") (eq .Active "compare") (eq .Title "Discover")}}<h1 class="large-title">{{.Title}}</h1>{{end}}
+  {{if or (eq .Active "library") (eq .Active "settings") (eq .Active "presets") (eq .Active "compare") (eq .Active "benchmarks") (eq .Title "Discover")}}<h1 class="large-title">{{.Title}}</h1>{{end}}
   {{template "content" .}}
 </main>
 </div>
@@ -133,4 +134,5 @@
 {{define "icon-trash"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>{{end}}
 {{define "icon-folder"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>{{end}}
 {{define "icon-folder-plus"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10v6M9 13h6"/></svg>{{end}}
+{{define "icon-check"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg>{{end}}
 {{define "icon-chevron"}}<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>{{end}}
