@@ -141,7 +141,9 @@
     const main = el('div', 'r-main');
     const w = (n) => { const b = el('span', 'sk'); b.style.width = n + '%'; return b; };
     main.append(w(34 + ((i * 17) % 28)), w(46 + ((i * 11) % 22)));
-    item.append(main, el('span', 'sk num'), el('span', 'sk num'), el('span', 'sk fit'), el('span', 'sk num'));
+    const side = el('div', 'r-side');
+    side.append(el('span', 'sk num'), el('span', 'sk num'), el('span', 'sk num'), el('span', 'sk pill'));
+    item.append(main, side);
     return item;
   }
 
@@ -154,9 +156,13 @@
     return media ? [...takes].join() + '>' + [...makes].join() : '';
   };
 
+  // Takes/Makes live in two places (switches under "Can do" and chips under
+  // "More"); both read the same sets.
   function syncIO() {
-    for (const [set, id] of [[takes, 'f-takes'], [makes, 'f-makes']]) {
-      for (const b of $(id).querySelectorAll('.chip')) b.setAttribute('aria-pressed', String(set.has(b.dataset.mod)));
+    for (const b of document.querySelectorAll('[data-io]')) {
+      const [kind, mod] = b.dataset.io.split(':');
+      const on = (kind === 'takes' ? takes : makes).has(mod);
+      if (b.type === 'checkbox') b.checked = on; else b.setAttribute('aria-pressed', String(on));
     }
     $('f-io-note').hidden = ![...makes].some((m) => m !== 'text');
   }
@@ -201,9 +207,25 @@
         if (box.checked) archs.add(arch); else archs.delete(arch);
         changed();
       });
-      label.append(box, el('span', 'arch-name', arch), el('span', 'count', String(n)));
+      const nm = el('span', 'arch-name', prettyArch(arch));
+      nm.title = arch;
+      label.append(box, nm, el('span', 'count muted small', String(n)));
       archBox.append(label);
     }
+  }
+
+  // "qwen3moe" -> "Qwen 3 MoE", "qwen35" -> "Qwen 3.5", "glm4" -> "GLM 4".
+  const ACRO = { glm: 'GLM', gpt: 'GPT', llm: 'LLM', oss: 'OSS', moe: 'MoE', vl: 'VL', ocr: 'OCR', bert: 'BERT', t5: 'T5' };
+  function prettyArch(a) {
+    const m = /^([a-z]+?)(\d{1,2})?([a-z]*)$/.exec(a);
+    if (!m) return a;
+    const word = (w) => ACRO[w] || w.charAt(0).toUpperCase() + w.slice(1);
+    const num = m[2] && m[2].length === 2 ? `${m[2][0]}.${m[2][1]}` : m[2];
+    const rest = [];
+    let t = m[3];
+    for (const k of ['vl', 'moe']) if (t.includes(k)) { rest.push(ACRO[k]); t = t.replace(k, ''); }
+    if (t) rest.unshift(t);
+    return [word(m[1]), num, ...rest].filter(Boolean).join(' ');
   }
 
   function setType(value) {
@@ -273,22 +295,51 @@
     const rated = shown.filter((r) => r.score != null).length;
     $('score-note').textContent = shown.length ? `, ${rated} of ${shown.length} shown are rated` : '';
 
-    $('th-pop').textContent = popCol()[0];
-    const by = sort.value;
-    for (const b of document.querySelectorAll('#results-head [data-sortto]')) {
-      const to = b.dataset.sortto;
-      b.classList.toggle('on', to === 'size' ? by.startsWith('params') : to === 'score' ? by === 'score' : by === 'downloads' || !!POP[by]);
+    for (const b of document.querySelectorAll('#f-size button')) {
+      b.classList.toggle('on', b.dataset.min === minIn.value && b.dataset.max === maxIn.value);
     }
-
-    for (const chip of document.querySelectorAll('#f-size-chips .chip')) {
-      chip.classList.toggle('on', chip.dataset.min === minIn.value && chip.dataset.max === maxIn.value);
-    }
+    renderActive();
 
     list.replaceChildren(...shown.slice(0, limit).map(row));
     markSelected();
     const left = shown.length - limit;
     more.hidden = left <= 0;
     more.textContent = `Show ${Math.min(left, PAGE)} more · ${left} left`;
+  }
+
+  // ---- active filters as removable chips ----
+  const SIZE_NAMES = { '|9': 'Small', '9|35': 'Mid', '35|': 'Large' };
+  function renderActive() {
+    const box = $('active-chips');
+    const items = [];
+    const add = (label, undo) => items.push({ label, undo });
+    for (const m of takes) add(`Takes ${m}`, () => { takes.delete(m); ioChanged(); });
+    for (const m of makes) add(`Makes ${m}`, () => { makes.delete(m); ioChanged(); });
+    if (minIn.value || maxIn.value) {
+      add(SIZE_NAMES[`${minIn.value}|${maxIn.value}`] || `${minIn.value || 0}–${maxIn.value || 'any'}B`, () => { minIn.value = maxIn.value = ''; changed(); });
+    }
+    if (type) add(type === 'moe' ? 'MoE only' : 'Dense only', () => { setType(''); changed(); });
+    for (const a of archs) add(prettyArch(a), () => { archs.delete(a); buildArchFilter(); changed(); });
+    const flags = { long: 'Long memory', rated: 'Has score', fits: 'Fits my computer', hideInstalled: 'Hiding installed', hideGated: 'Hiding gated', hideDrafts: 'Hiding drafts' };
+    for (const [key, label] of Object.entries(flags)) {
+      if ($(checks[key]).checked) add(label, () => { $(checks[key]).checked = false; changed(); });
+    }
+    if (author.value !== 'unsloth') add(author.value ? `From ${author.value}` : 'From anyone', () => { author.value = 'unsloth'; search(); });
+    box.hidden = !items.length;
+    box.replaceChildren(...items.map((it) => {
+      const b = el('button', 'achip');
+      b.type = 'button';
+      b.title = 'Remove this filter';
+      b.append(it.label, el('span', 'x', '×'));
+      b.addEventListener('click', it.undo);
+      return b;
+    }));
+    if (items.length > 1) {
+      const c = el('button', 'link-btn', 'Clear all');
+      c.type = 'button';
+      c.addEventListener('click', clearAll);
+      box.append(c);
+    }
   }
 
   // Facts under a name are quiet buttons that narrow the list to things like it.
@@ -300,7 +351,24 @@
     return b;
   }
 
-  function numCell(cls) { return el('div', 'r-cell ' + cls); }
+  // Plain words for what a model can do.
+  function abilities(r) {
+    const w = [];
+    if (r.in.includes('image')) w.push(['reads images', () => { takes.add('image'); ioChanged(); }]);
+    if (r.in.includes('video')) w.push(['watches video', () => { takes.add('video'); ioChanged(); }]);
+    if (r.in.includes('audio')) w.push(['hears audio', () => { takes.add('audio'); ioChanged(); }]);
+    for (const m of ['image', 'video', 'audio']) if (r.out.includes(m)) w.push([`makes ${m === 'audio' ? 'audio' : m + 's'}`, () => { makes.add(m); ioChanged(); }]);
+    if (!r.out.length) w.push(['embeddings', () => setIO(r.in, [])]);
+    return w;
+  }
+
+  const FIT_TEXT = { gpu: 'Fits', tight: 'Fits, tight', partial: 'Uses RAM · slower', cpu: 'CPU only', none: 'Too big' };
+
+  function stat(cls, value, label) {
+    const d = el('div', 'r-stat ' + cls);
+    d.append(value, el('span', 'r-lab', label));
+    return d;
+  }
 
   function row(r) {
     const item = el('div', 'result-row');
@@ -311,7 +379,7 @@
     const head = el('div', 'r-title');
     const name = el('a', 'r-name', r.title || r.name);
     name.href = '/discover/' + r.id;
-    name.title = r.id;
+    name.title = r.id + (r.arch ? ` · ${r.arch}` : '');
     name.addEventListener('click', (e) => {
       if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return; // let the browser open it
       e.preventDefault();
@@ -333,6 +401,7 @@
     }
     main.append(head);
 
+    // uploader, size, what it can do: each one narrows the list
     const facts = el('div', 'r-facts');
     facts.append(facet(r.author, `Only show models from ${r.author}`, () => {
       if (author.value === r.author) return;
@@ -346,80 +415,67 @@
         changed();
       }));
     }
-    if (r.arch) {
-      facts.append(facet(r.arch, `Only ${r.arch} models`, () => {
-        archs.clear();
-        archs.add(r.arch);
-        buildArchFilter();
-        changed();
-      }));
+    for (const [text, apply] of abilities(r)) {
+      const f = facet(text, 'Only models that can do this', apply);
+      if (text.startsWith('makes') && r.generator) f.classList.add('generator');
+      facts.append(f);
     }
-    const io = `${r.in.join('+') || 'nothing'} → ${r.out.join('+') || 'embeddings'}`;
-    const iof = facet(io, 'Only models that take and make this', () => setIO(r.in, r.out));
-    if (r.generator) iof.classList.add('generator');
-    facts.append(iof);
     if (r.context >= 131072) {
-      facts.append(facet(`${Math.round(r.context / 1024)}k ctx`, 'Only models with 128k+ context', () => { $('f-longctx').checked = true; changed(); }));
+      facts.append(facet('long memory', 'Only models with 128k+ context', () => { $('f-longctx').checked = true; changed(); }));
     }
     main.append(facts);
 
+    const side = el('div', 'r-side');
+
+    // size in GB
+    let sizeVal;
+    if (r.q4Size && !r.cantRun && !r.draft) {
+      sizeVal = el('button', 'r-num');
+      sizeVal.type = 'button';
+      sizeVal.append('~' + (r.q4Size / 1e9).toFixed(r.q4Size >= 1e10 ? 0 : 1), el('span', 'r-unit', ' GB'));
+      sizeVal.title = `About ${fmtBytes(r.q4Size)} at Q4 with an 8k context. Click to sort by size.`;
+      sizeVal.addEventListener('click', () => setSort(sort.value === 'params-desc' ? 'params-asc' : 'params-desc'));
+    } else {
+      sizeVal = el('span', 'r-none', '–');
+    }
+
     // downloads (or whatever the sort ranks by)
-    const pop = numCell('pop');
-    const [, popText] = popCol();
+    const [popLabel, popText] = popCol();
     const pb = el('button', 'r-num', popText(r));
     pb.type = 'button';
-    pb.title = sort.value === 'downloads' || !POP[sort.value] ? `${r.downloads.toLocaleString()} downloads · ${r.likes.toLocaleString()} likes` : `${compact.format(r.downloads)} downloads`;
+    pb.title = !POP[sort.value] ? `${r.downloads.toLocaleString()} downloads · ${r.likes.toLocaleString()} likes. Click to sort by this.` : `${compact.format(r.downloads)} downloads`;
     pb.addEventListener('click', () => setSort(POP[sort.value] ? sort.value : 'downloads'));
-    pop.append(pb);
-
-    // size and fit
-    const size = numCell('size');
-    const fit = numCell('fit');
-    if (r.cantRun) {
-      size.append(el('span', 'muted', '–'));
-      const f = el('span', 'r-fit fit-draft', 'Can’t run here');
-      f.title = r.cantRun;
-      fit.append(f, el('span', 'r-fit-sub', r.generator ? `makes ${r.out.join(' and ')}` : 'needs whisper.cpp'));
-    } else if (r.draft) {
-      size.append(el('span', 'muted', '–'));
-      const f = el('span', 'r-fit fit-draft', 'Draft model');
-      f.title = 'Speeds up another model through speculative decoding; it can’t chat on its own';
-      fit.append(f, el('span', 'r-fit-sub', r.draftFor ? `for ${r.draftFor.split('/').pop()}` : 'not the actual model'));
-    } else if (r.q4Size) {
-      const sb = el('button', 'r-num');
-      sb.type = 'button';
-      sb.append('~' + (r.q4Size / 1e9).toFixed(r.q4Size >= 1e10 ? 0 : 1), el('span', 'r-unit', ' GB'));
-      sb.title = `About ${fmtBytes(r.q4Size)} at Q4 with an 8k context. Click to sort by size.`;
-      sb.addEventListener('click', () => setSort(sort.value === 'params-desc' ? 'params-asc' : 'params-desc'));
-      size.append(sb);
-      const f = el('span', `r-fit ${r.fit.level}`, r.fit.label);
-      f.title = `~${fmtBytes(r.q4Size)} at Q4 with 8k context`;
-      const track = el('span', 'lib-track thin');
-      const fill = el('span', `lib-fill fit-${r.fit.level}`);
-      fill.style.width = `${r.fit.percent}%`;
-      track.append(fill);
-      fit.append(f, track);
-    } else {
-      size.append(el('span', 'muted', '–'));
-      fit.append(el('span', 'r-fit', 'Size unknown'));
-    }
 
     // intelligence score, linking to where it comes from
-    const score = numCell('score');
+    let scoreVal;
     if (r.score == null) {
-      const none = el('span', 'r-none', 'not rated');
-      none.title = 'No Intelligence Index score for this model';
-      score.append(none);
+      scoreVal = el('span', 'r-none', 'not rated');
+      scoreVal.title = 'No Intelligence Index score for this model';
     } else {
-      const a = el('a', 'r-num', r.score.toFixed(0));
-      a.href = 'https://artificialanalysis.ai';
-      a.target = '_blank';
-      a.rel = 'noopener';
-      a.title = `Artificial Analysis Intelligence Index of ${r.scoreOf}. Click to see where it comes from.`;
-      score.append(a);
+      scoreVal = el('a', 'r-num', r.score.toFixed(0));
+      scoreVal.href = 'https://artificialanalysis.ai';
+      scoreVal.target = '_blank';
+      scoreVal.rel = 'noopener';
+      scoreVal.title = `Artificial Analysis Intelligence Index of ${r.scoreOf}. Click to see where it comes from.`;
     }
 
-    item.append(main, pop, size, fit, score);
+    // fit as a small labelled pill
+    let pill;
+    if (r.cantRun) {
+      pill = el('span', 'fit-pill draft', 'Can’t run here');
+      pill.title = r.cantRun;
+    } else if (r.draft) {
+      pill = el('span', 'fit-pill draft', 'Draft model');
+      pill.title = 'Speeds up another model through speculative decoding; it can’t chat on its own';
+    } else if (r.q4Size) {
+      pill = el('span', `fit-pill ${r.fit.level}`, FIT_TEXT[r.fit.level] || r.fit.label);
+      pill.title = `${r.fit.label}: ~${fmtBytes(r.q4Size)} at Q4 with 8k context`;
+    } else {
+      pill = el('span', 'fit-pill unknown', 'Size unknown');
+    }
+
+    side.append(stat('pop', pb, popLabel.toLowerCase()), stat('size', sizeVal, 'size'), stat('score', scoreVal, 'score'), pill);
+    item.append(main, side);
     return item;
   }
 
@@ -503,6 +559,16 @@
   panelBody.addEventListener('change', (e) => {
     if (e.target.matches('select[name="ctx"]') && openId) loadDetail(openId, e.target.value);
   });
+  // Stat tiles in the panel narrow the list instead of leaving the page.
+  panelBody.addEventListener('click', (e) => {
+    const a = e.target.closest('[data-facet]');
+    if (!a || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    e.preventDefault();
+    const [kind, val] = a.dataset.facet.split(':');
+    if (kind === 'type') setType(val);
+    else if (kind === 'long') $('f-longctx').checked = true;
+    changed();
+  });
   panelBody.addEventListener('submit', (e) => e.preventDefault());
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && openId && !e.defaultPrevented) closePanel();
@@ -517,34 +583,26 @@
   q.addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(search, 350); });
   q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { clearTimeout(debounce); search(); } });
   author.addEventListener('change', search);
-  for (const b of document.querySelectorAll('#results-head [data-sortto]')) {
-    b.addEventListener('click', () => {
-      const to = b.dataset.sortto;
-      if (to === 'size') setSort(sort.value === 'params-desc' ? 'params-asc' : 'params-desc');
-      else if (to === 'downloads') setSort(POP[sort.value] ? sort.value : 'downloads');
-      else setSort(to);
-    });
-  }
   sort.addEventListener('change', changed);
   more.addEventListener('click', () => { limit += PAGE; render(); });
 
   for (const input of [minIn, maxIn]) input.addEventListener('input', changed);
   for (const id of Object.values(checks)) $(id).addEventListener('change', changed);
-  for (const chip of document.querySelectorAll('#f-size-chips .chip')) {
-    chip.addEventListener('click', () => {
-      const same = chip.classList.contains('on');
-      minIn.value = same ? '' : chip.dataset.min;
-      maxIn.value = same ? '' : chip.dataset.max;
+  for (const b of document.querySelectorAll('#f-size button')) {
+    b.addEventListener('click', () => {
+      minIn.value = b.dataset.min;
+      maxIn.value = b.dataset.max;
       changed();
     });
   }
   for (const b of document.querySelectorAll('#f-type button')) {
     b.addEventListener('click', () => { setType(b.dataset.value); changed(); });
   }
-  for (const [set, id] of [[takes, 'f-takes'], [makes, 'f-makes']]) {
-    for (const b of $(id).querySelectorAll('.chip')) b.addEventListener('click', () => toggleIO(set, b.dataset.mod));
+  for (const b of document.querySelectorAll('[data-io]')) {
+    const [kind, mod] = b.dataset.io.split(':');
+    b.addEventListener(b.type === 'checkbox' ? 'change' : 'click', () => toggleIO(kind === 'takes' ? takes : makes, mod));
   }
-  $('f-clear').addEventListener('click', () => {
+  function clearAll() {
     const refetch = ioKey() !== '';
     takes.clear(); makes.clear(); syncIO();
     minIn.value = maxIn.value = '';
@@ -553,7 +611,8 @@
     for (const id of Object.values(checks)) $(id).checked = false;
     buildArchFilter();
     if (refetch) search(); else changed();
-  });
+  }
+  $('f-clear').addEventListener('click', clearAll);
 
   loadURL();
   if (![...author.options].some((o) => o.value === author.value)) {

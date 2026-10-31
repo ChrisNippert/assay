@@ -710,19 +710,34 @@ Design reference: direction **F** on the design canvas
   start during one, and when done unloads what it loaded and reloads what was
   loaded (unpinned) before. The progress line polls every 1.5 s and fills
   numbers in as they land.
-- **Discover** (design D; `discover.html`, `discover.js`): filters as calm
-  groups on the left (sentence-case titles, chips, a segmented Type control,
-  switches for the yes/no filters, styled checkboxes for architectures), the
-  search field with "From" and "Sort" drop-downs, and result rows with number
-  columns: downloads (or likes, trending or updated, following the sort), the
-  Q4 size estimate, fit label with a thin bar, and the intelligence score or
-  "not rated". Column heads sort. Names come from `prettyModel` (`title` and
-  `tags` in `/api/hf/search`); the author, size, architecture, takes/makes
-  and 128k facts under a name are buttons that narrow the list. With the
-  detail panel open the numbers drop under the name. **Loading**: while a
-  search runs the old rows stay (dimmed); if there are none, eight placeholder
-  rows shaped like real ones appear, but only after 200 ms, so a fast search
-  never flashes them, and nothing moves when the results replace them.
+- **Discover** (design D, "Discover 3"; `discover.html`, `discover.js`): three
+  columns: filters | results | the model's detail panel (opens on row click).
+  Filters are boxed groups with plain titles: "Can do" (switches: reads
+  images, watches video, hears audio, makes images/audio/video, long memory
+  128k+), "Size" (Any/Small/Mid/Large segments = max 9B, 9-35B, 35B+, exact
+  B range inputs, "Fits my computer"), "Your library" (hide what I have),
+  "Source" (Uploader drop-down, hide gated, hide draft helpers) and a
+  collapsed "More filters" (Takes/Makes chips including text, dense/MoE,
+  architectures with readable names and counts, has score). Takes/Makes are
+  one state (`takes`, `makes` sets) shown by both the switches and the chips
+  (`[data-io="takes:image"]`). Everything applies instantly; active filters
+  also appear as removable chips above the results with "Clear all". Sort is
+  a drop-down on the result-count line. Rows: readable name (wraps, never
+  ellipsised; `prettyModel` names and tags), a facts line (uploader, dense/MoE
+  size, abilities in words such as "reads images", "long memory"; each is a
+  button that narrows the list), then on the right downloads (or likes,
+  trending, updated, following the sort), the Q4 size in GB, the intelligence
+  score or "not rated", and a fit pill (Fits, Fits tight, Uses RAM · slower,
+  CPU only, Too big). The results pane is a CSS container: under 640 px (a
+  small window, or the detail panel open) the numbers fold onto one line
+  under the name. The detail panel (the model page fragment, `?partial=1`):
+  title, 2x2 clickable stat tiles (score and downloads open outside; parameters
+  and memory narrow the list in place via `data-facet`), "Pick a size" with a
+  fit pill per quant, and a Download button for the best-fit quant. **Loading**:
+  while a search runs the old rows stay (dimmed); if there are none, eight
+  placeholder rows shaped like real ones appear, but only after 200 ms, so a
+  fast search never flashes them, and nothing moves when the results replace
+  them.
 - **Drop-downs** (`dropdown.js`): `<select data-dd data-dd-label="Sort">` is
   kept as the state (value, options, `change`) and hidden; a button and a
   fixed-position menu (keyboard: arrows, Home/End, Esc) stand in for it.

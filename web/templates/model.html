@@ -33,11 +33,21 @@
     </div>
   </header>
 
+  {{if $.Data.Partial}}
+  <div class="stat-tiles">
+    <a class="stat-tile" href="{{$.Data.ScoreURL}}" target="_blank" rel="noopener" title="Artificial Analysis Intelligence Index{{with $.Data.ScoreOf}} of {{.}}{{end}}"><span class="st-lab">Score</span><span class="st-val">{{if $.Data.Score}}{{printf "%.0f" $.Data.Score}}{{else}}<span class="muted">not rated</span>{{end}}</span></a>
+    <a class="stat-tile" href="https://huggingface.co/{{.ID}}" target="_blank" rel="noopener" title="{{.Downloads}} downloads · {{.Likes}} likes. Open the model card."><span class="st-lab">Downloads</span><span class="st-val">{{compact .Downloads}}</span></a>
+    <a class="stat-tile" href="/discover?type={{if $.Data.MoE}}moe{{else}}dense{{end}}" data-facet="type:{{if $.Data.MoE}}moe{{else}}dense{{end}}" title="Only {{if $.Data.MoE}}MoE{{else}}dense{{end}} models"><span class="st-lab">Parameters</span><span class="st-val">{{or (billions .Params) "?"}}{{if $.Data.MoE}} <span class="st-note">MoE</span>{{end}}</span></a>
+    {{if ge .ContextLength 131072}}<a class="stat-tile" href="/discover?long=1" data-facet="long:1" title="Only models with 128k+ context"><span class="st-lab">Memory</span><span class="st-val">{{kib .ContextLength}}k</span></a>
+    {{else}}<div class="stat-tile static" title="Trained context length"><span class="st-lab">Memory</span><span class="st-val">{{if .ContextLength}}{{kib .ContextLength}}k{{else}}<span class="muted">?</span>{{end}}</span></div>{{end}}
+  </div>
+  {{end}}
+
   <div class="model-body">
     <section class="card quants">
       {{if or $.Data.Draft $.Data.CantRun}}<div class="card-head"><h2>Files</h2></div>{{else}}
       <div class="card-head">
-        <h2>Pick a quant</h2>
+        <h2>{{if $.Data.Partial}}Pick a size{{else}}Pick a quant{{end}}</h2>
         <form method="get" class="ctx-form small">
           <label for="ctx" class="muted">Memory estimate at</label>
           <select id="ctx" name="ctx"{{if not $.Data.Partial}} onchange="this.form.submit()"{{end}}>
@@ -60,7 +70,7 @@
           <span class="quant-name mono">{{.Name}}</span>
           <span class="quant-size">{{bytes .Size}}</span>
           <span class="fit">
-            <span class="fit-label fit-{{.Fit.Level}}">{{.Fit.Label}}{{if .Best}} <span class="best-chip" title="Largest that fits on your GPU">best fit</span>{{end}}</span>
+            <span class="fit-label fit-{{.Fit.Level}}">{{if eq .Fit.Level "gpu"}}Fits{{else if eq .Fit.Level "partial"}}Uses RAM · slower{{else}}{{.Fit.Label}}{{end}}{{if .Best}} <span class="best-chip" title="Largest that fits on your GPU">best fit</span>{{end}}</span>
             <span class="lib-track thin"><span class="lib-fill fit-{{.Fit.Level}}" style="width: {{.Fit.Percent}}%"></span></span>
           </span>
           <span class="quality">{{.Quality}}</span>
@@ -73,6 +83,10 @@
         </div>
         {{end}}
       </div>
+      {{if and $.Data.Partial (not $.Data.Draft) (not $.Data.CantRun)}}{{range $.Data.Quants}}{{if and .Best (not .NoRoom)}}
+      {{if .Installed}}<a class="btn dl-best" href="/chat?model={{.Tag}}">Chat with {{.Name}}</a>
+      {{else}}<button type="button" class="btn primary dl-best" data-pull="{{.Tag}}" data-alias="{{.Alias}}">Download {{.Name}} · {{bytes .Size}}</button>{{end}}
+      {{end}}{{end}}{{end}}
       {{with $.Data.Drafts}}
       {{if not $.Data.Draft}}
       <h3 class="draft-head">Draft models <span class="tag draft">speculative decoding</span></h3>
