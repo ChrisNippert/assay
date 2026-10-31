@@ -849,8 +849,10 @@ published score.
 
 **Lessons from the first runs (2026-10-31).** Qwen3.5 2B with thinking off
 already scores 85–95% on the plain math, logic and format sets, so those
-can't separate bigger models; Hard math (competition-style, brute-forced
-answers) is the first set meant to.
+can't separate bigger models. Hard math (competition-style, brute-forced
+answers) does: 2B 10/22 vs 9B 19/22, thinking off; the 9B also got
+22/22 math, 18/18 logic, 14/16 format. Nearly every Hard math miss hit the
+2048-token limit, so with thinking off that limit is part of the score.
 
 ## Milestones
 
