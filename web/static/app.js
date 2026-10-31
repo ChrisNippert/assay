@@ -1249,3 +1249,12 @@ window.assayPick = (() => {
     return b;
   };
 })();
+
+// "Tune…" in the Library opens /chat?model=…&tune=1: open the Tune panel
+// once the chat page has set itself up.
+if (location.pathname.startsWith('/chat') && new URLSearchParams(location.search).has('tune')) {
+  window.addEventListener('load', () => setTimeout(() => {
+    const b = document.getElementById('tune-btn');
+    if (b && b.getAttribute('aria-expanded') !== 'true') b.click();
+  }, 150));
+}
