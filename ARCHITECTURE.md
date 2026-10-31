@@ -846,6 +846,24 @@ itself is shown as such. Built-in code tasks were checked when written:
 each reference solution passes its tests and a plausible wrong one fails
 (references aren't shipped).
 
+**Lean proofs (internal/lean).** Asked for 2026-10-31 instead of judged
+proofs (a 12B judge is the strongest this machine runs). `lean`
+questions give a `statement` and optional `preamble` (definitions shown
+to the model); the model writes `theorem goal : statement` with any
+helper lemmas, in a ```lean block. The checked file is preamble, the
+model's code inside `namespace AssayProof`, then `theorem assay_check :
+statement := AssayProof.goal` (so goal must prove exactly the statement)
+and `#print axioms assay_check`; only propext, Classical.choice and
+Quot.sound may appear. A regex refuses sorry, admit, axiom,
+native_decide, implemented_by, extern, unsafe, elab/macro_rules/run_cmd
+and similar before Lean runs; 60 s limit. Lean is core only (v4.35, no
+Mathlib: no ring/linarith, but omega, simp, decide and grind work).
+`lean.Installer` downloads the release zip from GitHub (about 0.9 GB;
+the .tar.zst is smaller but needs zstd, which Go's stdlib lacks) into
+`<data>/lean` (3.2 GB unpacked); a `lean` on PATH is used when nothing is
+installed. The 16 built-in theorems' reference proofs (in `answer`) are
+checked by `TestBuiltinLeanReferences`; `TestCheck` covers the cheats.
+
 **Running.** `POST /api/evals/run` takes models × sets, a think mode
 (`""` = the model's default, `off`) and a token limit per reply (8192 with
 thinking, 2048 without). One background job, one question at a time:
@@ -873,6 +891,8 @@ can't separate bigger models. Hard math (competition-style, brute-forced
 answers) does: 2B 10/22 vs 9B 19/22, thinking off; the 9B also got
 22/22 math, 18/18 logic, 14/16 format. Nearly every Hard math miss hit the
 2048-token limit, so with thinking off that limit is part of the score.
+On the code sets the 2B scored 3/15 (Hard coding) and 8/14 (Equations to
+code), thinking off.
 
 ## Milestones
 

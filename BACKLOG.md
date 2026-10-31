@@ -25,7 +25,9 @@ through the models that have both your score and a public one.
 - The estimate shows its fit quality (how many anchor models, R²) and is
   always labelled as an estimate, never mixed up with the published score.
 - ✅ (2026-10-31) Benchmarks page, 9 built-in sets incl. Hard coding,
-  Equations to code (both run against hidden tests) and Proofs (judge model).
+  Equations to code (both run against hidden tests) and Proofs in Lean
+  (checked by the Lean prover; one-click install). Judged sets are only
+  for your own; the user prefers machine-checked grading.
 - Open: show the estimate on Library rows, Compare and the model page;
   harder knowledge/logic sets (the easy ones saturate: a 2B gets 85–95%);
   re-judge with another judge; other languages than Python for code sets.
