@@ -1,0 +1,111 @@
+name = "Logic and reasoning"
+description = "Short puzzles: syllogisms, ordering, knights and knaves, probability traps. Multiple choice."
+check = "choice"
+
+[[questions]]
+id = "syllogism"
+prompt = "All bloops are razzies. Some razzies are lazzies. Which statement must be true?"
+choices = ["Some bloops are lazzies", "All lazzies are bloops", "No bloops are lazzies", "None of these must be true"]
+answer = "D"
+
+[[questions]]
+id = "heights"
+prompt = "Alice is taller than Bob. Carol is shorter than Bob. Dave is taller than Alice. Who is the second shortest?"
+choices = ["Alice", "Bob", "Carol", "Dave"]
+answer = "B"
+
+[[questions]]
+id = "knaves"
+prompt = "On an island, knights always tell the truth and knaves always lie. A says: \"We are both knaves.\" What are A and B?"
+choices = ["Both knights", "A is a knight, B is a knave", "A is a knave, B is a knight", "Both knaves"]
+answer = "C"
+
+[[questions]]
+id = "modus-tollens"
+prompt = "If it rains, the ground gets wet. The ground is not wet. What follows?"
+choices = ["It rained", "It did not rain", "The ground may still be wet", "Nothing can be concluded"]
+answer = "B"
+
+[[questions]]
+id = "affirming-consequent"
+prompt = "If it rains, the ground gets wet. The ground is wet. What follows?"
+choices = ["It rained", "It did not rain", "Whether it rained cannot be determined"]
+answer = "C"
+
+[[questions]]
+id = "monty-hall"
+prompt = "In a game show there are three doors; a car is behind one. You pick door 1. The host, who knows where the car is and always opens a door with no car behind it, opens door 3. If you switch to door 2, what is your chance of winning the car?"
+choices = ["1/3", "1/2", "2/3", "1"]
+answer = "C"
+
+[[questions]]
+id = "bat-ball"
+prompt = "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?"
+choices = ["10 cents", "5 cents", "1 cent", "15 cents"]
+answer = "B"
+
+[[questions]]
+id = "days"
+prompt = "If the day after tomorrow is a Saturday, what day was the day before yesterday?"
+choices = ["Monday", "Tuesday", "Wednesday", "Sunday"]
+answer = "B"
+
+[[questions]]
+id = "relation"
+prompt = "Pointing at a man, Ann says: \"His mother is the only daughter of my mother.\" How is Ann related to the man?"
+choices = ["Sister", "Aunt", "Mother", "Grandmother"]
+answer = "C"
+
+[[questions]]
+id = "sequence"
+prompt = "What comes next: 2, 6, 12, 20, 30, …?"
+choices = ["40", "42", "44", "36"]
+answer = "B"
+
+[[questions]]
+id = "labels"
+prompt = "Three boxes are labelled Apples, Oranges and Mixed. Every label is wrong. You may take one fruit from one box, without looking inside, and must then relabel all boxes correctly. Which box should you take the fruit from?"
+choices = ["The one labelled Apples", "The one labelled Oranges", "The one labelled Mixed", "It can't be done with one fruit"]
+answer = "C"
+
+[[questions]]
+id = "wason"
+prompt = "Four cards each have a letter on one side and a number on the other. You see: A, K, 4, 7. Rule: \"If a card has a vowel on one side, it has an even number on the other.\" Which cards must you turn over to check the rule?"
+choices = ["A and 4", "A only", "A and 7", "A, 4 and 7"]
+answer = "C"
+
+[[questions]]
+id = "brothers"
+prompt = "Tom has 3 sisters. Each of his sisters has 2 brothers. How many sons do their parents have?"
+choices = ["1", "2", "3", "4"]
+answer = "B"
+
+[[questions]]
+id = "ages"
+prompt = "In 6 years Mia will be twice as old as she was 4 years ago. How old is Mia now?"
+choices = ["10", "12", "14", "16"]
+answer = "C"
+
+[[questions]]
+id = "race"
+prompt = "In a race, you overtake the runner in second place. What place are you in now?"
+choices = ["First", "Second", "Third", "It depends"]
+answer = "B"
+
+[[questions]]
+id = "one-true"
+prompt = "A key is in exactly one of three places: the drawer, the box or the shelf. Exactly one of these statements is true: (1) The key is in the drawer. (2) The key is not in the box. (3) The key is not in the drawer. Where is the key?"
+choices = ["The drawer", "The box", "The shelf", "It can't be determined"]
+answer = "B"
+
+[[questions]]
+id = "seating"
+prompt = "P, Q, R and S sit in a row of four seats. Q sits immediately to the right of P. R is not at either end. S is at the left end. Who is at the right end?"
+choices = ["P", "Q", "R", "S"]
+answer = "B"
+
+[[questions]]
+id = "coins"
+prompt = "You have 8 coins that look the same; one is slightly heavier. Using a balance scale, what is the smallest number of weighings that always finds the heavy coin?"
+choices = ["1", "2", "3", "4"]
+answer = "B"

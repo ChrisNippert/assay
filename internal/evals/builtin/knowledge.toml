@@ -1,0 +1,123 @@
+name = "General knowledge"
+description = "Science, history, geography and culture facts that don't change. Multiple choice."
+check = "choice"
+
+[[questions]]
+id = "electronegativity"
+prompt = "Which element has the highest electronegativity?"
+choices = ["Oxygen", "Chlorine", "Fluorine", "Nitrogen"]
+answer = "C"
+
+[[questions]]
+id = "bulgakov"
+prompt = "Who wrote \"The Master and Margarita\"?"
+choices = ["Nikolai Gogol", "Mikhail Bulgakov", "Boris Pasternak", "Anton Chekhov"]
+answer = "B"
+
+[[questions]]
+id = "westphalia"
+prompt = "In which year was the Peace of Westphalia signed?"
+choices = ["1618", "1648", "1713", "1555"]
+answer = "B"
+
+[[questions]]
+id = "krebs"
+prompt = "In eukaryotic cells, where does the citric acid (Krebs) cycle take place?"
+choices = ["Cytoplasm", "Mitochondrial matrix", "Inner mitochondrial membrane", "Endoplasmic reticulum"]
+answer = "B"
+
+[[questions]]
+id = "weber"
+prompt = "What is the SI unit of magnetic flux?"
+choices = ["Tesla", "Henry", "Weber", "Gauss"]
+answer = "C"
+
+[[questions]]
+id = "ribosome"
+prompt = "Which part of the cell translates messenger RNA into protein?"
+choices = ["Golgi apparatus", "Lysosome", "Ribosome", "Nucleolus"]
+answer = "C"
+
+[[questions]]
+id = "godel"
+prompt = "Who proved the incompleteness theorems in mathematical logic?"
+choices = ["David Hilbert", "Kurt Gödel", "Bertrand Russell", "Alonzo Church"]
+answer = "B"
+
+[[questions]]
+id = "volga"
+prompt = "Which is the longest river in Europe?"
+choices = ["Danube", "Volga", "Rhine", "Dnieper"]
+answer = "B"
+
+[[questions]]
+id = "mohs"
+prompt = "Which mineral has a hardness of 7 on the Mohs scale?"
+choices = ["Topaz", "Feldspar", "Quartz", "Corundum"]
+answer = "C"
+
+[[questions]]
+id = "rite"
+prompt = "Who composed \"The Rite of Spring\"?"
+choices = ["Sergei Prokofiev", "Igor Stravinsky", "Claude Debussy", "Maurice Ravel"]
+answer = "B"
+
+[[questions]]
+id = "bones"
+prompt = "How many bones does a typical adult human skeleton have?"
+choices = ["186", "206", "226", "270"]
+answer = "B"
+
+[[questions]]
+id = "argon"
+prompt = "Which gas makes up about 0.9% of Earth's dry atmosphere, the third most common after nitrogen and oxygen?"
+choices = ["Carbon dioxide", "Neon", "Argon", "Helium"]
+answer = "C"
+
+[[questions]]
+id = "time-zones"
+prompt = "Counting its overseas territories, which country spans the most time zones?"
+choices = ["Russia", "United States", "France", "United Kingdom"]
+answer = "C"
+
+[[questions]]
+id = "tungsten"
+prompt = "What is the chemical symbol of tungsten?"
+choices = ["Tu", "Tn", "W", "Wo"]
+answer = "C"
+
+[[questions]]
+id = "linux"
+prompt = "In which year did Linus Torvalds first release the Linux kernel?"
+choices = ["1987", "1991", "1994", "1998"]
+answer = "B"
+
+[[questions]]
+id = "halting"
+prompt = "Who first proved that the halting problem is undecidable?"
+choices = ["John von Neumann", "Claude Shannon", "Alan Turing", "David Hilbert"]
+answer = "C"
+
+[[questions]]
+id = "sound"
+prompt = "Roughly how fast does sound travel in dry air at 20 °C?"
+choices = ["143 m/s", "343 m/s", "743 m/s", "1,480 m/s"]
+answer = "B"
+
+[[questions]]
+id = "hastings"
+prompt = "In which year was the Battle of Hastings fought?"
+choices = ["1016", "1066", "1086", "1106"]
+answer = "B"
+
+[[questions]]
+id = "kepler"
+prompt = "Kepler's third law relates a planet's orbital period to what?"
+choices = ["Its mass", "The semi-major axis of its orbit", "Its orbital eccentricity", "Its rotation speed"]
+answer = "B"
+
+[[questions]]
+id = "mitochondrial-dna"
+prompt = "From which parent do humans normally inherit their mitochondrial DNA?"
+choices = ["The father", "The mother", "Both equally", "Either, at random"]
+answer = "B"

@@ -1,0 +1,84 @@
+name = "Instruction following"
+description = "Exact format rules: word counts, letter case, lists, JSON. Graded by pattern on the whole reply."
+check = "regex"
+
+[[questions]]
+id = "three-words"
+prompt = "Describe the sea in exactly three words. Write nothing else."
+answer = '^\s*\S+\s+\S+\s+\S+\s*$'
+
+[[questions]]
+id = "yes-caps"
+prompt = "Reply with only the word yes, in capital letters."
+answer = '^\s*YES\.?\s*$'
+
+[[questions]]
+id = "bullets"
+prompt = "List three fruits as a list using \"- \" bullets, one per line, with no other text."
+answer = '^\s*- [^\n]+\n- [^\n]+\n- [^\n]+\s*$'
+
+[[questions]]
+id = "no-e"
+prompt = "Write one sentence about cats that does not contain the letter e anywhere."
+answer = '(?i)^[^e]*\bcats?\b[^e]*$'
+
+[[questions]]
+id = "json"
+prompt = "Output a JSON object for a made-up person with exactly two keys: \"name\" (a string) and \"age\" (a whole number). Output only the JSON, without code fences or any other text."
+answer = '^\s*\{\s*"name"\s*:\s*"[^"]*"\s*,\s*"age"\s*:\s*\d+\s*\}\s*$'
+accept = ['^\s*\{\s*"age"\s*:\s*\d+\s*,\s*"name"\s*:\s*"[^"]*"\s*\}\s*$']
+
+[[questions]]
+id = "commas"
+prompt = "Write the numbers from 1 to 10 separated by commas, with no spaces and nothing else."
+answer = '^\s*1,2,3,4,5,6,7,8,9,10\s*$'
+
+[[questions]]
+id = "lowercase"
+prompt = "Answer in one sentence written entirely in lowercase letters: what is the capital of France?"
+answer = '^[^A-Z]*paris[^A-Z]*$'
+
+[[questions]]
+id = "haiku-end"
+prompt = "Write a haiku about winter as three lines, then a fourth line that says exactly THE END. Nothing before or after."
+answer = '^\s*[^\n]+\n[^\n]+\n[^\n]+\n+THE END\s*$'
+
+[[questions]]
+id = "reverse-words"
+prompt = "Write this phrase with its words in reverse order, and nothing else: the quick brown fox jumps"
+answer = '(?i)^\W*jumps fox brown quick the\W*$'
+
+[[questions]]
+id = "rhyme-brackets"
+prompt = "Give one word that rhymes with \"cat\", in capital letters, inside square brackets, and nothing else. For example: [WORD]"
+answer = '^\s*\[(BAT|HAT|MAT|RAT|SAT|FAT|PAT|VAT|CHAT|THAT|FLAT|BRAT|GNAT|SPAT|SPLAT|SCAT|DRAT|SLAT|TAT|COMBAT|ACROBAT|DIPLOMAT|HABITAT|THERMOSTAT|AT)\]\s*$'
+
+[[questions]]
+id = "exclaim"
+prompt = "Write exactly two sentences about the moon. Each must end with an exclamation mark, and no other sentence-ending punctuation may appear."
+answer = '^\s*[^.!?\n]+!\s+[^.!?\n]+!\s*$'
+
+[[questions]]
+id = "spanish"
+prompt = "Translate \"good morning\" into Spanish. Reply with only the translation, in lowercase, without punctuation."
+answer = '^\s*buenos d[ií]as\s*$'
+
+[[questions]]
+id = "countdown"
+prompt = "Count down from 5 to 1, one number per line, and write nothing else."
+answer = '^\s*5\n4\n3\n2\n1\s*$'
+
+[[questions]]
+id = "q-k"
+prompt = "Give a single English word that starts with q and ends with k. Output only that word."
+answer = '(?i)^\s*q[a-z]*k\.?\s*$'
+
+[[questions]]
+id = "s-words"
+prompt = "Write a sentence of exactly five words where every word starts with the letter S. Output only the sentence."
+answer = '^\s*[Ss][\w\x27]*(?:[\s,]+[Ss][\w\x27]*){4}[.!]?\s*$'
+
+[[questions]]
+id = "no-comma"
+prompt = "In two or three sentences, explain why the sky is blue. Do not use any commas."
+answer = '^[^,]{20,}$'

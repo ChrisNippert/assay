@@ -1,0 +1,259 @@
+name = "Code reading"
+description = "What does this Python program print? Tests careful reading of real semantics: aliasing, scope, slicing, generators."
+check = "exact"
+
+[[questions]]
+id = "alias"
+prompt = '''
+What does this Python 3 program print? Give the exact output.
+
+```python
+x = [1, 2, 3]
+y = x
+y += [4]
+print(len(x))
+```'''
+answer = '''4'''
+
+[[questions]]
+id = "default-arg"
+prompt = '''
+What does this Python 3 program print? Give the exact output.
+
+```python
+def f(a, b=[]):
+    b.append(a)
+    return len(b)
+
+f(1)
+f(2)
+print(f(3))
+```'''
+answer = '''3'''
+
+[[questions]]
+id = "genexpr"
+prompt = '''
+What does this Python 3 program print? Give the exact output.
+
+```python
+print(sum(i * i for i in range(10) if i % 3 == 1))
+```'''
+answer = '''66'''
+
+[[questions]]
+id = "slices"
+prompt = '''
+What does this Python 3 program print? Give the exact output.
+
+```python
+s = "assay"
+print(s[::-1][1:4])
+```'''
+answer = '''ass'''
+
+[[questions]]
+id = "word-count"
+prompt = '''
+What does this Python 3 program print? Give the exact output.
+
+```python
+d = {}
+for w in "the cat and the hat and the bat".split():
+    d[w] = d.get(w, 0) + 1
+print(max(d, key=d.get), d["and"])
+```'''
+answer = '''the 2'''
+
+[[questions]]
+id = "sort"
+prompt = '''
+What does this Python 3 program print? Give the exact output.
+
+```python
+a = [3, 1, 2]
+b = sorted(a)
+a.sort(reverse=True)
+print(a[0] - b[0], b)
+```'''
+answer = '''2 [1, 2, 3]'''
+
+[[questions]]
+id = "nonlocal"
+prompt = '''
+What does this Python 3 program print? Give the exact output.
+
+```python
+x = 10
+
+def g():
+    x = 5
+    def h():
+        nonlocal x
+        x += 1
+        return x
+    return h() + x
+
+print(g(), x)
+```'''
+answer = '''12 10'''
+
+[[questions]]
+id = "floor-div"
+prompt = '''
+What does this Python 3 program print? Give the exact output.
+
+```python
+print(7 // -2, -7 % 3)
+```'''
+answer = '''-4 2'''
+
+[[questions]]
+id = "nested-loops"
+prompt = '''
+What does this Python 3 program print? Give the exact output.
+
+```python
+n = 0
+for i in range(5):
+    for j in range(i):
+        if (i + j) % 2:
+            n += 1
+print(n)
+```'''
+answer = '''6'''
+
+[[questions]]
+id = "zip"
+prompt = '''
+What does this Python 3 program print? Give the exact output.
+
+```python
+print(list(zip("abc", range(5)))[-1])
+```'''
+answer = '''('c', 2)'''
+
+[[questions]]
+id = "memo"
+prompt = '''
+What does this Python 3 program print? Give the exact output.
+
+```python
+def fib(n, memo={}):
+    if n < 2:
+        return n
+    if n not in memo:
+        memo[n] = fib(n - 1) + fib(n - 2)
+    return memo[n]
+
+print(fib(30) % 1000)
+```'''
+answer = '''40'''
+
+[[questions]]
+id = "truthiness"
+prompt = '''
+What does this Python 3 program print? Give the exact output.
+
+```python
+print(bool([]) + bool([0]) + bool("0") + bool(0.0))
+```'''
+answer = '''2'''
+
+[[questions]]
+id = "list-mult"
+prompt = '''
+What does this Python 3 program print? Give the exact output.
+
+```python
+x = [[0] * 3] * 3
+x[0][1] = 5
+print(sum(map(sum, x)))
+```'''
+answer = '''15'''
+
+[[questions]]
+id = "while"
+prompt = '''
+What does this Python 3 program print? Give the exact output.
+
+```python
+s = 0
+i = 1
+while i < 100:
+    s += i
+    i *= 3
+print(s)
+```'''
+answer = '''121'''
+
+[[questions]]
+id = "set-join"
+prompt = '''
+What does this Python 3 program print? Give the exact output.
+
+```python
+print("-".join(sorted(set("mississippi"))))
+```'''
+answer = '''i-m-p-s'''
+
+[[questions]]
+id = "bases"
+prompt = '''
+What does this Python 3 program print? Give the exact output.
+
+```python
+print(int("101", 2) + int("17", 8) + int("ff", 16))
+```'''
+answer = '''275'''
+
+[[questions]]
+id = "generator"
+prompt = '''
+What does this Python 3 program print? Give the exact output.
+
+```python
+def gen():
+    for i in range(3):
+        yield i
+        yield i * 10
+
+print(sum(gen()))
+```'''
+answer = '''33'''
+
+[[questions]]
+id = "closures"
+prompt = '''
+What does this Python 3 program print? Give the exact output.
+
+```python
+fs = [lambda: i for i in range(4)]
+print(sum(f() for f in fs))
+```'''
+answer = '''12'''
+
+[[questions]]
+id = "dict-order"
+prompt = '''
+What does this Python 3 program print? Give the exact output.
+
+```python
+d = {"b": 1, "a": 2}
+d["c"] = 3
+del d["b"]
+d["b"] = 4
+print("".join(d))
+```'''
+answer = '''acb'''
+
+[[questions]]
+id = "string-methods"
+prompt = '''
+What does this Python 3 program print? Give the exact output.
+
+```python
+s = "  Hello, World  "
+print(s.strip().lower().replace("o", "0").split(",")[1].strip())
+```'''
+answer = '''w0rld'''
