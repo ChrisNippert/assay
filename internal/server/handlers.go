@@ -713,6 +713,9 @@ func statsFrom(r ollama.ChatResponse) *chats.Stats {
 	if r.EvalDuration > 0 {
 		st.TokensPerSec = float64(r.EvalCount) / (float64(r.EvalDuration) / 1e9)
 	}
+	if r.PromptEvalDuration > 0 {
+		st.PromptPerSec = float64(r.PromptEvalCount) / (float64(r.PromptEvalDuration) / 1e9)
+	}
 	return st
 }
 

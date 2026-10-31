@@ -562,6 +562,8 @@ var templateFuncs = template.FuncMap{
 	},
 	"join": strings.Join,
 	"kib":  func(n int) int { return (n + 512) / 1024 },
+	// secs formats milliseconds as seconds with one decimal: 11.2.
+	"secs": func(ms int64) string { return strconv.FormatFloat(float64(ms)/1000, 'f', 1, 64) },
 	// compact formats counts like 1329922 as "1.3M".
 	"compact": func(n int) string {
 		switch {
