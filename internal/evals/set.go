@@ -54,8 +54,8 @@ type Question struct {
 
 // Set is one benchmark.
 type Set struct {
-	ID          string `toml:"-" json:"id"`
-	Name        string `toml:"name" json:"name"`
+	ID   string `toml:"-" json:"id"`
+	Name string `toml:"name" json:"name"`
 	// Short labels the set's column in tables; default: the name.
 	Short       string `toml:"short,omitempty" json:"short,omitempty"`
 	Description string `toml:"description,omitempty" json:"description,omitempty"`
