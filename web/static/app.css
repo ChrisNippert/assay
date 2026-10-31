@@ -1547,7 +1547,7 @@ html:has(.content-chat) { overscroll-behavior: none; }
   .btn { min-height: 44px; padding: 0 16px; justify-content: center; }
   .btn.subtle { padding: 0 12px; }
   .icon-btn { min-width: 40px; min-height: 40px; justify-content: center; align-items: center; }
-  .lib-filter, .search-row input[type="search"], .search-row select, .settings .row-ctrl select, .settings .row-ctrl input[type="text"], .settings .row-ctrl input[type="url"] { min-height: 44px; border-radius: 10px; }
+  .search-row input[type="search"], .search-row select, .settings .row-ctrl select, .settings .row-ctrl input[type="text"], .settings .row-ctrl input[type="url"] { min-height: 44px; border-radius: 10px; }
   .settings-nav a { padding: 11px 16px; }
   .settings .group-title { margin-top: 20px; font-size: 14px; }
   .chip { padding: 6px 14px; font-size: 13px; }
@@ -1767,13 +1767,13 @@ html:has(.content-chat) { overscroll-behavior: none; }
 /* Fields: sunk fill, no border, accent focus ring. */
 select.combo, .spin { background-color: var(--raised); border-radius: var(--radius); }
 .spin-btn:hover { background: var(--track); }
-.lib-filter, .chat-filter, .search-row input[type="search"], .search-row select, .range-row input, .settings .row-ctrl select, .settings .row-ctrl input,
+.chat-filter, .search-row input[type="search"], .search-row select, .range-row input, .settings .row-ctrl select, .settings .row-ctrl input,
 .found-addrow input, #cmp-add, .pk-path, .ctx-form select {
   background-color: var(--sunk); border: 1px solid transparent; border-radius: var(--radius); color: var(--text);
   transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease), background-color var(--dur-1) var(--ease);
 }
-.lib-filter:hover, .search-row input[type="search"]:hover, .search-row select:hover, .settings .row-ctrl select:hover, .settings .row-ctrl input:hover { background-color: var(--soft); }
-.lib-filter:focus, .chat-filter:focus, .search-row input[type="search"]:focus, .search-row select:focus, .range-row input:focus, .settings .row-ctrl select:focus,
+.search-row input[type="search"]:hover, .search-row select:hover, .settings .row-ctrl select:hover, .settings .row-ctrl input:hover { background-color: var(--soft); }
+.chat-filter:focus, .search-row input[type="search"]:focus, .search-row select:focus, .range-row input:focus, .settings .row-ctrl select:focus,
 .settings .row-ctrl input:focus, .found-addrow input:focus, #cmp-add:focus, .pk-path:focus, .composer textarea:focus, .boxed-text:focus, .msg-edit textarea:focus {
   outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }

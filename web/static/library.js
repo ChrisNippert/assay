@@ -198,8 +198,10 @@
       if (g.ramTotal) paintStat('ram', g.ramUsed, g.ramTotal);
     } catch {}
   }
-  sampleStats();
-  setInterval(() => { if (!document.hidden) sampleStats(); }, 4000);
+  (window.assayWhenVisible || ((f) => f()))(() => {
+    sampleStats();
+    setInterval(() => { if (!document.hidden) sampleStats(); }, 4000);
+  });
 
   // ---- popovers ----
   let popAnchor = null, popKind = '';
@@ -526,7 +528,7 @@
     } catch {}
     startMeasure([name], evict);
   });
-  poll();
+  (window.assayWhenVisible || ((f) => f()))(poll);
 
   paintSort();
   order(false);
