@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -254,4 +255,25 @@ func BaseModel(tags []string) string {
 		}
 	}
 	return ""
+}
+
+// All lists every model that has a Hugging Face id, best first (for showing
+// where a score sits among similar models).
+func (s *Store) All() []Entry {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	out := make([]Entry, 0, len(s.snap.ByID))
+	for _, e := range s.snap.ByID {
+		out = append(out, e)
+	}
+	s.mu.RUnlock()
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Score != out[j].Score {
+			return out[i].Score > out[j].Score
+		}
+		return out[i].Model < out[j].Model
+	})
+	return out
 }
