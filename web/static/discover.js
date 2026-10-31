@@ -38,100 +38,6 @@
   const panel = $('detail-panel');
   const panelBody = $('detail-body');
 
-  // ---- styled drop-downs over the real <select>s (which stay as the state) ----
-  // A button with a muted label and the current choice opens a small menu.
-  // Changing the select from script (author tags, the URL) fires 'sync'.
-  let openDD = null;
-  function closeDD(focus) {
-    if (!openDD) return;
-    openDD.menu.hidden = true;
-    openDD.btn.setAttribute('aria-expanded', 'false');
-    if (focus) openDD.btn.focus();
-    openDD = null;
-  }
-  function dropdown(select) {
-    const wrap = el('div', 'dd');
-    const btn = el('button', 'dd-btn');
-    btn.type = 'button';
-    btn.setAttribute('aria-haspopup', 'listbox');
-    btn.setAttribute('aria-expanded', 'false');
-    btn.setAttribute('aria-label', select.getAttribute('aria-label'));
-    const lab = el('span', 'dd-label', select.dataset.ddLabel);
-    const cur = el('span', 'dd-value');
-    btn.append(lab, cur, chevron());
-    const menu = el('div', 'dd-menu');
-    menu.setAttribute('role', 'listbox');
-    menu.hidden = true;
-    wrap.append(btn, menu);
-    select.hidden = true;
-    select.after(wrap);
-
-    const paint = () => {
-      const o = select.selectedOptions[0];
-      cur.textContent = o ? o.textContent : '';
-    };
-    const items = () => [...menu.children];
-    function fill() {
-      menu.replaceChildren(...[...select.options].map((o) => {
-        const it = el('button', 'dd-item', o.textContent);
-        it.type = 'button';
-        it.setAttribute('role', 'option');
-        it.dataset.value = o.value;
-        const on = o.value === select.value;
-        it.setAttribute('aria-selected', String(on));
-        it.classList.toggle('on', on);
-        it.addEventListener('click', () => {
-          const changedTo = select.value !== o.value;
-          select.value = o.value;
-          paint();
-          closeDD(true);
-          if (changedTo) select.dispatchEvent(new Event('change'));
-        });
-        return it;
-      }));
-    }
-    function open() {
-      closeDD();
-      fill();
-      menu.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      openDD = { menu, btn };
-      (menu.querySelector('.on') || menu.firstChild)?.focus();
-    }
-    btn.addEventListener('click', () => { if (openDD?.btn === btn) closeDD(); else open(); });
-    btn.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); open(); }
-    });
-    menu.addEventListener('keydown', (e) => {
-      const list = items();
-      const i = list.indexOf(document.activeElement);
-      if (e.key === 'ArrowDown') { e.preventDefault(); list[Math.min(i + 1, list.length - 1)]?.focus(); }
-      else if (e.key === 'ArrowUp') { e.preventDefault(); list[Math.max(i - 1, 0)]?.focus(); }
-      else if (e.key === 'Home') { e.preventDefault(); list[0]?.focus(); }
-      else if (e.key === 'End') { e.preventDefault(); list[list.length - 1]?.focus(); }
-      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeDD(true); }
-      else if (e.key === 'Tab') closeDD();
-    });
-    select.addEventListener('sync', paint);
-    select.addEventListener('change', paint);
-    paint();
-  }
-  function chevron() {
-    const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    s.setAttribute('viewBox', '0 0 24 24');
-    s.setAttribute('width', '12');
-    s.setAttribute('height', '12');
-    s.setAttribute('aria-hidden', 'true');
-    s.setAttribute('class', 'dd-chev');
-    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    p.setAttribute('d', 'M6 9l6 6 6-6');
-    s.append(p);
-    return s;
-  }
-  document.addEventListener('pointerdown', (e) => { if (openDD && !openDD.menu.parentNode.contains(e.target)) closeDD(); });
-  for (const s of document.querySelectorAll('select.dd-src')) dropdown(s);
-  const syncSelects = () => { for (const s of document.querySelectorAll('select.dd-src')) s.dispatchEvent(new Event('sync')); };
-
   const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
   const billions = (n) => (n / 1e9).toFixed(n >= 10e9 ? 0 : 1) + 'B';
   function ago(iso) {
@@ -176,7 +82,6 @@
     if (p.get('vision') === '1') takes.add('image'); // the old Vision checkbox
     syncIO();
     for (const [key, id] of Object.entries(checks)) $(id).checked = p.get(key) === '1';
-    syncSelects();
   }
 
   // ---- search (server) ----
@@ -433,7 +338,6 @@
       if (author.value === r.author) return;
       if (![...author.options].some((o) => o.value === r.author)) author.append(new Option(r.author, r.author));
       author.value = r.author;
-      syncSelects();
       search();
     }));
     if (r.params) {
@@ -522,7 +426,6 @@
   function setSort(v) {
     if (sort.value === v) return;
     sort.value = v;
-    sort.dispatchEvent(new Event('sync'));
     changed();
   }
 

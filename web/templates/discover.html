@@ -87,12 +87,12 @@
         {{template "icon-search"}}
         <input id="q" type="search" class="lib-filter" placeholder="Search GGUF models on Hugging Face" aria-label="Search Hugging Face" autocomplete="off">
       </label>
-      <select id="author" class="dd-src" aria-label="Uploader" data-dd-label="From">
+      <select id="author" data-dd aria-label="Uploader" data-dd-label="From">
         <option value="unsloth">unsloth</option>
         <option value="bartowski">bartowski</option>
         <option value="">anyone</option>
       </select>
-      <select id="sort" class="dd-src" aria-label="Sort" data-dd-label="Sort">
+      <select id="sort" data-dd aria-label="Sort" data-dd-label="Sort">
         <option value="downloads">Downloads</option>
         <option value="trendingScore">Trending</option>
         <option value="likes">Likes</option>
@@ -119,4 +119,5 @@
     <div id="detail-body"></div>
   </aside>
 </div>
+<script src="/static/dropdown.js"></script>
 {{end}}
