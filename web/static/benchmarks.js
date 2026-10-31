@@ -399,6 +399,7 @@
       item.append(head);
       if (qq.prompt) {
         const d = el('details', 'bm-ans-q');
+        d.open = !a.correct;
         d.append(el('summary', null, 'Question'), el('pre', 'bm-pre', qq.prompt + (qq.choices ? '\n\n' + qq.choices.map((c, i) => String.fromCharCode(65 + i) + '. ' + c).join('\n') : '')));
         if ((qq.check || set.check) === 'regex') d.append(el('div', 'muted small', 'Must match: ' + qq.answer));
         item.append(d);

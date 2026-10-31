@@ -808,6 +808,50 @@ clear the mark.
 context from the file size and parameter count, overridden by a speed test
 when there is one (100% on the GPU → fits; less → spills).
 
+### Your own benchmarks (internal/evals, /benchmarks)
+
+Sets of questions are TOML files: six built in (`internal/evals/builtin`,
+embedded) and your own in `<data>/evals/sets/<id>.toml`. A set has a name,
+a short column label, a default check and `[[questions]]` with `prompt` and
+`answer`. Checks: `number` (with `tolerance`; fractions work), `exact`
+(case, spacing, end punctuation ignored; `accept` lists alternatives),
+`choice` (lettered `choices`), `contains` and `regex` (on the whole reply;
+`not` inverts). For number, exact and choice the question ends with
+"End your reply with a final line Answer: …"; the grader reads the last
+such line, else the last `\boxed{}`, else a guess from the end. Thinking
+is stripped before grading. Built-in answers are checked by a test that
+grades a model-style reply carrying each right answer, and the math and
+code sets' answers were computed by running them.
+
+A set's hash covers questions, answers and checks (not the name), so a
+result from before an edit shows as stale (`*`) and leaves the overall.
+
+**Running.** `POST /api/evals/run` takes models × sets, a think mode
+(`""` = the model's default, `off`) and a token limit per reply (8192 with
+thinking, 2048 without). One background job, one question at a time:
+`loadAuto` once per model × set, then each question at temperature 0,
+seed 1, saved after every answer to
+`<data>/evals/results/<digest>/<set>[@nothink].json` (every reply and
+thinking, clipped at 40k characters). A stopped run resumes where it
+left off; finished pairs are skipped unless `redo`. Between questions the
+job waits while a chat reply is being written or a speed test holds
+`benchMu`. Models aren't unloaded first: speed doesn't matter here.
+
+**The estimate.** Overall = the mean score over the highlighted sets
+(the suite; default every built-in set; click a column header to change
+it, remembered per browser). Anchors are models with an overall and a
+published Intelligence Index (the same base-model lookup as the Library);
+quants of one base model count once, at their average. `evals.FitLine` is
+ordinary least squares, index on overall, needing 3 anchors; the page
+shows R², the typical miss (residual standard error) and marks estimates
+outside the fitted range with ≈. Estimates are never shown as the
+published score.
+
+**Lessons from the first runs (2026-10-31).** Qwen3.5 2B with thinking off
+already scores 85–95% on the plain math, logic and format sets, so those
+can't separate bigger models; Hard math (competition-style, brute-forced
+answers) is the first set meant to.
+
 ## Milestones
 
 1. **M1: usable day one.** Ollama client, Library (list, delete), load and
