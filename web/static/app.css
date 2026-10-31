@@ -1193,7 +1193,6 @@ a.lr-num:hover, .lr-scorebtn.lr-num:hover { text-decoration: underline; }
 @media (max-width: 760px) {
   .model-page .model-stats { text-align: left; }
 }
-}
 /* ---- layout pass: chat and compare ---- */
 .tool summary { overflow-wrap: anywhere; }
 .tool-body { min-width: 0; }
