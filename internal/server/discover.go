@@ -32,6 +32,8 @@ type searchResult struct {
 	ID      string   `json:"id"`
 	Author  string   `json:"author"`
 	Name    string   `json:"name"`
+	Title   string   `json:"title"` // readable name (prettyModel)
+	Tags    []string `json:"tags,omitempty"` // QAT, MoE... pulled out of the name
 	Params  int64    `json:"params"`
 	Arch    string   `json:"arch"`
 	Context int      `json:"context"`
@@ -99,6 +101,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 			Updated:   repo.LastModified,
 			Installed: installed[strings.ToLower(repo.ID)],
 		}
+		res.Title, res.Tags = prettyModel(repo.Name())
 		res.In, res.Out = repo.Modalities()
 		res.Generator, res.CantRun = repo.Generator(), repo.CantRun()
 		res.Score, res.ScoreOf = s.scoreFor(repo.Tags)
