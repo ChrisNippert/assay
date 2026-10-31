@@ -190,6 +190,11 @@ code doesn't care which engine runs (`server.Backend`).
 - **CPU threads.** `num_thread` becomes `-t` (Tune → Memory). Only matters
   for layers on the CPU; 4 threads beat the default (all 16) on a CPU-only
   9B (3.7 vs 2.6 tok/s, one sample), so Auto may deserve a better default.
+- **Readable names.** Blobs are named by hash (a shared file is stored
+  once), so every reload syncs `by-name/` with relative symlinks such as
+  `unsloth-Qwen3.5-2B-GGUF-Q4_K_M.gguf`, `.mmproj.gguf` and `.mtp.gguf`
+  (`byname.go`). Only symlinks there are touched; none on Windows. A move
+  rebuilds them in the new folder and clears the old ones.
 - **Models folder.** Chosen by `-models`, else `<config>/models.json`, else
   `<data>/models`. `Store.Plan(dst)` validates a target (resolves symlinks;
   refuses itself, inside, containing, a file, or a non-empty folder that

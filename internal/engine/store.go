@@ -94,8 +94,8 @@ func (m *Model) options(req map[string]any) map[string]any {
 // Names lists the full name and the aliases.
 func (m *Model) Names() []string { return append([]string{m.Name}, m.Aliases...) }
 
-// Store keeps models in a folder: blobs/ for the files and one JSON
-// manifest per model in manifests/.
+// Store keeps models in a folder: blobs/ for the files, one JSON
+// manifest per model in manifests/, and readable links in by-name/.
 type Store struct {
 	dir string
 
@@ -163,6 +163,7 @@ func (s *Store) reload() error {
 	s.mu.Lock()
 	s.models = models
 	s.mu.Unlock()
+	syncByName(dir, models)
 	return nil
 }
 

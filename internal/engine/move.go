@@ -251,6 +251,7 @@ func (s *Store) finish(src, dst string) error {
 	if err := s.swap(dst); err != nil {
 		return err
 	}
+	clearByName(src)
 	os.Remove(src) // only if empty
 	return nil
 }
@@ -319,6 +320,7 @@ func (c *copied) removeOriginals(src string) {
 	for _, d := range []string{"blobs", "manifests"} {
 		removeEmptyDirs(filepath.Join(src, d))
 	}
+	clearByName(src)
 	os.Remove(src)
 }
 
