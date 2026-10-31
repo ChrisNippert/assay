@@ -1,0 +1,30 @@
+name: release
+
+# Pushing a tag like v1.2.3 tests, builds every platform and publishes a
+# GitHub release with the archives and SHA256SUMS. No Windows installer yet:
+# the zip holds the single exe.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+      - name: Build archives
+        run: sh scripts/release.sh "${GITHUB_REF_NAME}"
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/release/*.tar.gz dist/release/*.zip dist/release/SHA256SUMS \
+            --title "${GITHUB_REF_NAME}" --generate-notes

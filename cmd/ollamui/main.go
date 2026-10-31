@@ -36,7 +36,7 @@ import (
 	voiceserver "ollamui/tools/voice"
 )
 
-// version is set at build time (tools/release/build.sh).
+// version is set at build time: -ldflags "-X main.version=v1.2.3" (scripts/release.sh).
 var version = "dev"
 
 func main() {
@@ -53,6 +53,9 @@ func main() {
 }
 
 func run() error {
+	if done, err := subcommand(os.Args[1:]); done {
+		return err
+	}
 	listen := flag.String("listen", "127.0.0.1:8484", "address to serve the UI on")
 	llamaServer := flag.String("llama-server", os.Getenv("OLLAMUI_LLAMA_SERVER"), "llama.cpp's llama-server binary (default: ~/.local/share/ollamui/llama.cpp/llama-server, then the release installed from Settings, then PATH)")
 	cacheType := flag.String("cache-type", "q8_0", "K/V cache type for llama.cpp: f16, q8_0 or q4_0")
@@ -84,6 +87,12 @@ func run() error {
 		level = slog.LevelDebug
 	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+
+	svc, err := newService()
+	if err != nil {
+		log.Warn("start on boot unavailable", "err", err)
+		svc = nil
+	}
 
 	store, err := chats.Open(filepath.Join(*dataDir, "chats"))
 	if err != nil {
@@ -187,6 +196,10 @@ func run() error {
 		VoiceLauncher: launcher,
 		VoiceSettings: voiceSettings,
 		Memory:        mem,
+		Version:       version,
+		Updates:       newUpdates(*configDir),
+		Service:       svc,
+		ServiceArgs:   os.Args[1:],
 		AllowHosts:    allowHosts,
 		Logger:        log,
 	})

@@ -34,6 +34,11 @@ type settingsData struct {
 	CompressAuto bool
 	Tools        toolsPage
 	Limits       limits.Limits
+	// AppVersion is this build; Local says the request came from this
+	// machine, which alone may set start-on-boot (when Service is set).
+	AppVersion string
+	Local      bool
+	Service    bool
 }
 
 // enginePage is the Models section with llama.cpp.
@@ -168,6 +173,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	d.Knowledge = s.knowledgePage(ctx, r.URL.Query().Get("pulled"))
 	d.Tools = s.toolsPage()
 	d.Limits = s.limitSt.Get()
+	d.AppVersion, d.Local, d.Service = s.version, fromLoopback(r), s.service != nil
 	p.Data = d
 	s.render(w, "settings", p)
 }

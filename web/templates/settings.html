@@ -246,7 +246,19 @@
   <div class="boxed-list">
     <div class="row"><div class="row-text"><span class="row-title">GPU</span><span class="row-sub">{{if .Data.Memory.GPU}}{{.Data.Memory.GPU}}{{else}}None detected{{end}}</span></div><div class="row-ctrl">{{bytes .Data.Memory.VRAM}} VRAM</div></div>
     <div class="row"><div class="row-text"><span class="row-title">System memory</span></div><div class="row-ctrl">{{bytes .Data.Memory.RAM}}</div></div>
+    <div class="row" id="ver-row"><div class="row-text"><span class="row-title">Version</span><span class="row-sub" id="ver-sub"></span></div><div class="row-ctrl">{{.Data.AppVersion}}</div></div>
+    {{if and .Data.Local .Data.Service}}
+    <label class="row" id="svc-row" hidden>
+      <div class="row-text"><span class="row-title">Start when the computer starts</span><span class="row-sub" id="svc-sub"></span></div>
+      <div class="row-ctrl"><input type="checkbox" id="svc-on" aria-label="Start when the computer starts"></div>
+    </label>
+    {{end}}
+    <label class="row" id="upd-row" hidden>
+      <div class="row-text"><span class="row-title">Check for updates</span><span class="row-sub">Asks GitHub once a day whether a newer release exists. Nothing is installed for you.</span></div>
+      <div class="row-ctrl"><input type="checkbox" id="upd-on" aria-label="Check for updates"></div>
+    </label>
   </div>
+  <p class="small muted" id="svc-note" role="status"></p>
 </div>
 <script>
 (() => {
@@ -482,6 +494,55 @@
   }
   list.addEventListener('change', save);
   })();
+})();
+(() => {
+  // ---- version, updates, start on boot ----
+  const note = document.getElementById('svc-note');
+  const put = async (url, body) => {
+    const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    return data;
+  };
+  const upd = document.getElementById('upd-on');
+  function paintUpdate(u) {
+    document.getElementById('upd-row').hidden = !u.enabled; // no repo set: no feature
+    upd.checked = u.check;
+    const sub = document.getElementById('ver-sub');
+    sub.replaceChildren();
+    if (!u.available) return;
+    const a = document.createElement('a');
+    a.href = u.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = `Version ${u.latest.replace(/^v/, '')} is available`;
+    sub.append(a);
+  }
+  fetch('/api/update').then((r) => r.json()).then(paintUpdate).catch(() => {});
+  upd.addEventListener('change', async () => {
+    try { paintUpdate(await put('/api/update', { check: upd.checked })); } catch (err) { note.textContent = `Couldn’t save: ${err.message}`; }
+  });
+
+  const on = document.getElementById('svc-on');
+  if (!on) return;
+  function paintService(s) {
+    document.getElementById('svc-row').hidden = !s.supported;
+    on.checked = s.enabled;
+    const parts = [];
+    if (s.enabled) parts.push(s.running ? 'Running under the system’s service manager.' : 'Starts at the next ' + (s.platform === 'linux' ? 'login or boot' : 'sign-in') + '.');
+    else parts.push('Starts ollamui in the background whenever you sign in.');
+    if (s.command) parts.push('Runs ' + s.command);
+    document.getElementById('svc-sub').textContent = parts.join(' ');
+  }
+  fetch('/api/service').then((r) => r.json()).then(paintService).catch(() => {});
+  on.addEventListener('change', async () => {
+    on.disabled = true; note.textContent = '';
+    try {
+      paintService(await put('/api/service', { enabled: on.checked }));
+      note.textContent = on.checked ? 'Saved. This copy keeps running; stop it first if you want the new one to take over now.' : 'Saved.';
+    } catch (err) {
+      on.checked = !on.checked;
+      note.textContent = `Couldn’t change it: ${err.message}`;
+    }
+    on.disabled = false;
+  });
 })();
 (() => {
   // ---- resource limits ----

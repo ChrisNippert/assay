@@ -564,9 +564,8 @@ against a strict pattern before they touch the filesystem.
 
 ## Platforms and releases
 
-`sh tools/release/build.sh [version]` cross-compiles (no cgo) Windows
-amd64, Linux amd64/arm64 and macOS arm64 into `dist/`: a zip or tar.gz with
-the one binary and a README (`tools/release/README-*.txt`). Platform bits:
+`sh scripts/release.sh [version]` cross-compiles (no cgo) five platforms into
+`dist/release/` (see Releases below). Platform bits:
 
 - **Windows**: data in `%LOCALAPPDATA%\ollamui`, settings in
   `%APPDATA%\ollamui`; RAM from `GlobalMemoryStatusEx`, VRAM from the
@@ -757,3 +756,21 @@ Test-only: `OLLAMUI_FAKE_GPUS="name:totalMiB:usedMiB,..."` makes hw (and `Engine
 ## Path pickers
 
 Every input that wants a path on the server (llama-server, models folder, LoRA adapter, "Add a folder…" in Library) has a "Browse…" button: `<button data-browse="input-id" data-kind="file|folder" data-title data-filter>` (or `ollamuiBrowseButton(input, opts)` for script-built rows). A choice fills the input and fires `input` and `picked` on it; the page decides what follows (models folder runs Check, the Library folder adds). `window.ollamuiPick({kind, title, start, filter})` in `app.js` resolves to a path or null. From the machine running ollamui and with a dialog tool present (`GET /api/pick` → `{native}`), it asks `POST /api/pick`, which runs `internal/pick`: zenity, kdialog or yad on Linux (needs DISPLAY or WAYLAND_DISPLAY), osascript on macOS, PowerShell with System.Windows.Forms (-STA, hidden) on Windows. Exit 1 or empty output is "cancelled"; one dialog at a time (second gets 409); no timeout, but the process is killed when the request ends. It is refused (403) unless `RemoteAddr` is loopback, so a phone never pops a dialog on the server's screen. Otherwise (remote, or no tool) an in-app browser opens over `GET /api/fs?path=&kind=&filter=&hidden=`: folders first then files (kind=file, glob filter), natural case-insensitive order, dotfiles hidden unless asked, a missing path shows its nearest existing parent, unreadable folders return `error` inline; it is a centred dialog on desktop and a `.sheet` on the phone. Test-only: `OLLAMUI_PICK_TOOLS` is an allow list of dialog tool names; set empty it disables native dialogs so the in-app browser can be checked. Go tests use a fake `zenity` script on PATH and never open a real dialog.
+
+## Start on boot
+
+`ollamui service install [flags]`, `service uninstall` and `service status` (and Settings → This machine → "Start when the computer starts") manage `internal/service`. The subcommands are handled in `cmd/ollamui/service.go` before flag parsing, so existing flags are untouched; `version` and `--version` print the version. The only place the app's name lives is `service.Name`.
+
+- **Linux**: a systemd user unit `~/.config/systemd/user/<name>.service`: `ExecStart` = the running binary (symlinks resolved) plus the given flags (quoted, `%` and `$` doubled), `Restart=on-failure`, `RestartSec=5`, `WantedBy=default.target`. Then `systemctl --user daemon-reload` and `enable --now`. `Environment=` lines carry PATH and the GPU/engine variables (`HSA_OVERRIDE_GFX_VERSION`, `*_VISIBLE_DEVICES`, `OLLAMA_MODELS`, `OLLAMUI_LLAMA_SERVER`, `OLLAMUI_VOICE`) only when set at install time (the service manager's own environment is nearly empty). Starting before login needs lingering; install prints `loginctl enable-linger $USER` when `loginctl show-user` says it's off, and never runs it.
+- **macOS**: `~/Library/LaunchAgents/local.<name>.plist` (`RunAtLoad`, `KeepAlive`, same environment) loaded with `launchctl bootstrap gui/<uid>` (an older one is `bootout`ed first). Uninstall removes the plist and boots it out.
+- **Windows**: a value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` via `reg.exe` (add/query/delete; no new dependency), `"<exe>" <flags> -open=false`. No environment is carried and "running" isn't reported (no service manager); it starts at the next sign-in.
+- **Settings page**: `GET/PUT /api/service` (`{enabled}`) is answered only for loopback requests (`fromLoopback`); remote requests get an empty status on GET and 403 on PUT, and the row is not rendered. The web switch installs with the flags this instance was started with (`os.Args[1:]`) and neither starts nor stops anything (this copy already holds the port); the CLI install does start it (`--now`).
+- **Tests** inject `Manager.Run` (a recording `Runner`), `Home`, `Env`, `GOOS`, so no test touches the real systemctl/launchctl/reg or `~/.config`. Test-only: `OLLAMUI_SERVICE_DRYRUN=1` swaps in an in-memory `service.Fake` (CLI and web), so the Settings switch can be exercised without installing anything.
+
+## Releases
+
+Version: `var version = "dev"` in `cmd/ollamui`, set with `-ldflags "-X main.version=v1.2.3"`. Shown in Settings → This machine and by `ollamui --version` / `ollamui version`.
+
+`scripts/release.sh [version]` (default `git describe`) builds with `CGO_ENABLED=0 -trimpath` for linux/amd64, linux/arm64, windows/amd64, darwin/amd64, darwin/arm64 into `dist/release/` (gitignored): a `.zip` (Windows, README with CRLF) or `.tar.gz` per platform holding the binary, `README.txt` (from `tools/release/README-*.txt`) and `LICENSE` if the repo has one, plus `SHA256SUMS`. `.github/workflows/release.yml` runs `go vet`, `go test`, the script and `gh release create` on a pushed `v*` tag. There is no Windows installer; the zip holds the exe.
+
+Update notice (`internal/update`): `update.Repo` ("owner/name") is empty, which hides the feature and makes no network call. When set, `GET /api/update` asks `api.github.com/repos/<repo>/releases/latest` at most once a day (a failed ask counts too), caches the answer in `<config>/update.json`, and says `available` when the tag is a newer plain `vX.Y.Z` than this build (`dev` and git-describe versions are never older). Settings shows "Version X is available" linking the release page, and a "Check for updates" switch (`PUT /api/update {check}`, default on). Nothing is downloaded or installed.
