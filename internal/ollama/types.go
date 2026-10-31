@@ -91,7 +91,7 @@ type ChatRequest struct {
 	Tools    []Tool         `json:"tools,omitempty"`
 	// KeepAlive is how long the model stays loaded after the request.
 	KeepAlive any `json:"keep_alive,omitempty"`
-	// ChatID names the ollamui chat the request belongs to, so the engine can
+	// ChatID names the Assay chat the request belongs to, so the engine can
 	// keep its prompt cache across a reload. Not part of the API.
 	ChatID string `json:"-"`
 }

@@ -32,7 +32,7 @@ const kvMinTokens = 1000
 // kvLimitDefault caps the folder; the oldest files go first.
 const kvLimitDefault = 2 << 30
 
-// chatIDRe matches the chat ids ollamui makes (date and hex), so an id is
+// chatIDRe matches the chat ids Assay makes (date and hex), so an id is
 // always a plain file name.
 var chatIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 

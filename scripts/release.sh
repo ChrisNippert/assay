@@ -5,7 +5,7 @@
 # this on a tag; run it by hand from the repo root to try it:
 #   sh scripts/release.sh [version]
 set -eu
-name=ollamui
+name=assay
 version=${1:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}
 out=dist/release
 rm -rf "$out" && mkdir -p "$out"
@@ -17,7 +17,7 @@ for target in linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64; d
 	exe=$name
 	[ "$os" = windows ] && exe=$name.exe
 	CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
-		-ldflags "-s -w -X main.version=$version" -o "$dir/$exe" ./cmd/ollamui
+		-ldflags "-s -w -X main.version=$version" -o "$dir/$exe" ./cmd/assay
 	[ -f LICENSE ] && cp LICENSE "$dir/"
 	if [ "$os" = windows ]; then
 		# Notepad wants CRLF line endings.

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"ollamui/internal/chats"
-	"ollamui/internal/ollama"
+	"assay/internal/chats"
+	"assay/internal/ollama"
 )
 
 // fakeLlama stands in for the engine: its tokenizer always counts tokens, and

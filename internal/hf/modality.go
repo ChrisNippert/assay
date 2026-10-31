@@ -145,9 +145,9 @@ func (r Repo) Generator() bool {
 func (r Repo) CantRun() string {
 	switch {
 	case r.Generator():
-		return "ollamui can’t run image, video or audio generators yet"
+		return "Assay can’t run image, video or audio generators yet"
 	case r.PipelineTag == "automatic-speech-recognition" && (r.Arch() == "whisper" || r.Arch() == ""):
-		return "Whisper models run in whisper.cpp, not llama.cpp, so ollamui can’t run them"
+		return "Whisper models run in whisper.cpp, not llama.cpp, so Assay can’t run them"
 	}
 	return ""
 }

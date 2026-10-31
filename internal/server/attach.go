@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"ollamui/internal/chats"
-	"ollamui/internal/rag"
+	"assay/internal/chats"
+	"assay/internal/rag"
 )
 
 // maxAttachment is the largest file a message can carry.

@@ -14,11 +14,11 @@ import (
 	"strings"
 	"time"
 
-	"ollamui/internal/chats"
-	"ollamui/internal/index"
-	"ollamui/internal/ollama"
-	"ollamui/internal/projects"
-	"ollamui/internal/rag"
+	"assay/internal/chats"
+	"assay/internal/index"
+	"assay/internal/ollama"
+	"assay/internal/projects"
+	"assay/internal/rag"
 )
 
 // Chunking for RAG: about 1,500 characters (~400 tokens) per chunk with a

@@ -11,9 +11,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"ollamui/internal/chats"
-	"ollamui/internal/ollama"
-	"ollamui/internal/presets"
+	"assay/internal/chats"
+	"assay/internal/ollama"
+	"assay/internal/presets"
 )
 
 // Automatic context compression. When a chat's next prompt would use most of
@@ -354,7 +354,7 @@ func (s *Server) complete(ctx context.Context, model string, opts map[string]any
 
 // chatOptions is the model and the options a chat's requests run with, as
 // prepareTurn resolves them: its preset's, then its own tweaks, then the
-// context ollamui picks when none is set.
+// context Assay picks when none is set.
 func (s *Server) chatOptions(ctx context.Context, c *chats.Chat) (string, map[string]any) {
 	model := c.Model
 	options := map[string]any{}

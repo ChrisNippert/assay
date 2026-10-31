@@ -3,7 +3,7 @@ package server
 import (
 	"net/http"
 
-	"ollamui/internal/limits"
+	"assay/internal/limits"
 )
 
 func (s *Server) handleLimits(w http.ResponseWriter, r *http.Request) {

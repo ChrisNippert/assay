@@ -12,8 +12,8 @@ import (
 	"sync"
 	"testing"
 
-	"ollamui/internal/hf"
-	"ollamui/internal/ollama"
+	"assay/internal/hf"
+	"assay/internal/ollama"
 )
 
 type fakeHF struct {

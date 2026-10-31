@@ -24,7 +24,7 @@ func fakeTool(t *testing.T, script string) string {
 	}
 	t.Setenv("PATH", dir+":/usr/bin:/bin")
 	t.Setenv("DISPLAY", ":fake")
-	t.Setenv("OLLAMUI_PICK_TOOLS", "zenity")
+	t.Setenv("ASSAY_PICK_TOOLS", "zenity")
 	return dir
 }
 
@@ -68,9 +68,9 @@ func TestChooseCancelled(t *testing.T) {
 
 func TestChooseNoTool(t *testing.T) {
 	fakeTool(t, `echo /x`)
-	t.Setenv("OLLAMUI_PICK_TOOLS", "")
+	t.Setenv("ASSAY_PICK_TOOLS", "")
 	if Available() {
-		t.Fatal("OLLAMUI_PICK_TOOLS= should disable native dialogs")
+		t.Fatal("ASSAY_PICK_TOOLS= should disable native dialogs")
 	}
 	if _, err := Choose(context.Background(), Request{Kind: "file"}); !errors.Is(err, ErrNoTool) {
 		t.Fatal(err)

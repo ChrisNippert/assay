@@ -8,14 +8,14 @@ import (
 	"strings"
 	"time"
 
-	"ollamui/internal/service"
-	"ollamui/internal/update"
+	"assay/internal/service"
+	"assay/internal/update"
 )
 
 // newService is the start-on-boot manager: the real one, or an in-memory
-// stand-in when OLLAMUI_SERVICE_DRYRUN=1 so the UI can be tried safely.
+// stand-in when ASSAY_SERVICE_DRYRUN=1 so the UI can be tried safely.
 func newService() (service.Service, error) {
-	if os.Getenv("OLLAMUI_SERVICE_DRYRUN") == "1" {
+	if os.Getenv("ASSAY_SERVICE_DRYRUN") == "1" {
 		exe, _ := service.Executable()
 		return service.NewFake(exe), nil
 	}

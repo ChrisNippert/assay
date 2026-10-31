@@ -21,9 +21,9 @@ import (
 // ErrNotFound is returned when a preset doesn't exist.
 var ErrNotFound = errors.New("preset not found")
 
-// Namespace prefixes the Ollama models ollamui creates for published presets.
-// ollamui never touches models outside it.
-const Namespace = "ollamui/"
+// Namespace prefixes the Ollama models Assay creates for published presets.
+// Assay never touches models outside it.
+const Namespace = "assay/"
 
 // Preset is a base model plus settings.
 type Preset struct {

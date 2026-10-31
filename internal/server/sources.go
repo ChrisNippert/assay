@@ -3,7 +3,7 @@ package server
 import (
 	"net/http"
 
-	"ollamui/internal/engine"
+	"assay/internal/engine"
 )
 
 // modelSources is a backend that can find models other apps downloaded

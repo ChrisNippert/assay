@@ -15,13 +15,13 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"ollamui/internal/chats"
-	"ollamui/internal/ollama"
-	"ollamui/internal/presets"
-	"ollamui/internal/voice"
+	"assay/internal/chats"
+	"assay/internal/ollama"
+	"assay/internal/presets"
+	"assay/internal/voice"
 )
 
-// Voice mode. The browser records speech, ollamui has it transcribed and
+// Voice mode. The browser records speech, Assay has it transcribed and
 // sends it as a chat message with voice set, then has each sentence of the
 // reply spoken. The interesting part is the gap while a thinking model
 // thinks: rather than sit silent, a second, non-thinking request on the same
@@ -78,8 +78,8 @@ type voiceStatus struct {
 	Talker string `json:"talker"`
 	// Settings carries what the browser needs: pause and sensitivity.
 	Settings voice.Settings `json:"settings"`
-	// Starting: ollamui is starting the service. Stopped: it isn't running
-	// and will be started on demand. Managed: ollamui started it.
+	// Starting: Assay is starting the service. Stopped: it isn't running
+	// and will be started on demand. Managed: Assay started it.
 	Starting bool `json:"starting,omitempty"`
 	Stopped  bool `json:"stopped,omitempty"`
 	Managed  bool `json:"managed,omitempty"`
@@ -107,10 +107,10 @@ func (s *Server) handleVoiceStatus(w http.ResponseWriter, r *http.Request) {
 var errNotDownloaded = errors.New("voice mode hasn't been downloaded yet")
 
 // fillSpeechStatus says whether the speech service is up, starting it
-// first if start is set and ollamui manages it.
+// first if start is set and Assay manages it.
 func (s *Server) fillSpeechStatus(ctx context.Context, st *voiceStatus, start bool) {
 	if s.voice == nil {
-		st.Error = "Voice mode is off (ollamui was started with -voice \"\")."
+		st.Error = "Voice mode is off (Assay was started with -voice \"\")."
 		return
 	}
 	st.URL = s.voice.URL()
@@ -134,7 +134,7 @@ func (s *Server) fillSpeechStatus(ctx context.Context, st *voiceStatus, start bo
 	st.Managed = s.speech != nil && s.speech.Managed()
 }
 
-// speechReady checks the speech service. With start, a service ollamui
+// speechReady checks the speech service. With start, a service assay
 // manages is started; with wait, it waits (up to two minutes, the first
 // start installs packages) until it answers.
 func (s *Server) speechReady(ctx context.Context, start, wait bool) error {
@@ -682,7 +682,7 @@ func (s *Server) handleVoiceSettings(w http.ResponseWriter, r *http.Request) {
 // handleVoiceRemove deletes the bundled speech service's downloads.
 func (s *Server) handleVoiceRemove(w http.ResponseWriter, r *http.Request) {
 	if s.speech == nil {
-		writeError(w, http.StatusBadRequest, "ollamui doesn't manage a speech service")
+		writeError(w, http.StatusBadRequest, "Assay doesn't manage a speech service")
 		return
 	}
 	if err := s.speech.Remove(); err != nil {

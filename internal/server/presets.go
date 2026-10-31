@@ -7,9 +7,9 @@ import (
 	"runtime"
 	"time"
 
-	"ollamui/internal/engine"
-	"ollamui/internal/ollama"
-	"ollamui/internal/presets"
+	"assay/internal/engine"
+	"assay/internal/ollama"
+	"assay/internal/presets"
 )
 
 func (s *Server) handlePresetsPage(w http.ResponseWriter, r *http.Request) {
@@ -99,7 +99,7 @@ type modelDefaults struct {
 	System        string         `json:"system,omitempty"`
 	ContextLength int            `json:"contextLength,omitempty"` // the most the model supports
 	OllamaContext int            `json:"ollamaContext"`           // what Ollama uses if num_ctx isn't set
-	Auto          autoContext    `json:"auto"`                    // what ollamui picks if num_ctx isn't set
+	Auto          autoContext    `json:"auto"`                    // what Assay picks if num_ctx isn't set
 	Thinking      bool           `json:"thinking"`
 	Tools         bool           `json:"tools"`
 	Layers        int            `json:"layers,omitempty"` // what num_gpu counts; 0 if unknown

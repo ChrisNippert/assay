@@ -68,7 +68,7 @@
     <div class="row"><div class="row-text"><span class="row-title">Space</span><span class="row-sub" id="mf-space">…</span></div></div>
     <div id="mf-edit" hidden>
       <div class="row">
-        <div class="row-text"><span class="row-title">Move the models to</span><span class="row-sub">A full path, like /mnt/games/models. Models are stopped first, then their files move; a new or empty folder works, and so does a folder that already holds ollamui’s models.</span></div>
+        <div class="row-text"><span class="row-title">Move the models to</span><span class="row-sub">A full path, like /mnt/games/models. Models are stopped first, then their files move; a new or empty folder works, and so does a folder that already holds Assay’s models.</span></div>
         <div class="row-ctrl"><input type="text" id="mf-input" placeholder="/mnt/disk/models" aria-label="New models folder" size="28" autocomplete="off" spellcheck="false"><button type="button" class="btn" data-browse="mf-input" data-kind="folder" data-title="Choose the models folder">Browse…</button><button type="button" class="btn" id="mf-check">Check</button></div>
       </div>
       <div id="mf-mounts"></div>
@@ -190,7 +190,7 @@
   <p class="muted small">Limits apply the next time a model loads; models already running aren't restarted. Changes save right away.</p>
   <div class="boxed-list" id="lm-list" data-settings="{{json .Data.Limits}}">
     <div class="row">
-      <div class="row-text"><span class="row-title">Max VRAM for models</span><span class="row-sub">In GB; empty means no limit. Works through automatic GPU fitting, so it doesn't apply to a model whose GPU layers (or MoE experts in RAM) are set by hand in Tune. It also counts the other models ollamui has loaded, and can't see other apps' use beyond what is free right now.</span></div>
+      <div class="row-text"><span class="row-title">Max VRAM for models</span><span class="row-sub">In GB; empty means no limit. Works through automatic GPU fitting, so it doesn't apply to a model whose GPU layers (or MoE experts in RAM) are set by hand in Tune. It also counts the other models Assay has loaded, and can't see other apps' use beyond what is free right now.</span></div>
       <div class="row-ctrl"><input type="number" id="lm-vram" min="0.5" step="0.5" placeholder="No limit" aria-label="Max VRAM for models in GB" style="width:6rem" autocomplete="off"></div>
     </div>
     <label class="row">
@@ -202,7 +202,7 @@
 
   {{with .Data.Voice}}
   <h2 class="group-title" id="voice">Voice</h2>
-  {{if .Status.Available}}<p class="muted small">Used by the mic button in chat. The speech service is running{{if .Status.Managed}}; ollamui stops it after 10 minutes without voice use{{end}}. Changes save right away.</p>
+  {{if .Status.Available}}<p class="muted small">Used by the mic button in chat. The speech service is running{{if .Status.Managed}}; Assay stops it after 10 minutes without voice use{{end}}. Changes save right away.</p>
   {{else if .Status.NeedsDownload}}<p class="muted small">Used by the mic button in chat. {{.Status.Error}} You can choose settings now.</p>
   {{else if .Status.Stopped}}<p class="muted small">Used by the mic button in chat. The speech service isn't running: it {{.Status.Error | lower}} Changes save right away.</p>
   {{else}}<p class="small settings-warn">{{.Status.Error}}</p>{{end}}
@@ -332,7 +332,7 @@
       else if (info.move.state === 'failed') say(info.move.error, true);
     }
     f('mf-change').disabled = false;
-    if (info.pinned && !note.textContent) say('The -models flag sets this folder when ollamui starts, so it wins over a change made here after a restart.');
+    if (info.pinned && !note.textContent) say('The -models flag sets this folder when Assay starts, so it wins over a change made here after a restart.');
   }
 
   async function check() {
@@ -347,7 +347,7 @@
     const sw = plan.kind === 'switch';
     f('mf-plan-title').textContent = sw ? `Use the ${plan.models} model${plan.models === 1 ? '' : 's'} already in ${plan.to}` : `Move the models to ${plan.to}`;
     let sub;
-    if (sw) sub = 'Nothing is moved or deleted. The current folder is left as it is. Models stop while ollamui switches.';
+    if (sw) sub = 'Nothing is moved or deleted. The current folder is left as it is. Models stop while Assay switches.';
     else if (plan.sameDisk) sub = 'Same disk, so this is instant: nothing is copied. Models stop first.';
     else if (!plan.enough) sub = `Not enough space on that disk: the models need ${gb(plan.bytes)} and ${gb(plan.free)} is free.`;
     else {
@@ -531,7 +531,7 @@
     on.checked = s.enabled;
     const parts = [];
     if (s.enabled) parts.push(s.running ? 'Running under the system’s service manager.' : 'Starts at the next ' + (s.platform === 'linux' ? 'login or boot' : 'sign-in') + '.');
-    else parts.push('Starts ollamui in the background whenever you sign in.');
+    else parts.push('Starts Assay in the background whenever you sign in.');
     if (s.command) parts.push('Runs ' + s.command);
     document.getElementById('svc-sub').textContent = parts.join(' ');
   }
@@ -711,7 +711,7 @@
     const say = (text) => { sub.textContent = text + (msg ? ' ' + msg : ''); sub.classList.toggle('settings-warn', bad); };
     if (!st.supported) {
       title.textContent = 'Official llama.cpp release';
-      say('llama.cpp has no ready-made build for this system. Install llama.cpp yourself and put llama-server on your PATH, or start ollamui with -llama-server.');
+      say('llama.cpp has no ready-made build for this system. Install llama.cpp yourself and put llama-server on your PATH, or start Assay with -llama-server.');
       btn.hidden = true; return;
     }
     const known = chk && chk.supported ? chk : null;
@@ -721,8 +721,8 @@
       const have = st.source !== 'none';
       title.textContent = have ? `Official llama.cpp release (${label})` : 'Install llama.cpp';
       say(have
-        ? 'Not installed. ollamui can download llama.cpp’s official ready-made build into its own folder (' + label + (wb ? ': ' + wb.note : ', works on most GPUs') + '). The llama.cpp you have now stays where it is, untouched, and keeps being used until you switch.' + checkFail
-        : 'Models can’t run without it. ollamui downloads llama.cpp’s official ready-made build from its GitHub releases into its own folder (' + label + (wb ? ': ' + wb.note : ', works on most GPUs; it needs the system Vulkan loader, libvulkan') + ') Pick another build with the menu.' + checkFail);
+        ? 'Not installed. Assay can download llama.cpp’s official ready-made build into its own folder (' + label + (wb ? ': ' + wb.note : ', works on most GPUs') + '). The llama.cpp you have now stays where it is, untouched, and keeps being used until you switch.' + checkFail
+        : 'Models can’t run without it. Assay downloads llama.cpp’s official ready-made build from its GitHub releases into its own folder (' + label + (wb ? ': ' + wb.note : ', works on most GPUs; it needs the system Vulkan loader, libvulkan') + ') Pick another build with the menu.' + checkFail);
       btn.textContent = `${have ? 'Download' : 'Install llama.cpp'} (${label}${mb})`;
       if (!have) btn.className = 'btn primary';
       btn.onclick = () => install(false);

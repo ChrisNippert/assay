@@ -1357,7 +1357,7 @@ html:has(.content-chat) { overscroll-behavior: none; }
   .sheet, .tune.sheet, .sidebar, .sheet-backdrop, .nav-backdrop, .appbar::before, .composer.column, .composer .btn#send { transition: none !important; }
 }
 
-/* ---- path chooser (ollamuiPick's in-app browser): a dialog on desktop,
+/* ---- path chooser (assayPick's in-app browser): a dialog on desktop,
    a bottom sheet (.sheet) on the phone ---- */
 .pk-scrim { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, .4); }
 .pk {

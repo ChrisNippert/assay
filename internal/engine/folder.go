@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"ollamui/internal/gguf"
+	"assay/internal/gguf"
 )
 
 // folderConfig is the models folder setting, kept in the config folder.

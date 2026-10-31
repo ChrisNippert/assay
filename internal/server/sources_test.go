@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"ollamui/internal/chats"
-	"ollamui/internal/engine"
-	"ollamui/internal/presets"
+	"assay/internal/chats"
+	"assay/internal/engine"
+	"assay/internal/presets"
 )
 
 func TestFoundFolderImport(t *testing.T) {

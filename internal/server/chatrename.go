@@ -6,8 +6,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"ollamui/internal/chats"
-	"ollamui/internal/projects"
+	"assay/internal/chats"
+	"assay/internal/projects"
 )
 
 const maxTitleLen = 200

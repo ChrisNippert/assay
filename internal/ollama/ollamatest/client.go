@@ -1,11 +1,11 @@
 // Package ollama is a small typed client for the Ollama HTTP API.
 // Package ollamatest is an Ollama HTTP client kept only for the server
-// tests, which drive a fake Ollama server through it. ollamui itself runs
+// tests, which drive a fake Ollama server through it. Assay itself runs
 // models with llama.cpp (internal/engine).
 package ollamatest
 
 import (
-	"ollamui/internal/ollama"
+	"assay/internal/ollama"
 
 	"bytes"
 	"context"

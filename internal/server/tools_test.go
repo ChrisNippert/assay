@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"ollamui/internal/chats"
-	"ollamui/internal/tools"
+	"assay/internal/chats"
+	"assay/internal/tools"
 )
 
 func events(t *testing.T, rec *httptest.ResponseRecorder) []event {

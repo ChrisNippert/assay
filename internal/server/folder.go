@@ -11,8 +11,8 @@ import (
 	"strings"
 	"sync"
 
-	"ollamui/internal/engine"
-	"ollamui/internal/pulls"
+	"assay/internal/engine"
+	"assay/internal/pulls"
 )
 
 // modelFolder is a backend whose model store can move (the engine).
@@ -81,10 +81,10 @@ func mounts(cur string) []diskMount {
 		if err != nil || total == 0 {
 			continue
 		}
-		m := diskMount{Path: path, Free: free, Total: total, Suggest: filepath.Join(path, "ollamui", "models")}
+		m := diskMount{Path: path, Free: free, Total: total, Suggest: filepath.Join(path, "assay", "models")}
 		if path == "/" {
 			home, _ := os.UserHomeDir()
-			m.Suggest = filepath.Join(home, "ollamui-models") // / itself isn't writable
+			m.Suggest = filepath.Join(home, "assay-models") // / itself isn't writable
 		}
 		out = append(out, m)
 	}
@@ -105,7 +105,7 @@ func driveLetters(cur string) []diskMount {
 		if err != nil || total == 0 {
 			continue
 		}
-		out = append(out, diskMount{Path: root, Free: free, Total: total, Suggest: filepath.Join(root, "ollamui", "models")})
+		out = append(out, diskMount{Path: root, Free: free, Total: total, Suggest: filepath.Join(root, "assay", "models")})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Free > out[j].Free })
 	return out

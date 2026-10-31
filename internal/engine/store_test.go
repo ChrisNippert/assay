@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"ollamui/internal/ollama"
+	"assay/internal/ollama"
 )
 
 // fakeOllama lays out an Ollama models folder the way 0.40 does: v1

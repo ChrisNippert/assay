@@ -2,7 +2,7 @@
 // for the page lock, the dimmed backdrop and drag-down-to-close. Each sheet
 // opens and closes itself; it tells this file with track(), and registers how
 // to close it (register) for the backdrop, the back button and the drag.
-window.ollamuiSheets = (() => {
+window.assaySheets = (() => {
   const root = document.documentElement;
   const phone = matchMedia('(max-width: 760px)');
   const active = new Set();
@@ -314,18 +314,18 @@ window.ollamuiSheets = (() => {
       memPop.hidden = false;
       void memPop.offsetWidth;
       memPop.classList.add('open');
-      window.ollamuiSheets.track(memPop, true);
+      window.assaySheets.track(memPop, true);
       sampleGpu();
       scheduleSample();
     } else {
       memPop.classList.remove('open');
-      window.ollamuiSheets.track(memPop, false);
+      window.assaySheets.track(memPop, false);
       memCloseT = setTimeout(() => { memPop.hidden = true; }, 280);
       scheduleSample();
     }
   }
   if (memBtn) {
-    window.ollamuiSheets.register(memPop, () => setMemOpen(false));
+    window.assaySheets.register(memPop, () => setMemOpen(false));
     memBtn.addEventListener('click', () => setMemOpen(!memPop.classList.contains('open')));
     document.addEventListener('pointerdown', (e) => {
       if (memPop.classList.contains('open') && !memWrap.contains(e.target)) setMemOpen(false);
@@ -834,7 +834,7 @@ window.ollamuiSheets = (() => {
           const saved = (await res.json()).title;
           a.textContent = saved;
           a.title = saved;
-          if (a.classList.contains('active')) document.title = `${saved} · ollamui`;
+          if (a.classList.contains('active')) document.title = `${saved} · Assay`;
           applyChatFilter();
         } else {
           alert(`Couldn't rename chat: ${await errorText(res)}`);
@@ -997,7 +997,7 @@ window.ollamuiSheets = (() => {
     applyChatFilter();
   });
 
-  window.ollamui = { addSidebarChat, trackRunning, setRunning, post, errorText, refreshLoaded, setLoadButton, el, fmtBytes, pollDownloads };
+  window.assay = { addSidebarChat, trackRunning, setRunning, post, errorText, refreshLoaded, setLoadButton, el, fmtBytes, pollDownloads };
 })();
 
 // Phone layout: the sidebar is a drawer opened from the app bar.
@@ -1028,7 +1028,7 @@ window.ollamuiSheets = (() => {
     if (history.state?.overlay || !overlayOpen()) return;
     popping = true;
     set(false);
-    window.ollamuiSheets.closeAll();
+    window.assaySheets.closeAll();
     if (tune?.classList.contains('open')) document.getElementById('tune-close')?.click();
     setTimeout(() => { popping = false; });
   });
@@ -1058,12 +1058,12 @@ window.ollamuiSheets = (() => {
 // The API address on the presets page.
 document.querySelectorAll('[data-api-url]').forEach((el) => { el.textContent = location.origin + '/v1'; });
 
-// Path pickers. ollamuiPick({kind: 'file'|'folder', title, start, filter})
+// Path pickers. assayPick({kind: 'file'|'folder', title, start, filter})
 // resolves to a path on the server, or null if the user cancelled. From the
-// machine running ollamui it opens that machine's own chooser (POST
+// machine running Assay it opens that machine's own chooser (POST
 // /api/pick); from anywhere else, or without a dialog tool there, it shows
 // an in-app browser over GET /api/fs (a bottom sheet on the phone).
-window.ollamuiPick = (() => {
+window.assayPick = (() => {
   let nativeP = null;
   const isNative = () => nativeP ||= fetch('/api/pick').then((r) => (r.ok ? r.json() : {})).then((j) => !!j.native).catch(() => false);
   const ICON = {
@@ -1080,7 +1080,7 @@ window.ollamuiPick = (() => {
 
   function browse(o) {
     const kind = o.kind === 'file' ? 'file' : 'folder';
-    const sheets = window.ollamuiSheets;
+    const sheets = window.assaySheets;
     return new Promise((resolve) => {
       const scrim = el('div', 'pk-scrim');
       const box = el('div', 'pk');
@@ -1221,14 +1221,14 @@ window.ollamuiPick = (() => {
 // Browse… buttons: <button data-browse="input-id" data-kind="file|folder"
 // data-title data-filter>. A choice fills the input and fires "input" and
 // "picked" on it; the page decides what else to do. found.js, which builds
-// its rows in script, makes its button with ollamuiBrowseButton.
+// its rows in script, makes its button with assayBrowseButton.
 (() => {
   const wire = (b) => b.addEventListener('click', async () => {
     const input = document.getElementById(b.dataset.browse);
     if (!input) return;
     b.disabled = true;
     try {
-      const p = await window.ollamuiPick({ kind: b.dataset.kind, title: b.dataset.title, filter: b.dataset.filter, start: input.value.trim() });
+      const p = await window.assayPick({ kind: b.dataset.kind, title: b.dataset.title, filter: b.dataset.filter, start: input.value.trim() });
       if (p) {
         input.value = p;
         input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -1237,7 +1237,7 @@ window.ollamuiPick = (() => {
     } finally { b.disabled = false; }
   });
   document.querySelectorAll('[data-browse]').forEach(wire);
-  window.ollamuiBrowseButton = (input, { kind, title, filter }) => {
+  window.assayBrowseButton = (input, { kind, title, filter }) => {
     if (!input.id) input.id = 'pk-' + Math.random().toString(36).slice(2, 8);
     const b = document.createElement('button');
     b.className = 'btn';

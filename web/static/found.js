@@ -68,7 +68,7 @@
     const sub = el('span', 'row-sub');
     sub.title = s.link === 'hard'
       ? 'The file is shared, so it stays if that app removes it.'
-      : 'It is on another disk, so ollamui uses the file where it is. If that app removes it, the model shows as missing.';
+      : 'It is on another disk, so Assay uses the file where it is. If that app removes it, the model shows as missing.';
     sub.append(el('span', 'mono', s.dir), document.createTextNode(' · ' + how));
     text.append(sub);
     head.append(text);
@@ -131,7 +131,7 @@
     go.type = 'button';
     c.append(input, go);
     row.append(c);
-    window.ollamuiBrowseButton(input, { kind: 'folder', title: 'Choose a folder with models' });
+    window.assayBrowseButton(input, { kind: 'folder', title: 'Choose a folder with models' });
     input.addEventListener('picked', () => add());
     const add = () => {
       if (!input.value.trim()) return input.focus();

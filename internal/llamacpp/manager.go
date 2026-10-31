@@ -125,7 +125,7 @@ type Manager struct {
 	Inst *Installer
 	// Flag is the -llama-server path; it beats everything else.
 	Flag string
-	// Data is ollamui's data folder: <Data>/llama.cpp is the user's own build.
+	// Data is Assay's data folder: <Data>/llama.cpp is the user's own build.
 	Data string
 	Eng  Runner
 	Log  *slog.Logger

@@ -230,7 +230,7 @@ func (in *Installer) download(ctx context.Context, a Asset, f *os.File, progress
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "ollamui")
+	req.Header.Set("User-Agent", "assay")
 	resp, err := in.client().Do(req)
 	if err != nil {
 		return fmt.Errorf("download failed: %w", err)

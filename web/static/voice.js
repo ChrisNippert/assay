@@ -8,7 +8,7 @@
 // prose meant to be heard, and "Read aloud" speaks each reply a sentence at
 // a time as it streams in. Any reply can also be read from its action bar.
 (() => {
-  const chat = window.ollamuiChat;
+  const chat = window.assayChat;
   const btn = document.getElementById('mic-btn');
   if (!chat || !btn) return;
   const bar = document.getElementById('voice-bar');
@@ -60,7 +60,7 @@
   const ready = () => document.body.classList.contains('voice-ok');
 
   async function checkStatus(start) {
-    try { status = await (await fetch('/api/voice' + (start ? '?start=1' : ''))).json(); } catch { status = { available: false, error: 'Couldn’t reach ollamui.' }; }
+    try { status = await (await fetch('/api/voice' + (start ? '?start=1' : ''))).json(); } catch { status = { available: false, error: 'Couldn’t reach Assay.' }; }
     // Stopped means "starts when you use it", which is fine.
     const usable = status.available || status.stopped || status.starting;
     btn.classList.toggle('unavailable', !usable);
@@ -135,7 +135,7 @@
 
   async function start() {
     if (!navigator.mediaDevices?.getUserMedia) {
-      fail('The microphone only works over HTTPS or on localhost. From another device, open ollamui through “tailscale serve” or another HTTPS proxy.');
+      fail('The microphone only works over HTTPS or on localhost. From another device, open Assay through “tailscale serve” or another HTTPS proxy.');
       return;
     }
     active = true;
@@ -376,7 +376,7 @@
   }
 
   // chat.js asks this as it sends a message.
-  window.ollamuiVoice = {
+  window.assayVoice = {
     turn() {
       const shown = !bar.hidden && ready();
       speaker?.stop();

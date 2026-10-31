@@ -4,7 +4,7 @@
   const form = document.getElementById('composer');
   const chatEl = document.getElementById('chat');
   if (!form || !chatEl) return;
-  const { el } = window.ollamui;
+  const { el } = window.assay;
   const row = document.getElementById('att-row');
   const btn = document.getElementById('attach-btn');
   const picker = document.getElementById('attach-input');
@@ -159,7 +159,7 @@
     return box;
   }
 
-  window.ollamuiAttach = {
+  window.assayAttach = {
     // busy: a file is still uploading.
     busy: () => items.some((i) => i.state === 'up'),
     count: () => items.filter((i) => i.state === 'ok').length,

@@ -9,7 +9,7 @@ import (
 	"io"
 	"net/http"
 
-	"ollamui/internal/ollama"
+	"assay/internal/ollama"
 )
 
 // IsEmbedding reports whether an installed model only embeds.

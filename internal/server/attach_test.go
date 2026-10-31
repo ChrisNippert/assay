@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"ollamui/internal/chats"
+	"assay/internal/chats"
 )
 
 // png1 is a 1x1 PNG.

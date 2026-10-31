@@ -5,11 +5,11 @@ import (
 	"slices"
 	"strings"
 
-	"ollamui/internal/hw"
-	"ollamui/internal/ollama"
+	"assay/internal/hw"
+	"assay/internal/ollama"
 )
 
-// Context lengths ollamui picks from, smallest first.
+// Context lengths Assay picks from, smallest first.
 var ctxSteps = []int{8192, 16384, 32768, 65536, 131072, 262144}
 
 const (
@@ -21,7 +21,7 @@ const (
 	ctxStickiness = 512 << 20
 )
 
-// autoContext is the context length ollamui picked for a model, and why.
+// autoContext is the context length Assay picked for a model, and why.
 type autoContext struct {
 	Ctx    int    `json:"ctx"`    // 0 means "leave it to the engine"
 	Reason string `json:"reason"` // short explanation for the UI
@@ -250,7 +250,7 @@ func aloneOnGPU(running []ollama.RunningModel, self *ollama.RunningModel) bool {
 	return true
 }
 
-// loadAuto loads model at the context ollamui picks. If it spills onto the
+// loadAuto loads model at the context Assay picks. If it spills onto the
 // CPU anyway, it tries the next smaller context, a couple of times at most.
 func (s *Server) loadAuto(ctx context.Context, model, keepAlive string) (autoContext, error) {
 	s.manualGPU.Delete(strings.ToLower(model)) // loaded without a GPU layer limit

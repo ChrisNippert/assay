@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"ollamui/internal/hw"
+	"assay/internal/hw"
 )
 
 const (

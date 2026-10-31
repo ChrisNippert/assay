@@ -13,10 +13,10 @@ import (
 	"sync"
 	"time"
 
-	"ollamui/internal/engine"
-	"ollamui/internal/hf"
-	"ollamui/internal/hw"
-	"ollamui/internal/scores"
+	"assay/internal/engine"
+	"assay/internal/hf"
+	"assay/internal/hw"
+	"assay/internal/scores"
 )
 
 // --- Discover list ---
@@ -444,7 +444,7 @@ func (s *Server) handleModelPage(w http.ResponseWriter, r *http.Request) {
 			Installed: installed[strings.ToLower(tag)],
 		})
 	}
-	// ollamui's own engine downloads split GGUFs; Ollama may not.
+	// Assay's own engine downloads split GGUFs; Ollama may not.
 	_, data.SplitsOK = s.ollama.(fitter)
 	markBest(data.Quants, data.SplitsOK)
 

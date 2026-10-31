@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"ollamui/internal/chats"
-	"ollamui/internal/presets"
+	"assay/internal/chats"
+	"assay/internal/presets"
 )
 
 func TestGroupChats(t *testing.T) {

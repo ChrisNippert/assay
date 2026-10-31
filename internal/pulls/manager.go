@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"ollamui/internal/ollama"
+	"assay/internal/ollama"
 )
 
 // Puller is the part of the Ollama client the manager needs.

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"ollamui/internal/llamacpp"
+	"assay/internal/llamacpp"
 )
 
 // The llama.cpp install API behind Settings → Models. Without the llama.cpp

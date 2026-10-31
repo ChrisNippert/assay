@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"ollamui/internal/hw"
+	"assay/internal/hw"
 )
 
 func TestChooseContext(t *testing.T) {

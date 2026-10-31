@@ -1,4 +1,4 @@
-// Command ollamui serves a web UI for Ollama.
+// Command assay serves a web UI for running and comparing local GGUF models on llama.cpp.
 package main
 
 import (
@@ -18,22 +18,22 @@ import (
 	"syscall"
 	"time"
 
-	"ollamui/internal/bench"
-	"ollamui/internal/chats"
-	"ollamui/internal/engine"
-	"ollamui/internal/hf"
-	"ollamui/internal/hw"
-	"ollamui/internal/limits"
-	"ollamui/internal/llamacpp"
-	"ollamui/internal/ollama"
-	"ollamui/internal/presets"
-	"ollamui/internal/projects"
-	"ollamui/internal/pulls"
-	"ollamui/internal/scores"
-	"ollamui/internal/server"
-	"ollamui/internal/tools"
-	"ollamui/internal/voice"
-	voiceserver "ollamui/tools/voice"
+	"assay/internal/bench"
+	"assay/internal/chats"
+	"assay/internal/engine"
+	"assay/internal/hf"
+	"assay/internal/hw"
+	"assay/internal/limits"
+	"assay/internal/llamacpp"
+	"assay/internal/ollama"
+	"assay/internal/presets"
+	"assay/internal/projects"
+	"assay/internal/pulls"
+	"assay/internal/scores"
+	"assay/internal/server"
+	"assay/internal/tools"
+	"assay/internal/voice"
+	voiceserver "assay/tools/voice"
 )
 
 // version is set at build time: -ldflags "-X main.version=v1.2.3" (scripts/release.sh).
@@ -41,7 +41,7 @@ var version = "dev"
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, "ollamui:", err)
+		fmt.Fprintln(os.Stderr, "assay:", err)
 		// Started by double-clicking, the console window would close
 		// before anyone could read why.
 		if runtime.GOOS == "windows" {
@@ -57,18 +57,18 @@ func run() error {
 		return err
 	}
 	listen := flag.String("listen", "127.0.0.1:8484", "address to serve the UI on")
-	llamaServer := flag.String("llama-server", os.Getenv("OLLAMUI_LLAMA_SERVER"), "llama.cpp's llama-server binary (default: ~/.local/share/ollamui/llama.cpp/llama-server, then the release installed from Settings, then PATH)")
+	llamaServer := flag.String("llama-server", os.Getenv("ASSAY_LLAMA_SERVER"), "llama.cpp's llama-server binary (default: ~/.local/share/assay/llama.cpp/llama-server, then the release installed from Settings, then PATH)")
 	cacheType := flag.String("cache-type", "q8_0", "K/V cache type for llama.cpp: f16, q8_0 or q4_0")
-	ollamaModels := flag.String("ollama-models", defaultOllamaModels(), "Ollama's models folder, imported (by hard link) into ollamui's own")
+	ollamaModels := flag.String("ollama-models", defaultOllamaModels(), "Ollama's models folder, imported (by hard link) into Assay's own")
 	dataDir := flag.String("data", defaultDir("XDG_DATA_HOME", ".local/share", "LOCALAPPDATA"), "where chats are stored")
 	modelsFlag := flag.String("models", "", "where models are stored (default: the folder chosen in Settings, else <data>/models); overrides the saved choice")
 	configDir := flag.String("config", defaultDir("XDG_CONFIG_HOME", ".config", "APPDATA"), "where presets and settings are stored")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	openUI := flag.Bool("open", runtime.GOOS == "windows", "open the UI in the browser once it's ready")
-	voiceURL := flag.String("voice", envOr("OLLAMUI_VOICE", "http://127.0.0.1:8485"), "speech service for voice mode (OpenAI audio API); empty turns voice off")
+	voiceURL := flag.String("voice", envOr("ASSAY_VOICE", "http://127.0.0.1:8485"), "speech service for voice mode (OpenAI audio API); empty turns voice off")
 	sttModel := flag.String("stt-model", "", "speech-to-text model name to ask the speech service for")
 	voiceLaunch := flag.Bool("voice-launch", true, "start the bundled speech service (with uv) when voice mode is used, and stop it when idle")
-	voiceIdle := flag.Duration("voice-idle", 10*time.Minute, "stop the speech service ollamui started after this long without voice use (0 never)")
+	voiceIdle := flag.Duration("voice-idle", 10*time.Minute, "stop the speech service Assay started after this long without voice use (0 never)")
 	ttsVoice := flag.String("tts-voice", "", "voice to ask the speech service for")
 	debug := flag.Bool("debug", false, "log extra detail, e.g. how context lengths are picked")
 	var allowHosts []string
@@ -78,7 +78,7 @@ func run() error {
 	})
 	flag.Parse()
 	if *showVersion {
-		fmt.Println("ollamui", version)
+		fmt.Println("assay", version)
 		return nil
 	}
 
@@ -141,7 +141,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("tool settings: %w", err)
 	}
-	// The engine: llama.cpp runs the models ollamui keeps; Ollama's models
+	// The engine: llama.cpp runs the models Assay keeps; Ollama's models
 	// are imported by hard link, so nothing is downloaded twice.
 	hfClient := hf.New(hf.DefaultBaseURL, os.Getenv("HF_TOKEN"))
 	folder := engine.FolderSetting{File: filepath.Join(*configDir, "models.json"), Pinned: *modelsFlag != ""}
@@ -222,7 +222,7 @@ func run() error {
 	go func() {
 		defer close(launcherDone)
 		if launcher != nil {
-			launcher.Run(ctx) // stops the speech service when ollamui exits
+			launcher.Run(ctx) // stops the speech service when Assay exits
 		}
 	}()
 
@@ -238,10 +238,10 @@ func run() error {
 	}
 	ln, err := net.Listen("tcp", *listen)
 	if err != nil {
-		// Most likely ollamui is already running (a second double-click):
+		// Most likely Assay is already running (a second double-click):
 		// show that one instead.
 		if *openUI && addrInUse(err) {
-			log.Info("ollamui is already running; opening it", "listen", *listen)
+			log.Info("Assay is already running; opening it", "listen", *listen)
 			return openBrowser("http://" + displayAddr(*listen))
 		}
 		return err
@@ -249,7 +249,7 @@ func run() error {
 	errc := make(chan error, 1)
 	go func() { errc <- hs.Serve(ln) }()
 	url := "http://" + displayAddr(*listen)
-	log.Info("ollamui ready", "url", url)
+	log.Info("Assay ready", "url", url)
 	if *openUI {
 		if err := openBrowser(url); err != nil {
 			log.Warn("couldn't open the browser", "url", url, "err", err)
@@ -278,23 +278,37 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
-// defaultDir follows the XDG convention: $env/ollamui, else
-// ~/fallback/ollamui. On Windows it's %winEnv%\ollamui (LOCALAPPDATA for
+// defaultDir follows the XDG convention: $env/assay, else
+// ~/fallback/assay. On Windows it's %winEnv%\assay (LOCALAPPDATA for
 // data, APPDATA for settings).
 func defaultDir(env, fallback, winEnv string) string {
 	if runtime.GOOS == "windows" {
 		if d := os.Getenv(winEnv); d != "" {
-			return filepath.Join(d, "ollamui")
+			return renamed(d)
 		}
 	}
 	if d := os.Getenv(env); d != "" {
-		return filepath.Join(d, "ollamui")
+		return renamed(d)
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "ollamui-" + filepath.Base(fallback)
+		return "assay-" + filepath.Base(fallback)
 	}
-	return filepath.Join(home, fallback, "ollamui")
+	return renamed(filepath.Join(home, fallback))
+}
+
+// renamed is parent/assay. The app used to be called ollamui: a folder
+// left under the old name is moved over the first time, and a link stays
+// at the old place so full paths saved in settings still work.
+func renamed(parent string) string {
+	dir, old := filepath.Join(parent, "assay"), filepath.Join(parent, "ollamui")
+	if _, err := os.Lstat(dir); err == nil {
+		return dir
+	}
+	if fi, err := os.Lstat(old); err == nil && fi.IsDir() && os.Rename(old, dir) == nil {
+		os.Symlink(dir, old) // not on Windows without admin rights; harmless
+	}
+	return dir
 }
 
 // defaultOllamaModels is where Ollama keeps its models: $OLLAMA_MODELS, else

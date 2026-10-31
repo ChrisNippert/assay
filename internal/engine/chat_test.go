@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"ollamui/internal/ollama"
+	"assay/internal/ollama"
 )
 
 func TestToolCallWire(t *testing.T) {

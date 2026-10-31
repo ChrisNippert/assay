@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"ollamui/internal/bench"
-	"ollamui/internal/hw"
-	"ollamui/internal/ollama"
+	"assay/internal/bench"
+	"assay/internal/hw"
+	"assay/internal/ollama"
 )
 
 // modelGroup is one installed model, which may have several names. Ollama

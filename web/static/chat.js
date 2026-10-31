@@ -2,8 +2,8 @@
 (() => {
   const chatEl = document.getElementById('chat');
   if (!chatEl) return;
-  const { errorText, refreshLoaded, setLoadButton, el } = window.ollamui;
-  const tune = window.ollamuiTune;
+  const { errorText, refreshLoaded, setLoadButton, el } = window.assay;
+  const tune = window.assayTune;
 
   const select = document.getElementById('model');
   const meta = document.getElementById('model-meta');
@@ -421,7 +421,7 @@
       } catch { btn.title = 'Couldn’t copy'; }
       return;
     }
-    if (action === 'speak') { window.ollamuiVoice?.read(finalText(msg)); return; }
+    if (action === 'speak') { window.assayVoice?.read(finalText(msg)); return; }
     if (controller || !chatId) return; // busy streaming, or nothing saved yet
     if (action === 'edit') startEdit(msg);
     if (action === 'redo') regenerate(msg);
@@ -529,7 +529,7 @@
 
   // On a phone the card is a bottom sheet: it slides, so [hidden] waits for
   // the exit. `open` (not hidden) is the state.
-  const sheets = window.ollamuiSheets;
+  const sheets = window.assaySheets;
   const isPhone = () => sheets.phone.matches;
   const switcherOpen = () => card.classList.contains('open');
   let switcherT = null;
@@ -699,7 +699,7 @@
   function showContext(used, max) {
     if (used != null) ctxUsed = used;
     if (max) ctxMax = max;
-    if (!ctxMax) ctxMax = window.ollamuiTune?.contextSize?.() || 0; // before the first reply says
+    if (!ctxMax) ctxMax = window.assayTune?.contextSize?.() || 0; // before the first reply says
     if (!meter) return;
     meter.hidden = !ctxUsed;
     const pct = ctxMax ? Math.min(100, (ctxUsed * 100) / ctxMax) : 0;
@@ -749,7 +749,7 @@
   }
 
   function addSidebarChat(id, title, projectId) {
-    window.ollamui?.addSidebarChat(id, title, projectId);
+    window.assay?.addSidebarChat(id, title, projectId);
   }
 
   // ---- projects ----
@@ -818,7 +818,7 @@
   // as each reply finishes. Stopping or an error pauses it.
   const queueBox = document.getElementById('queue');
   let queue = [];
-  const hasDraft = () => !!input.value.trim() || window.ollamuiAttach.count() > 0;
+  const hasDraft = () => !!input.value.trim() || window.assayAttach.count() > 0;
   // Stopping takes a second press (click or Esc) within a few seconds.
   let stopAsked = null;
   // The reply runs on the server, so stopping asks the server; the stream
@@ -903,7 +903,7 @@
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const att = window.ollamuiAttach;
+    const att = window.assayAttach;
     if (controller && !hasDraft()) { askStop(); return; } // the button is "Stop" while streaming
     const text = input.value.trim();
     if ((!text && !att.count()) || !select.value || att.busy()) return;
@@ -923,7 +923,7 @@
   // user message, counted from 0, and everything after it. voice.js may ask
   // for a reply in spoken style and read it aloud as it streams.
   async function send(text, fromUser, files = [], kept = [], resume = null) {
-    const voice = window.ollamuiVoice?.turn() ?? {};
+    const voice = window.assayVoice?.turn() ?? {};
     document.getElementById('empty')?.remove();
     // resume: attaching to a reply already running (its user message is on the page).
     const userMsg = el('div', 'msg user');
@@ -931,7 +931,7 @@
     if (!resume) {
       if (atts.length) {
         userMsg.dataset.att = JSON.stringify(atts.map(({ url, state, error, ...a }) => a));
-        userMsg.append(window.ollamuiAttach.render(atts, chatId));
+        userMsg.append(window.assayAttach.render(atts, chatId));
       }
       userMsg.append(el('div', 'bubble', text));
       addActions(userMsg);
@@ -1017,7 +1017,7 @@
               history.pushState({ chat: true }, '', `/chat/${chatId}`);
               addSidebarChat(chatId, text, project());
             }
-            window.ollamui.trackRunning(chatId);
+            window.assay.trackRunning(chatId);
             break;
           case 'attachments': {
             const cut = ev.attachments.filter((a) => a.cut).map((a) => a.name).join(', ');
@@ -1116,11 +1116,11 @@
         else paintQueue(true);
       }
       voice.end?.();
-      if (chatId) window.ollamui.trackRunning(chatId, false);
+      if (chatId) window.assay.trackRunning(chatId, false);
       addActions(reply);
       input.focus();
       refreshLoaded(); // chatting loads the model, so the memory list may have changed
-      window.ollamuiTune?.setChat({ messages: list.querySelectorAll(':scope > .msg').length });
+      window.assayTune?.setChat({ messages: list.querySelectorAll(':scope > .msg').length });
     }
   }
 
@@ -1142,7 +1142,7 @@
       if (msgs[c.upTo]) msgs[c.upTo].before(div);
       else list.append(div);
     }
-    window.ollamuiTune?.setChat({ compression: c || null });
+    window.assayTune?.setChat({ compression: c || null });
   }
 
   function compressDivider(c) {
@@ -1157,7 +1157,7 @@
   }
 
   // voice.js works with the chat through this.
-  window.ollamuiChat = {
+  window.assayChat = {
     busy: () => !!controller,
     ready: () => !!select.value,
     model: () => baseOf(selectedOption()),

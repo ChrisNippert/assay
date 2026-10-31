@@ -45,7 +45,7 @@
     <div class="cmp-label">Can do</div>
     {{range $d.Columns}}<div class="cmp-cell cmp-caps">{{range .Caps}}<span class="tag">{{.}}</span>{{else}}<span class="muted">text</span>{{end}}{{with .Err}}<span class="settings-warn small">{{.}}</span>{{end}}</div>{{end}}
 
-    <div class="cmp-section">On your GPU <span class="cmp-src">ollamui's estimate</span></div>
+    <div class="cmp-section">On your GPU <span class="cmp-src">Assay's estimate</span></div>
     <div class="cmp-label">Context that fits</div>
     {{range $d.Columns}}<div class="cmp-cell{{if and $d.BestCtx (eq .Auto.Ctx $d.BestCtx)}} best{{end}}">{{if .Auto.Ctx}}{{kib .Auto.Ctx}}k, all on the GPU{{else}}<span class="muted">{{or .Auto.Reason "unknown"}}</span>{{end}}</div>{{end}}
 

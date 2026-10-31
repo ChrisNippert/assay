@@ -1,6 +1,6 @@
 // Package pick opens the machine's own folder/file chooser, for the paths
-// ollamui asks the user to type. It runs a dialog tool (zenity, osascript,
-// PowerShell, …) on the machine running ollamui, so callers must only offer
+// Assay asks the user to type. It runs a dialog tool (zenity, osascript,
+// PowerShell, …) on the machine running Assay, so callers must only offer
 // it to a request that came from that machine.
 package pick
 
@@ -43,11 +43,11 @@ var mu sync.Mutex
 // lookPath finds a program. A var so tests can't open a real dialog.
 var lookPath = exec.LookPath
 
-// allowed reports whether a tool name may be used. OLLAMUI_PICK_TOOLS, when
+// allowed reports whether a tool name may be used. ASSAY_PICK_TOOLS, when
 // set (even to ""), is a comma-separated allow list; empty disables native
 // dialogs. Test-only: it lets the in-app browser be checked on a desktop.
 func allowed(name string) bool {
-	v, ok := os.LookupEnv("OLLAMUI_PICK_TOOLS")
+	v, ok := os.LookupEnv("ASSAY_PICK_TOOLS")
 	if !ok {
 		return true
 	}

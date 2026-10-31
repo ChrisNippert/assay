@@ -59,7 +59,7 @@ func (s *Searcher) get(ctx context.Context, u string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; ollamui; +local assistant)")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Assay; +local assistant)")
 	res, err := s.HTTP.Do(req)
 	if err != nil {
 		return nil, unwrapURLError(err)

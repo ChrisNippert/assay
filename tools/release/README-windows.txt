@@ -1,4 +1,4 @@
-ollamui
+assay
 =======
 
 Find, download, tune and chat with AI models that run on your own PC.
@@ -6,8 +6,8 @@ Nothing is sent to the internet except model and llama.cpp downloads.
 
 Running it
 ----------
-1. Unzip this folder anywhere (e.g. Documents\ollamui).
-2. Double-click ollamui.exe. A console window opens, and the app opens
+1. Unzip this folder anywhere (e.g. Documents\assay).
+2. Double-click assay.exe. A console window opens, and the app opens
    in your browser at http://localhost:8484.
    - Windows may say "Windows protected your PC" because the program
      isn't signed. Click "More info", then "Run anyway".
@@ -17,7 +17,7 @@ Running it
    Then chat.
 
 Keep the console window open while you use it. Close it to quit; that
-also unloads the models from your GPU. Double-clicking ollamui.exe again
+also unloads the models from your GPU. Double-clicking assay.exe again
 while it runs just opens the page.
 
 Good to know
@@ -28,8 +28,8 @@ Good to know
 - Models are large (2-10 GB each). Settings -> Models -> "Models folder"
   moves them to another drive.
 - Your chats, models and settings live in:
-    %LOCALAPPDATA%\ollamui   (chats, models)
-    %APPDATA%\ollamui        (presets, settings)
+    %LOCALAPPDATA%\assay   (chats, models)
+    %APPDATA%\assay        (presets, settings)
   Delete those folders to remove everything.
 - If you already use Ollama, its models are picked up automatically.
 - Editors like Zed can use your models: point them at
@@ -37,7 +37,7 @@ Good to know
 - Reading PDFs in project files needs pdftotext (from Poppler for
   Windows) on your PATH. Other file types work as they are.
 
-Options (run from a terminal: ollamui.exe -help)
+Options (run from a terminal: assay.exe -help)
 -------
   -listen 0.0.0.0:8484   reach it from your other devices (no password!)
   -open=false            don't open the browser

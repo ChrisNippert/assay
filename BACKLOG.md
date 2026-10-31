@@ -38,7 +38,7 @@ translation, keep-alive/pinning/evicting, placement read from the log) and
 `server.Backend`; `-engine llama.cpp` is the default, `-engine ollama` the
 fallback. Default `-c 32768`. Running() reports the name a model was loaded
 by. The user's GPU runs the **ROCm** build (2B: 81 vs 49 tok/s on Vulkan;
-equal on bigger models), installed at ~/.local/share/ollamui/llama.cpp/
+equal on bigger models), installed at ~/.local/share/assay/llama.cpp/
 (built from commit 339f324 for gfx1030; the engine sets
 HSA_OVERRIDE_GFX_VERSION). Vulkan stays the default for the one-click
 install (stage 5) since it needs no ROCm.
@@ -65,7 +65,7 @@ Stages (the app keeps working after each):
 1. **Engine core.** `internal/gguf` reads GGUF metadata (what Ollama's
    `/api/show` gave us: architecture, layers, context, chat template,
    parameter count, quant type). `internal/engine` keeps a model store
-   (`~/.local/share/ollamui/models/`), imports Ollama's models by hard
+   (`~/.local/share/assay/models/`), imports Ollama's models by hard
    link (no re-download), runs one `llama-server` per loaded model (port,
    context, GPU layers, cache type, `--jinja`, `-np 1`, idle unload,
    pinning, evicting to make room), and speaks OpenAI chat/embeddings to
@@ -73,7 +73,7 @@ Stages (the app keeps working after each):
    client.
 2. ✅ **Downloads** straight from Hugging Face (resume, split files, mmproj),
    replacing `ollama pull`; delete.
-3. ✅ (2026-10-23) **API for editors:** ollamui serves `/v1/chat/completions`, `/v1/models`,
+3. ✅ (2026-10-23) **API for editors:** Assay serves `/v1/chat/completions`, `/v1/models`,
    `/v1/embeddings` (OpenAI-compatible, loads models on demand); presets
    show up as models there (replacing "publish to Ollama").
 4. ✅ **Settings and tuning:** an engine section (llama.cpp version,
@@ -100,7 +100,7 @@ nothing because no embedding model had been picked).
 
 Done: see ARCHITECTURE.md, "Models folder". Was asked for 2026-10-23. Models live in `<data>/models` (hard links from
 `~/.ollama/models` on import), fixed by `-data`. Add a "Models folder"
-row in Settings → Models: pick a path, ollamui moves `blobs/` and the
+row in Settings → Models: pick a path, Assay moves `blobs/` and the
 manifests there (with progress; stop loaded models first) and remembers
 it in its config, with `-models DIR` as a flag. Gotcha: hard links can't
 cross filesystems, so on another disk Ollama imports become copies (show
@@ -165,7 +165,7 @@ sends `tools` or handles `tool_calls`.
   how well they call tools before we build our own. (M)
 - **Built-in tools in chat**: web search (needs SearXNG or an API key:
   decide), fetch a URL, calculator, search chats / project files. Loop:
-  model asks → ollamui runs → result goes back → model continues. Each call
+  model asks → Assay runs → result goes back → model continues. Each call
   shows as a foldable row in the reply, like thinking; saved with the chat. (M–L)
 - Off per chat or model when the template has no tools; a step limit so a
   model can't loop forever. Qwen3.5 calls tools decently, Gemma less so.
@@ -265,7 +265,7 @@ All of the 2026-10-20 polish list is done (see Done).
 - **Download fallback** for repos `hf.co` pulls can't handle: fetch the
   GGUF directly, then `/api/blobs` + `/api/create`. (M)
 - **Preset drift detection.** On startup, compare published presets with
-  `ollamui/*` in Ollama and offer to re-sync. (S)
+  `assay/*` in Ollama and offer to re-sync. (S)
 - **`config.toml`.** Listen address, Ollama URL, HF token, default context,
   instead of flags and env vars. (S)
 - **Better MoE detection** for unfamiliar architecture names (e.g. read
@@ -318,8 +318,8 @@ All of the 2026-10-20 polish list is done (see Done).
   (prompt in the voice bar on the first mic press), and Settings → Voice can
   remove all of it again (2026-10-20).
 
-- The speech service is started by ollamui when the mic is pressed (embedded
-  script, `uv run`), and stopped after 10 idle minutes or when ollamui exits;
+- The speech service is started by Assay when the mic is pressed (embedded
+  script, `uv run`), and stopped after 10 idle minutes or when Assay exits;
   nothing runs in the background otherwise (2026-10-20).
 
 - Settings → Voice (2026-10-20): filler model, voice + preview, speed,
@@ -363,7 +363,7 @@ All of the 2026-10-20 polish list is done (see Done).
   (an alias and its hf.co name) show as one row. Discover keeps its filters
   visible beside the panel. (2026-10-20)
 
-- Auto context. When nothing sets `num_ctx`, ollamui picks the largest context
+- Auto context. When nothing sets `num_ctx`, Assay picks the largest context
   (8k–256k) that keeps the model fully on the GPU:
   - The cache size comes from the model's real layer layout (hybrid
     attention and sliding windows included).
@@ -389,4 +389,4 @@ All of the 2026-10-20 polish list is done (see Done).
 - M1: Ollama client, Library, load/eject, streaming chat, light/dark theme.
 - M2: HF search with filters, model page with quant picker and fit
   estimates, background downloads with progress and short names.
-- M3: Tune panel, presets, publish presets to Ollama as `ollamui/<name>`.
+- M3: Tune panel, presets, publish presets to Ollama as `assay/<name>`.

@@ -3,7 +3,7 @@ package server
 import (
 	"time"
 
-	"ollamui/internal/chats"
+	"assay/internal/chats"
 )
 
 // ChatGroup is one dated section of the sidebar chat list.

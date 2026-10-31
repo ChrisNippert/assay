@@ -1,6 +1,6 @@
 {
-  "name": "ollamui",
-  "short_name": "ollamui",
+  "name": "Assay",
+  "short_name": "Assay",
   "start_url": "/chat",
   "scope": "/",
   "display": "standalone",

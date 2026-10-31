@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"ollamui/internal/chats"
+	"assay/internal/chats"
 )
 
 func TestEval(t *testing.T) {

@@ -3,7 +3,7 @@ package engine
 import (
 	"context"
 
-	"ollamui/internal/hf"
+	"assay/internal/hf"
 )
 
 // SpeedInfo is what the Tune panel needs to know about a model's speed-ups.

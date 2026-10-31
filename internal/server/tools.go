@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"ollamui/internal/chats"
-	"ollamui/internal/ollama"
-	"ollamui/internal/tools"
+	"assay/internal/chats"
+	"assay/internal/ollama"
+	"assay/internal/tools"
 )
 
 // maxToolSteps is how many times a reply may call tools before the model is
@@ -236,7 +236,7 @@ func toolMessages(m chats.Message) []ollama.Message {
 // errLooping stops a reply whose thinking goes round in circles: small
 // reasoning models can repeat the same few lines until the context is full
 // (K2 Horizon spent 32k tokens, 5 minutes, saying the same thing 30 times).
-var errLooping = errors.New("the model was going in circles in its thinking, so ollamui stopped it. Try again, turn Thinking off, or raise the repeat penalty in Tune")
+var errLooping = errors.New("the model was going in circles in its thinking, so Assay stopped it. Try again, turn Thinking off, or raise the repeat penalty in Tune")
 
 // loopCheck counts the long lines of a stream; one seen loopRepeats times
 // is a loop. Short lines ("Wait.", "}") repeat honestly.

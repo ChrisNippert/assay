@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"ollamui/internal/hf"
+	"assay/internal/hf"
 )
 
 func TestSearchCache(t *testing.T) {

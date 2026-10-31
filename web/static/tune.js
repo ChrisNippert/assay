@@ -5,11 +5,11 @@
 // The model part: context, GPU layers, how long it stays loaded and (hidden)
 // memory options, saved for the model straight away, so every chat with
 // it uses them.
-// Chat.js reads the chat's settings via window.ollamuiTune when sending.
+// Chat.js reads the chat's settings via window.assayTune when sending.
 (() => {
   const chatEl = document.getElementById('chat');
   if (!chatEl) return;
-  const { errorText, el } = window.ollamui;
+  const { errorText, el } = window.assay;
   const $ = (id) => document.getElementById(id);
 
   const select = $('model');
@@ -836,7 +836,7 @@
     range.style.setProperty('--pct', (Math.min(+range.value, max) / max) * 100 + '%');
     const of = defaults.layers ? ` of ${max}` : '';
     const from = origin(def);
-    // A number set by hand turns llama.cpp's fitting off (ollamui falls
+    // A number set by hand turns llama.cpp's fitting off (Assay falls
     // back to Auto if it then runs out of memory), so Auto says what it does.
     const handSet = perModel() ? ' · fixed, so not fitted to memory' : ' · auto context off';
     if (val == null && perModel() && effective('n_cpu_moe') != null) sub.textContent = 'Auto: all layers on the GPU, since experts are set in Memory';
@@ -975,10 +975,10 @@
     try { localStorage.setItem('tuneOpen', open ? '1' : ''); } catch {}
     // On a phone Tune is a bottom sheet: it locks the page, and focusing a
     // field would only raise the keyboard.
-    window.ollamuiSheets?.track(panel, open);
-    if (open && !window.ollamuiSheets?.phone.matches) panel.querySelector('select, input, textarea')?.focus({ preventScroll: true });
+    window.assaySheets?.track(panel, open);
+    if (open && !window.assaySheets?.phone.matches) panel.querySelector('select, input, textarea')?.focus({ preventScroll: true });
   }
-  window.ollamuiSheets?.register(panel, () => setOpen(false));
+  window.assaySheets?.register(panel, () => setOpen(false));
   openBtn.addEventListener('click', () => setOpen(!panel.classList.contains('open')));
   $('tune-close').addEventListener('click', () => { setOpen(false); openBtn.focus(); });
   document.addEventListener('keydown', (e) => {
@@ -1083,7 +1083,7 @@
   }
 
   // ---- API for chat.js ----
-  window.ollamuiTune = {
+  window.assayTune = {
     // The context the model runs with, as far as Tune knows (0 if not).
     contextSize: () => +effective('num_ctx') || 0,
     selection() {

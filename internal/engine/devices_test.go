@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"ollamui/internal/hw"
-	"ollamui/internal/limits"
+	"assay/internal/hw"
+	"assay/internal/limits"
 )
 
 func fourGPUs() []Device {

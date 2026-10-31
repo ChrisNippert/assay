@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>{{.Title}} · ollamui</title>
+<title>{{.Title}} · Assay</title>
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
@@ -11,7 +11,7 @@
 <meta name="theme-color" content="#0f1110" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="ollamui">
+<meta name="apple-mobile-web-app-title" content="Assay">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <script>if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('/sw.js').catch(() => {});</script>
 <script src="/static/theme.js"></script>
@@ -26,7 +26,7 @@
 <body>
 <div class="shell">
 <nav class="sidebar" id="sidebar" aria-label="Main">
-  <div class="brand">ollamui</div>
+  <div class="brand">Assay</div>
   <a href="/chat" class="side-new">{{template "icon-plus"}}New chat</a>
   <a href="/chat" class="nav-item{{if eq .Active "chat"}} active{{end}}">{{template "icon-chat"}}Chat</a>
   <a href="/library" class="nav-item{{if eq .Active "library"}} active{{end}}">{{template "icon-library"}}Library<span class="grow"></span><span class="count">{{len .ModelGroups}}</span></a>

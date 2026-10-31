@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"ollamui/internal/ollama"
+	"assay/internal/ollama"
 )
 
 type fakePuller struct {

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"ollamui/internal/limits"
+	"assay/internal/limits"
 )
 
 func TestLimitsEndpoint(t *testing.T) {

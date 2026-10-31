@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"ollamui/internal/ollama"
-	"ollamui/internal/presets"
+	"assay/internal/ollama"
+	"assay/internal/presets"
 )
 
 // v1Backend adds a recording Proxy to the fake Ollama backend.

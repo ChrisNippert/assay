@@ -82,7 +82,7 @@ func cacheDir() string {
 
 func markerPath() string {
 	if c := cacheDir(); c != "" {
-		return filepath.Join(c, "ollamui", "voice-installed")
+		return filepath.Join(c, "assay", "voice-installed")
 	}
 	return ""
 }
@@ -90,7 +90,7 @@ func markerPath() string {
 // modelDir is where voice_server.py keeps the Kokoro voice model.
 func modelDir() string {
 	if c := cacheDir(); c != "" {
-		return filepath.Join(c, "ollamui-voice")
+		return filepath.Join(c, "assay-voice")
 	}
 	return ""
 }
@@ -105,7 +105,7 @@ func downloadPaths() []string {
 	}
 	paths := []string{
 		markerPath(),
-		filepath.Join(c, "ollamui", "voice_server.py"),
+		filepath.Join(c, "assay", "voice_server.py"),
 		modelDir(),
 	}
 	hub := filepath.Join(c, "huggingface", "hub")

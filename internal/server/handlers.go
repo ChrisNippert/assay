@@ -10,12 +10,12 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"ollamui/internal/chats"
-	"ollamui/internal/hw"
-	"ollamui/internal/ollama"
-	"ollamui/internal/presets"
-	"ollamui/internal/projects"
-	"ollamui/internal/tools"
+	"assay/internal/chats"
+	"assay/internal/hw"
+	"assay/internal/ollama"
+	"assay/internal/presets"
+	"assay/internal/projects"
+	"assay/internal/tools"
 )
 
 // --- pages ---

@@ -1,4 +1,4 @@
-// Package voiceserver embeds the speech service script, so ollamui can
+// Package voiceserver embeds the speech service script, so Assay can
 // start it on demand without a separate install.
 package voiceserver
 

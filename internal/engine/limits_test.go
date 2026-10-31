@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"ollamui/internal/hw"
-	"ollamui/internal/limits"
+	"assay/internal/hw"
+	"assay/internal/limits"
 )
 
 func flagVal(a []string, flag string) string {

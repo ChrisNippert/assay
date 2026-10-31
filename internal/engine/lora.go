@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"ollamui/internal/gguf"
-	"ollamui/internal/presets"
+	"assay/internal/gguf"
+	"assay/internal/presets"
 )
 
 // Adapter is a LoRA adapter in the library: a file llama.cpp applies on

@@ -10,11 +10,11 @@ import (
 	"sort"
 	"strings"
 
-	"ollamui/internal/pick"
+	"assay/internal/pick"
 )
 
 // fromLoopback reports whether the request came from the machine running
-// ollamui: only then may it open a dialog on that machine's screen.
+// Assay: only then may it open a dialog on that machine's screen.
 func fromLoopback(r *http.Request) bool {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -33,7 +33,7 @@ func (s *Server) handlePickInfo(w http.ResponseWriter, r *http.Request) {
 // start, filter}. Answers {path}, or {cancelled:true}.
 func (s *Server) handlePick(w http.ResponseWriter, r *http.Request) {
 	if !fromLoopback(r) {
-		writeError(w, http.StatusForbidden, "the system chooser opens only for requests from the machine running ollamui")
+		writeError(w, http.StatusForbidden, "the system chooser opens only for requests from the machine running Assay")
 		return
 	}
 	var req struct {

@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"ollamui/internal/hf"
-	"ollamui/internal/hw"
-	"ollamui/internal/llamacpp"
+	"assay/internal/hf"
+	"assay/internal/hw"
+	"assay/internal/llamacpp"
 )
 
 // The guided first-run setup (/setup): what the computer can run, which

@@ -1,5 +1,5 @@
 // Package llamacpp installs and updates llama.cpp's ready-made llama-server
-// from its GitHub releases, into a folder of ollamui's own.
+// from its GitHub releases, into a folder of Assay's own.
 package llamacpp
 
 import (
@@ -328,7 +328,7 @@ func (in *Installer) releases(ctx context.Context) ([]githubRelease, error) {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "ollamui")
+	req.Header.Set("User-Agent", "assay")
 	resp, err := in.client().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("can't reach GitHub: %w", err)

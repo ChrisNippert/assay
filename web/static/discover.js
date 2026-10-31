@@ -3,7 +3,7 @@
 (() => {
   const root = document.getElementById('discover');
   if (!root) return;
-  const { el, errorText, fmtBytes, pollDownloads } = window.ollamui;
+  const { el, errorText, fmtBytes, pollDownloads } = window.assay;
   const $ = (id) => document.getElementById(id);
 
   const q = $('q');

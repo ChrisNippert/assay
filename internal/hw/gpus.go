@@ -35,9 +35,9 @@ const minRealVRAM = 1 << 30
 
 // FakeEnv names a test-only variable that makes hw report made-up GPUs:
 // "name:totalMiB:usedMiB,..." (see parseFakeGPUs).
-const FakeEnv = "OLLAMUI_FAKE_GPUS"
+const FakeEnv = "ASSAY_FAKE_GPUS"
 
-// FakeGPUs returns the cards OLLAMUI_FAKE_GPUS describes, nil if it is
+// FakeGPUs returns the cards ASSAY_FAKE_GPUS describes, nil if it is
 // unset or malformed.
 func FakeGPUs() []LiveCard { return parseFakeGPUs(os.Getenv(FakeEnv)) }
 

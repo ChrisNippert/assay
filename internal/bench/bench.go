@@ -1,5 +1,5 @@
 // Package bench keeps speed measurements of installed models: one JSON file
-// per model, under ~/.local/share/ollamui/bench/. Results are keyed by the
+// per model, under ~/.local/share/assay/bench/. Results are keyed by the
 // model's digest, so every name for the same weights shares one result and
 // a re-pulled model starts over.
 package bench

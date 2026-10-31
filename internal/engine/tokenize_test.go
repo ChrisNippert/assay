@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"ollamui/internal/ollama"
+	"assay/internal/ollama"
 )
 
 // TestTokenizeAndSummaryRequest runs Tokenize and a non-thinking chat against

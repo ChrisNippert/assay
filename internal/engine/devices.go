@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"ollamui/internal/hw"
+	"assay/internal/hw"
 )
 
 // Device is a GPU llama-server can run on, as `--list-devices` names it.
@@ -40,7 +40,7 @@ func parseDevices(out string) []Device {
 // Devices lists the GPUs of the current llama-server. It runs
 // `--list-devices` once per binary and remembers the answer; nil when it
 // can't tell (then the Tune panel hides the GPU choices). The
-// OLLAMUI_FAKE_GPUS test variable (see package hw) makes up CUDA0.. entries.
+// ASSAY_FAKE_GPUS test variable (see package hw) makes up CUDA0.. entries.
 func (e *Engine) Devices() []Device {
 	if e.ListDevices != nil {
 		return e.ListDevices()

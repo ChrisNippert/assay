@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"ollamui/internal/ollama"
+	"assay/internal/ollama"
 )
 
 func TestGroupModels(t *testing.T) {

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"ollamui/internal/ollama"
+	"assay/internal/ollama"
 )
 
 // sampling maps Ollama option names to llama-server's request fields.

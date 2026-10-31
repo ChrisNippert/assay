@@ -12,7 +12,7 @@ import (
 
 // Limits apply from the next model load.
 type Limits struct {
-	// MaxVRAMGB caps the GPU memory ollamui's models use together; 0 is no limit.
+	// MaxVRAMGB caps the GPU memory Assay's models use together; 0 is no limit.
 	MaxVRAMGB float64 `json:"maxVramGb"`
 	// Gentle makes llama-server yield the GPU and CPU to other apps.
 	Gentle bool `json:"gentle"`

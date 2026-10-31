@@ -138,7 +138,7 @@ func pdfText(ctx context.Context, data []byte) (string, error) {
 	if err != nil {
 		return "", errors.New("reading PDFs needs pdftotext (poppler-utils), which is not installed")
 	}
-	f, err := os.CreateTemp("", "ollamui-*.pdf")
+	f, err := os.CreateTemp("", "assay-*.pdf")
 	if err != nil {
 		return "", err
 	}

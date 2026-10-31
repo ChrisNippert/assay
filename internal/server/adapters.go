@@ -3,7 +3,7 @@ package server
 import (
 	"net/http"
 
-	"ollamui/internal/engine"
+	"assay/internal/engine"
 )
 
 // adapterBackend is a backend that keeps LoRA adapters (the engine).

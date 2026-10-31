@@ -82,7 +82,7 @@ func (l *Launcher) Wait(ctx context.Context) error {
 	}
 }
 
-// Managed reports whether ollamui started the running service.
+// Managed reports whether Assay started the running service.
 func (l *Launcher) Managed() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -146,7 +146,7 @@ func (l *Launcher) writeScript() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, "ollamui", "voice_server.py")
+	path := filepath.Join(dir, "assay", "voice_server.py")
 	if old, err := os.ReadFile(path); err == nil && bytes.Equal(old, l.script) {
 		return path, nil
 	}
@@ -177,7 +177,7 @@ func (l *Launcher) Run(ctx context.Context) {
 	}
 }
 
-// Stop stops a service ollamui started.
+// Stop stops a service Assay started.
 func (l *Launcher) Stop() {
 	l.mu.Lock()
 	cmd, done := l.cmd, l.done
@@ -207,7 +207,7 @@ func findUV() (string, error) {
 	return "", exec.ErrNotFound
 }
 
-// logWriter sends the service's output to ollamui's log, a line at a time.
+// logWriter sends the service's output to Assay's log, a line at a time.
 type logWriter struct{ log *slog.Logger }
 
 func (w logWriter) Write(p []byte) (int, error) {

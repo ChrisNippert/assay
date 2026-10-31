@@ -19,8 +19,8 @@ import (
 	"sync"
 	"time"
 
-	"ollamui/internal/gguf"
-	"ollamui/internal/hf"
+	"assay/internal/gguf"
+	"assay/internal/hf"
 )
 
 // Candidate is a model found in another app's folder, which can be linked
@@ -667,7 +667,7 @@ func (f *Finder) AddFolder(store *Store, dir string) error {
 	}
 	if real, err := filepath.EvalSymlinks(store.Dir()); err == nil {
 		if r, err := filepath.EvalSymlinks(dir); err == nil && (r == real || strings.HasPrefix(r, real+string(filepath.Separator))) {
-			return errors.New("that's ollamui's own models folder")
+			return errors.New("that's Assay's own models folder")
 		}
 	}
 	f.mu.Lock()

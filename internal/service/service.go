@@ -20,7 +20,7 @@ import (
 
 // Name is what the service is called on disk, in the registry and in
 // launchd. It is the only place the app's name appears here.
-const Name = "ollamui"
+const Name = "assay"
 
 // envPassthrough are the variables worth keeping when they were set at
 // install time: the service manager starts the app with almost no
@@ -33,8 +33,8 @@ var envPassthrough = []string{
 	"CUDA_VISIBLE_DEVICES",
 	"GGML_VK_VISIBLE_DEVICES",
 	"OLLAMA_MODELS",
-	"OLLAMUI_LLAMA_SERVER",
-	"OLLAMUI_VOICE",
+	"ASSAY_LLAMA_SERVER",
+	"ASSAY_VOICE",
 }
 
 // Status is what Settings and `service status` show.
@@ -413,7 +413,7 @@ func regValue(out string) string {
 // ---- dry run ----
 
 // Fake keeps the entry in memory, for trying the Settings page without
-// installing anything (OLLAMUI_SERVICE_DRYRUN=1).
+// installing anything (ASSAY_SERVICE_DRYRUN=1).
 type Fake struct {
 	exe     string
 	mu      sync.Mutex

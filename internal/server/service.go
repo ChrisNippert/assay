@@ -3,7 +3,7 @@ package server
 import (
 	"net/http"
 
-	"ollamui/internal/service"
+	"assay/internal/service"
 )
 
 // handleService reports the start-on-boot entry. Only the machine itself
@@ -22,7 +22,7 @@ func (s *Server) handleService(w http.ResponseWriter, r *http.Request) {
 // stops anything, since this instance already holds the port.
 func (s *Server) handleServiceSet(w http.ResponseWriter, r *http.Request) {
 	if !fromLoopback(r) || s.service == nil {
-		writeError(w, http.StatusForbidden, "start on boot can only be changed from the machine running ollamui")
+		writeError(w, http.StatusForbidden, "start on boot can only be changed from the machine running Assay")
 		return
 	}
 	var req struct {

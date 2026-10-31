@@ -95,7 +95,7 @@
       if (!input.isConnected) return;
       const name = input.value.trim();
       if (ok && name && name !== title.textContent) {
-        try { const p = await patch({ name }); title.textContent = p.name; document.title = `${p.name} · ollamui`; } catch (err) { saved.textContent = err.message; }
+        try { const p = await patch({ name }); title.textContent = p.name; document.title = `${p.name} · Assay`; } catch (err) { saved.textContent = err.message; }
       }
       input.replaceWith(title);
     };

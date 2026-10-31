@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"ollamui/internal/engine"
-	"ollamui/internal/hw"
-	"ollamui/internal/limits"
+	"assay/internal/engine"
+	"assay/internal/hw"
+	"assay/internal/limits"
 )
 
 // kvFactor scales f16 cache estimates to the engine's default K/V cache
@@ -48,7 +48,7 @@ type enginePage struct {
 	CacheType, FlashAttn, KeepAlive string
 	Saved                           []savedModel
 	Drafts                          []engine.Draft // downloaded drafts, which no model list shows
-	// Install is set when ollamui can install llama.cpp (the page's script
+	// Install is set when Assay can install llama.cpp (the page's script
 	// fills in the rest from /api/llamacpp).
 	Install bool
 	Source  string // flag, own, release, path or none

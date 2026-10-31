@@ -254,7 +254,7 @@ func TestImportFoundHardLink(t *testing.T) {
 	if n, _ := st.ImportFound("hf-cache", cs); n != 0 {
 		t.Errorf("second import added %d", n)
 	}
-	// Deleting only removes ollamui's link.
+	// Deleting only removes Assay's link.
 	if err := st.Delete(m.Name); err != nil {
 		t.Fatal(err)
 	}

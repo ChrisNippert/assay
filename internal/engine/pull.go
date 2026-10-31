@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"ollamui/internal/hf"
-	"ollamui/internal/ollama"
+	"assay/internal/hf"
+	"assay/internal/ollama"
 )
 
 // HF is what downloading needs from Hugging Face (hf.Client).

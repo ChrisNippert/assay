@@ -25,7 +25,7 @@ func doFrom(s *Server, addr, method, path, body string) *httptest.ResponseRecord
 
 func TestPickRefusesRemote(t *testing.T) {
 	s, _, _ := newTestServer(t)
-	t.Setenv("OLLAMUI_PICK_TOOLS", "") // never a real dialog from a test
+	t.Setenv("ASSAY_PICK_TOOLS", "") // never a real dialog from a test
 	rec := doFrom(s, "192.168.1.20:5555", "POST", "/api/pick", `{"kind":"folder"}`)
 	if rec.Code != 403 {
 		t.Fatalf("remote POST: %d %s", rec.Code, rec.Body)
@@ -54,7 +54,7 @@ func TestPickNativeFromLoopback(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "zenity"), []byte("#!/bin/sh\necho /picked/here\n"), 0o755)
 	t.Setenv("PATH", dir+":/usr/bin:/bin")
 	t.Setenv("DISPLAY", ":fake")
-	t.Setenv("OLLAMUI_PICK_TOOLS", "zenity")
+	t.Setenv("ASSAY_PICK_TOOLS", "zenity")
 	rec := doFrom(s, "127.0.0.1:1", "GET", "/api/pick", "")
 	if !strings.Contains(rec.Body.String(), `"native":true`) {
 		t.Fatalf("GET: %s", rec.Body)

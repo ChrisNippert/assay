@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"ollamui/internal/chats"
-	"ollamui/internal/engine"
-	"ollamui/internal/ollama"
-	"ollamui/internal/presets"
-	"ollamui/internal/pulls"
+	"assay/internal/chats"
+	"assay/internal/engine"
+	"assay/internal/ollama"
+	"assay/internal/presets"
+	"assay/internal/pulls"
 )
 
 type blockingPuller struct{ release chan struct{} }

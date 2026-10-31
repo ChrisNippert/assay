@@ -37,7 +37,7 @@
   const list = (...rows) => { const l = el('div', 'boxed-list'); l.append(...rows); return l; };
   const btn = (text, cls, onclick) => { const b = el('button', 'btn' + (cls ? ' ' + cls : ''), text); b.type = 'button'; if (onclick) b.onclick = onclick; return b; };
   const bar = () => { const b = el('div', 'lc-bar'); b.append(document.createElement('span')); return b; };
-  const sourceNames = { custom: 'a llama-server you picked', own: 'your own build in the data folder', release: 'a release ollamui downloaded', flag: 'the -llama-server option', path: 'your PATH' };
+  const sourceNames = { custom: 'a llama-server you picked', own: 'your own build in the data folder', release: 'a release Assay downloaded', flag: 'the -llama-server option', path: 'your PATH' };
 
   let sys = null;           // GET /api/setup
   let step = 1;
@@ -175,9 +175,9 @@
     const msg = el('p', 'small settings-warn'); msg.hidden = true;
     const r = row('Path to llama-server', ['A file, or the folder it’s in. Its libraries are loaded from the same folder. Nothing is downloaded or copied.'], [input, browse, use]);
     wrap.append(list(r), msg);
-    if (window.ollamuiPick) browse.addEventListener('click', async () => {
+    if (window.assayPick) browse.addEventListener('click', async () => {
       browse.disabled = true;
-      try { const p = await window.ollamuiPick({ kind: 'file', title: 'Choose llama-server', start: input.value.trim() }); if (p) input.value = p; } finally { browse.disabled = false; }
+      try { const p = await window.assayPick({ kind: 'file', title: 'Choose llama-server', start: input.value.trim() }); if (p) input.value = p; } finally { browse.disabled = false; }
     });
     return wrap;
   }

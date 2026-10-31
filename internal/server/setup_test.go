@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"ollamui/internal/hf"
-	"ollamui/internal/hw"
-	"ollamui/internal/llamacpp"
+	"assay/internal/hf"
+	"assay/internal/hw"
+	"assay/internal/llamacpp"
 )
 
 func TestNeedsSetup(t *testing.T) {

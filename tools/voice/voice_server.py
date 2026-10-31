@@ -9,7 +9,7 @@
 #   "numpy",
 # ]
 # ///
-"""Speech for ollamui: speech to text (faster-whisper) and text to speech
+"""Speech for Assay: speech to text (faster-whisper) and text to speech
 (Kokoro), behind the same endpoints as OpenAI's audio API:
 
   POST /v1/audio/transcriptions   multipart "file", or a raw audio body
@@ -40,7 +40,7 @@ from fastapi.responses import JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 KOKORO_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/"
-CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "ollamui-voice"
+CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "assay-voice"
 
 args = None
 app = FastAPI()
@@ -205,7 +205,7 @@ def main():
     p.add_argument("--voice", default="af_heart", help="Kokoro voice, e.g. af_heart, af_bella, am_michael, bf_emma")
     p.add_argument("--lang", default="en-us")
     p.add_argument("--speed", type=float, default=1.0)
-    # Whisper, Kokoro and ollamui's talker model (4 threads) all run on the
+    # Whisper, Kokoro and Assay's talker model (4 threads) all run on the
     # CPU at once during a voice turn; on a shared pool each slows the others
     # several times over, so each gets its own share of the cores.
     cores = max(2, (os.cpu_count() or 4) // 2)

@@ -1,4 +1,4 @@
-# ollamui architecture
+# Assay architecture
 
 A lightweight web UI for finding, downloading, tuning and chatting with
 local models. It runs them itself with llama.cpp's `llama-server` (see
@@ -21,7 +21,7 @@ the code passes around.
 ## Non-goals
 
 - Training or fine-tuning (Unsloth's other half).
-- Writing an inference engine. llama.cpp does that; ollamui starts,
+- Writing an inference engine. llama.cpp does that; Assay starts,
   sizes and stops its servers.
 - Multi-user accounts. It's a single-user tool, optionally reachable from
   your other devices.
@@ -29,12 +29,12 @@ the code passes around.
 ## The core idea: presets are models in the API
 
 A preset is a base model plus settings and a system prompt, edited like an
-Unsloth config (sliders, save) and kept as a TOML file. ollamui's
+Unsloth config (sliders, save) and kept as a TOML file. Assay's
 OpenAI-compatible API (`/v1`, see "Engine") lists every preset as a model
 under its own name, so Zed and other clients use it like any model, with
 those settings applied. Nothing is created or copied: the preset file is the
 only copy. (Until 2026-10-23 presets were "published" into Ollama as
-`ollamui/<name>` models; the `published` field in old preset files is
+`assay/<name>` models; the `published` field in old preset files is
 ignored.)
 
 Per-chat tweaks are layered over the preset on each request and change
@@ -43,7 +43,7 @@ nothing until you choose "Save to preset".
 ## Components
 
 ```
-browser, Zed ──HTTP──► ollamui (Go) ──HTTP──► llama-server, one per loaded model
+browser, Zed ──HTTP──► Assay (Go) ──HTTP──► llama-server, one per loaded model
                           │        └──HTTP──► speech service :8485 (optional, voice)
                      │
                      ├── internal/engine   llama-server per model, model store, Ollama import, /v1 proxy
@@ -64,7 +64,7 @@ tools/voice/voice_server.py   the speech service: faster-whisper + Kokoro (embed
 
 ### Engine (internal/engine)
 
-ollamui runs one `llama-server` per loaded model, the way Ollama does
+Assay runs one `llama-server` per loaded model, the way Ollama does
 internally, and answers in the `internal/ollama` types so the rest of the
 code doesn't care which engine runs (`server.Backend`).
 
@@ -96,7 +96,7 @@ code doesn't care which engine runs (`server.Backend`).
   keeps a model's settings and aliases.
 - **OpenAI-compatible API (`/v1`).** `GET /v1/models`, `POST
   /v1/chat/completions` (streaming or not) and `POST /v1/embeddings` on
-  ollamui's own address, for editors like Zed. `model` is an installed model
+  Assay's own address, for editors like Zed. `model` is an installed model
   or a preset (installed names win); a preset becomes its base model, its
   options and its system prompt and think setting, added only where the
   request set none. `engine.Proxy` loads the model on demand, fills sampling
@@ -210,7 +210,7 @@ code doesn't care which engine runs (`server.Backend`).
   POST `/check`); Settings → Models has the row.
 - **Installing llama.cpp** (`internal/llamacpp`). The binary is, in order:
   `-llama-server`, `<data>/llama.cpp/` (your own build, never written to),
-  the release ollamui installed in `<data>/llama.cpp-release/`, then PATH;
+  the release Assay installed in `<data>/llama.cpp-release/`, then PATH;
   `<data>/llamacpp.json` can put the release first. The installer reads
   GitHub's `/releases` list, not `/latest` (llama.cpp's builds are all
   pre-releases; "latest" is an old tag with no binaries), and takes the
@@ -395,25 +395,25 @@ reply sentences (if "Read aloud", or a reply's speaker button) ─► /api/voice
   is the bundled one (faster-whisper `small.en` + Kokoro int8, both on the
   CPU, so the GPU stays free; Whisper, Kokoro and the talker each get their
   own share of the cores, since on a shared pool transcription slowed from
-  1 s to 7.5 s mid-reply); `-voice URL` points ollamui at it or at any
+  1 s to 7.5 s mid-reply); `-voice URL` points Assay at it or at any
   compatible server (speaches, …).
-- **Started on demand.** The script is embedded in the ollamui binary. When
-  the mic is pressed and nothing answers on the speech URL, ollamui writes it
-  to `~/.cache/ollamui/` and runs it with `uv run --script` in its own
+- **Started on demand.** The script is embedded in the Assay binary. When
+  the mic is pressed and nothing answers on the speech URL, Assay writes it
+  to `~/.cache/assay/` and runs it with `uv run --script` in its own
   process group; it stops it after `-voice-idle` (10 min) without voice use
-  and when ollamui exits. The first start installs the Python packages
+  and when Assay exits. The first start installs the Python packages
   (about a minute); later starts take seconds. A service someone else
   started is used and left alone. `-voice-launch=false` turns this off,
   `-voice ""` turns voice off. Nothing about voice is needed for the rest of
   the app.
 - **Downloads only after a yes.** A fresh install has no voice files. Until
-  the service has been downloaded (a marker in `~/.cache/ollamui/`, or the
+  the service has been downloaded (a marker in `~/.cache/assay/`, or the
   Kokoro model already present), `/api/voice` reports `needsDownload` and
   won't start it; the voice bar asks "Download / Not now" and only
   `?install=1` starts the first run (~800 MB: uv's environment, Kokoro,
   whisper small.en). Settings → Voice shows the space used (hard links
   counted once) and **Remove** deletes it all: the marker and script,
-  `~/.cache/ollamui-voice`, the faster-whisper models in Hugging Face's cache
+  `~/.cache/assay-voice`, the faster-whisper models in Hugging Face's cache
   plus the blobs their symlinks point to (newer hub versions share one
   `blobs/` folder), uv's `voice-server-*` environments, and the script's
   packages from uv's cache (`uv cache clean <pkgs>`, since environments are
@@ -430,14 +430,14 @@ reply sentences (if "Read aloud", or a reply's speaker button) ─► /api/voice
   HTTPS (e.g. `tailscale serve`).
 - **Does it think?** Ollama's capability list misses some thinkers (Gemma 4
   thinks without listing `thinking`), so a model counts as thinking unless
-  thinking is switched off or ollamui has seen it answer without thinking.
+  thinking is switched off or Assay has seen it answer without thinking.
 - **The talker.** While the main model thinks, a second model writes one
   short first-person line at a time ("I'm checking how the angle of the sun
   changes things"): a lead-in at once, then a new line whenever the speech
   is about to run out and there's enough new thinking, with growing gaps on
   long thinks. It runs on the CPU (`num_gpu: 0`, 4k context, 4 threads): no VRAM, no GPU
   contention, and no need for Ollama to serve two requests on one model,
-  which hybrid models like Qwen3.5 can't. ollamui picks the largest
+  which hybrid models like Qwen3.5 can't. Assay picks the largest
   installed chat model under 3 GB and loads it when voice mode starts.
   Without one, the main model says a lead-in before it starts thinking.
 - **Guarding the talker.** Small models reading half-finished notes blurt
@@ -473,7 +473,7 @@ folder. Chats store their `project` ID; the sidebar lists projects
 chat page has a project picker above the conversation (moving an existing
 chat, or choosing where a new one goes).
 
-Storage, per project (`~/.local/share/ollamui/projects/<id>/`):
+Storage, per project (`~/.local/share/assay/projects/<id>/`):
 `project.json` (settings + file list with status), `files/` (the originals)
 and `index/` (`index.json` with the chunks + `vectors.f32`, normalised
 float32). No database: search is a linear cosine scan (`internal/index`),
@@ -575,15 +575,15 @@ against a strict pattern before they touch the filesystem.
   - No login. For access from other devices, use Tailscale (bind to the
     tailnet IP or `tailscale serve`). Don't expose it to the internet.
   - The llama-servers listen on 127.0.0.1 only. Remote browsers and
-    editors only talk to ollamui.
+    editors only talk to Assay.
 
 ## Platforms and releases
 
 `sh scripts/release.sh [version]` cross-compiles (no cgo) five platforms into
 `dist/release/` (see Releases below). Platform bits:
 
-- **Windows**: data in `%LOCALAPPDATA%\ollamui`, settings in
-  `%APPDATA%\ollamui`; RAM from `GlobalMemoryStatusEx`, VRAM from the
+- **Windows**: data in `%LOCALAPPDATA%\assay`, settings in
+  `%APPDATA%\assay`; RAM from `GlobalMemoryStatusEx`, VRAM from the
   display adapters' registry keys (`HardwareInformation.qwMemorySize`, any
   vendor; nvidia-smi first), disk space from `GetDiskFreeSpaceExW`, drive
   letters as models-folder suggestions. `-open` (default on Windows) opens
@@ -600,17 +600,17 @@ against a strict pattern before they touch the filesystem.
 No database. Plain files under XDG directories:
 
 ```
-~/.config/ollamui/
+~/.config/assay/
   config.toml            listen address, HF token (planned)          (M2)
   presets/<name>.toml    one preset per file                         (M3)
   voice.json             voice mode settings (Settings → Voice)
   knowledge.json         RAG settings: embedding model, excerpts per answer
-~/.local/share/ollamui/
+~/.local/share/assay/
   chats/<id>.json        one conversation per file
   scores.json            cached intelligence scores, refreshed daily
   projects/<id>/         project.json, files/, index/ (RAG)
   bench/<digest>.json    speed tests from the Compare page
-~/.cache/ollamui-voice/  Kokoro model files (the speech service's)
+~/.cache/assay-voice/  Kokoro model files (the speech service's)
 ```
 
 Presets are plain TOML, so they diff, hand-edit and sync well.
@@ -717,7 +717,7 @@ when there is one (100% on the GPU → fits; less → spills).
    fallback for repos `hf.co` pulls can't handle, an "Ollama can run it"
    filter.
 3. **M3: Presets.** Tune panel, per-chat overrides, save to preset, publish
-   to `ollamui/*`. *Built.* Not yet: drift detection, `config.toml` (flags
+   to `assay/*`. *Built.* Not yet: drift detection, `config.toml` (flags
    and `HF_TOKEN` for now).
 4. **M4: Compare.** Local benchmarks, intelligence score, compare page.
    *Built.* Not yet: card benchmarks and quant loss on Compare, sorting
@@ -760,13 +760,13 @@ Chat replies run in the background (`internal/server/runs.go`): `POST /api/chat`
 
 ## Phone layout
 
-On phones (max-width 760px) the UI follows the ChatGPT/Claude mobile pattern: the chat bar is menu, a tappable model title and "⋯". The model picker (`#switcher-card`), the "⋯" options (`#more-sheet`), the memory popover (`#mem-pop`) and Tune (`#tune`) are bottom sheets (`.sheet`) coordinated by `window.ollamuiSheets` in `app.js` (`track`/`register`; `html.sheet-open` locks the page and shows the backdrop; drag-down on `.sheet-grab`, tap-outside, Esc and Back close). The composer is a pill with a round send button whose arrow/stop/label follow `#send[data-state]`. All phone rules live in one block headed PHONE at the end of `app.css`; phone-only elements are `display: none` outside it. Layout heights use `dvh`; scrolling boxes use `overscroll-behavior: contain`.
+On phones (max-width 760px) the UI follows the ChatGPT/Claude mobile pattern: the chat bar is menu, a tappable model title and "⋯". The model picker (`#switcher-card`), the "⋯" options (`#more-sheet`), the memory popover (`#mem-pop`) and Tune (`#tune`) are bottom sheets (`.sheet`) coordinated by `window.assaySheets` in `app.js` (`track`/`register`; `html.sheet-open` locks the page and shows the backdrop; drag-down on `.sheet-grab`, tap-outside, Esc and Back close). The composer is a pill with a round send button whose arrow/stop/label follow `#send[data-state]`. All phone rules live in one block headed PHONE at the end of `app.css`; phone-only elements are `display: none` outside it. Layout heights use `dvh`; scrolling boxes use `overscroll-behavior: contain`.
 
 ## Multiple GPUs
 
 `hw.Detect` lists every card (`Memory.Cards`: AMD each `/sys/class/drm/card*/device` with `mem_info_vram_total`, iGPU carve-outs under 1 GiB skipped when a real card exists; NVIDIA each `nvidia-smi` line); `Memory.VRAM` is the total and `Memory.GPU` reads "4 GPUs (3x Quadro P2000, GeForce GTX 1050 Ti)" (one card keeps its own name). `hw.ReadLive` sums used/total and reports `gpuBusy` as the busiest card (layer-split cards take turns, so an average would look idle), plus `cards` (name, used, total, busy) when there is more than one; the Memory popover draws one small bar per card under the VRAM total. `hw.Classify` subtracts `ExtraCardOverhead` (512 MiB, each extra card's compute buffer) from the total; a single card is unchanged. llama-server uses all GPUs by default (layer split); the Tune panel (Memory & loading, only with more than one device) adds `gpu_devices` ("GPUs to use": checkboxes, stored as a comma list of `--device` names like CUDA0,CUDA2; all ticked = no value) and `split_mode` ("Split across GPUs": Layers, or Rows = `--split-mode row`); flags are passed only when not default. `Engine.Devices` runs `llama-server --list-devices` once per binary and caches it (nil on failure hides the options; `/api/models/defaults` carries `gpus`); the list is only consulted when a subset is chosen, and names no longer present are dropped. The VRAM limit (`--fit-target`, a per-device margin) spreads the held-back memory over the cards in use; with a subset the free memory still counts every card, so the limit is looser. Fit labels ignore the subset.
 
-Test-only: `OLLAMUI_FAKE_GPUS="name:totalMiB:usedMiB,..."` makes hw (and `Engine.Devices`, as CUDA0..) report made-up cards so the multi-GPU UI can be checked on one-GPU machines.
+Test-only: `ASSAY_FAKE_GPUS="name:totalMiB:usedMiB,..."` makes hw (and `Engine.Devices`, as CUDA0..) report made-up cards so the multi-GPU UI can be checked on one-GPU machines.
 
 ## First-run setup
 
@@ -794,7 +794,7 @@ where it goes; nothing downloads on its own.
   (GitHub release page and file names), goes to (`<data>/llama.cpp-release`)
   and license (MIT). The button names the build and size; progress uses the
   existing install job (`/api/llamacpp`, reloading the page resumes it). "Use
-  a llama-server I already have" is a path input with Browse… (`ollamuiPick`)
+  a llama-server I already have" is a path input with Browse… (`assayPick`)
   wired to `PUT /api/llamacpp/custom`; the verify result is the probe.
 - **First model.** `GET /api/setup/models` (cached ten minutes) checks
   `firstModels`, a short list of well-known small instruct models (Qwen3.5
@@ -809,21 +809,21 @@ where it goes; nothing downloads on its own.
 
 ## Path pickers
 
-Every input that wants a path on the server (llama-server, models folder, LoRA adapter, "Add a folder…" in Library) has a "Browse…" button: `<button data-browse="input-id" data-kind="file|folder" data-title data-filter>` (or `ollamuiBrowseButton(input, opts)` for script-built rows). A choice fills the input and fires `input` and `picked` on it; the page decides what follows (models folder runs Check, the Library folder adds). `window.ollamuiPick({kind, title, start, filter})` in `app.js` resolves to a path or null. From the machine running ollamui and with a dialog tool present (`GET /api/pick` → `{native}`), it asks `POST /api/pick`, which runs `internal/pick`: zenity, kdialog or yad on Linux (needs DISPLAY or WAYLAND_DISPLAY), osascript on macOS, PowerShell with System.Windows.Forms (-STA, hidden) on Windows. Exit 1 or empty output is "cancelled"; one dialog at a time (second gets 409); no timeout, but the process is killed when the request ends. It is refused (403) unless `RemoteAddr` is loopback, so a phone never pops a dialog on the server's screen. Otherwise (remote, or no tool) an in-app browser opens over `GET /api/fs?path=&kind=&filter=&hidden=`: folders first then files (kind=file, glob filter), natural case-insensitive order, dotfiles hidden unless asked, a missing path shows its nearest existing parent, unreadable folders return `error` inline; it is a centred dialog on desktop and a `.sheet` on the phone. Test-only: `OLLAMUI_PICK_TOOLS` is an allow list of dialog tool names; set empty it disables native dialogs so the in-app browser can be checked. Go tests use a fake `zenity` script on PATH and never open a real dialog.
+Every input that wants a path on the server (llama-server, models folder, LoRA adapter, "Add a folder…" in Library) has a "Browse…" button: `<button data-browse="input-id" data-kind="file|folder" data-title data-filter>` (or `assayBrowseButton(input, opts)` for script-built rows). A choice fills the input and fires `input` and `picked` on it; the page decides what follows (models folder runs Check, the Library folder adds). `window.assayPick({kind, title, start, filter})` in `app.js` resolves to a path or null. From the machine running Assay and with a dialog tool present (`GET /api/pick` → `{native}`), it asks `POST /api/pick`, which runs `internal/pick`: zenity, kdialog or yad on Linux (needs DISPLAY or WAYLAND_DISPLAY), osascript on macOS, PowerShell with System.Windows.Forms (-STA, hidden) on Windows. Exit 1 or empty output is "cancelled"; one dialog at a time (second gets 409); no timeout, but the process is killed when the request ends. It is refused (403) unless `RemoteAddr` is loopback, so a phone never pops a dialog on the server's screen. Otherwise (remote, or no tool) an in-app browser opens over `GET /api/fs?path=&kind=&filter=&hidden=`: folders first then files (kind=file, glob filter), natural case-insensitive order, dotfiles hidden unless asked, a missing path shows its nearest existing parent, unreadable folders return `error` inline; it is a centred dialog on desktop and a `.sheet` on the phone. Test-only: `ASSAY_PICK_TOOLS` is an allow list of dialog tool names; set empty it disables native dialogs so the in-app browser can be checked. Go tests use a fake `zenity` script on PATH and never open a real dialog.
 
 ## Start on boot
 
-`ollamui service install [flags]`, `service uninstall` and `service status` (and Settings → This machine → "Start when the computer starts") manage `internal/service`. The subcommands are handled in `cmd/ollamui/service.go` before flag parsing, so existing flags are untouched; `version` and `--version` print the version. The only place the app's name lives is `service.Name`.
+`assay service install [flags]`, `service uninstall` and `service status` (and Settings → This machine → "Start when the computer starts") manage `internal/service`. The subcommands are handled in `cmd/assay/service.go` before flag parsing, so existing flags are untouched; `version` and `--version` print the version. The only place the app's name lives is `service.Name`.
 
-- **Linux**: a systemd user unit `~/.config/systemd/user/<name>.service`: `ExecStart` = the running binary (symlinks resolved) plus the given flags (quoted, `%` and `$` doubled), `Restart=on-failure`, `RestartSec=5`, `WantedBy=default.target`. Then `systemctl --user daemon-reload` and `enable --now`. `Environment=` lines carry PATH and the GPU/engine variables (`HSA_OVERRIDE_GFX_VERSION`, `*_VISIBLE_DEVICES`, `OLLAMA_MODELS`, `OLLAMUI_LLAMA_SERVER`, `OLLAMUI_VOICE`) only when set at install time (the service manager's own environment is nearly empty). Starting before login needs lingering; install prints `loginctl enable-linger $USER` when `loginctl show-user` says it's off, and never runs it.
+- **Linux**: a systemd user unit `~/.config/systemd/user/<name>.service`: `ExecStart` = the running binary (symlinks resolved) plus the given flags (quoted, `%` and `$` doubled), `Restart=on-failure`, `RestartSec=5`, `WantedBy=default.target`. Then `systemctl --user daemon-reload` and `enable --now`. `Environment=` lines carry PATH and the GPU/engine variables (`HSA_OVERRIDE_GFX_VERSION`, `*_VISIBLE_DEVICES`, `OLLAMA_MODELS`, `ASSAY_LLAMA_SERVER`, `ASSAY_VOICE`) only when set at install time (the service manager's own environment is nearly empty). Starting before login needs lingering; install prints `loginctl enable-linger $USER` when `loginctl show-user` says it's off, and never runs it.
 - **macOS**: `~/Library/LaunchAgents/local.<name>.plist` (`RunAtLoad`, `KeepAlive`, same environment) loaded with `launchctl bootstrap gui/<uid>` (an older one is `bootout`ed first). Uninstall removes the plist and boots it out.
 - **Windows**: a value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` via `reg.exe` (add/query/delete; no new dependency), `"<exe>" <flags> -open=false`. No environment is carried and "running" isn't reported (no service manager); it starts at the next sign-in.
 - **Settings page**: `GET/PUT /api/service` (`{enabled}`) is answered only for loopback requests (`fromLoopback`); remote requests get an empty status on GET and 403 on PUT, and the row is not rendered. The web switch installs with the flags this instance was started with (`os.Args[1:]`) and neither starts nor stops anything (this copy already holds the port); the CLI install does start it (`--now`).
-- **Tests** inject `Manager.Run` (a recording `Runner`), `Home`, `Env`, `GOOS`, so no test touches the real systemctl/launchctl/reg or `~/.config`. Test-only: `OLLAMUI_SERVICE_DRYRUN=1` swaps in an in-memory `service.Fake` (CLI and web), so the Settings switch can be exercised without installing anything.
+- **Tests** inject `Manager.Run` (a recording `Runner`), `Home`, `Env`, `GOOS`, so no test touches the real systemctl/launchctl/reg or `~/.config`. Test-only: `ASSAY_SERVICE_DRYRUN=1` swaps in an in-memory `service.Fake` (CLI and web), so the Settings switch can be exercised without installing anything.
 
 ## Releases
 
-Version: `var version = "dev"` in `cmd/ollamui`, set with `-ldflags "-X main.version=v1.2.3"`. Shown in Settings → This machine and by `ollamui --version` / `ollamui version`.
+Version: `var version = "dev"` in `cmd/assay`, set with `-ldflags "-X main.version=v1.2.3"`. Shown in Settings → This machine and by `assay --version` / `assay version`.
 
 `scripts/release.sh [version]` (default `git describe`) builds with `CGO_ENABLED=0 -trimpath` for linux/amd64, linux/arm64, windows/amd64, darwin/amd64, darwin/arm64 into `dist/release/` (gitignored): a `.zip` (Windows, README with CRLF) or `.tar.gz` per platform holding the binary, `README.txt` (from `tools/release/README-*.txt`) and `LICENSE` if the repo has one, plus `SHA256SUMS`. `.github/workflows/release.yml` runs `go vet`, `go test`, the script and `gh release create` on a pushed `v*` tag. There is no Windows installer; the zip holds the exe.
 

@@ -14,7 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"ollamui/internal/chats"
+	"assay/internal/chats"
 )
 
 // Search backends for web_search.

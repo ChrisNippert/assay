@@ -18,7 +18,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"ollamui/internal/index"
+	"assay/internal/index"
 )
 
 // ErrNotFound is returned when a project or file doesn't exist.

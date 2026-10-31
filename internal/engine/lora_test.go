@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"ollamui/internal/presets"
+	"assay/internal/presets"
 )
 
 // ggufHeader is a GGUF file with only string metadata: enough for the

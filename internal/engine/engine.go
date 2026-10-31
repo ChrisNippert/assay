@@ -1,7 +1,7 @@
 // Package engine runs models with llama.cpp's llama-server: one process
 // per loaded model, started on demand and stopped when idle, the way
 // Ollama does it internally. It answers in the same shapes the Ollama
-// client did (package ollama's types), so the rest of ollamui doesn't care
+// client did (package ollama's types), so the rest of Assay doesn't care
 // which engine it talks to.
 package engine
 
@@ -27,11 +27,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"ollamui/internal/gguf"
-	"ollamui/internal/hw"
-	"ollamui/internal/limits"
-	"ollamui/internal/ollama"
-	"ollamui/internal/presets"
+	"assay/internal/gguf"
+	"assay/internal/hw"
+	"assay/internal/limits"
+	"assay/internal/ollama"
+	"assay/internal/presets"
 )
 
 // Options are the engine-wide settings.
@@ -275,7 +275,7 @@ type proc struct {
 	logDone chan struct{} // closed once its output has all been read
 	fitted  bool          // asked for a layer count that didn't fit; --fit chose
 	ready   bool          // it finished loading
-	quit    bool          // ollamui stopped it
+	quit    bool          // Assay stopped it
 }
 
 // beginChat says which chat the slot now serves and how many tokens it
@@ -1156,7 +1156,7 @@ func num(v any) (float64, bool) {
 // The rest of the Ollama client's surface, for code that hasn't moved on:
 // URL, Host and Port describe where models run; Create was how presets
 // were published as Ollama models, which an editor now reaches through
-// ollamui's own API instead.
+// Assay's own API instead.
 
 // Settings returns a model's own settings.
 func (e *Engine) Settings(name string) (map[string]any, error) {

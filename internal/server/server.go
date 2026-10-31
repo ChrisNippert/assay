@@ -1,4 +1,4 @@
-// Package server serves the ollamui web UI and its JSON API.
+// Package server serves the Assay web UI and its JSON API.
 package server
 
 import (
@@ -20,22 +20,22 @@ import (
 	"sync/atomic"
 	"time"
 
-	"ollamui/internal/bench"
-	"ollamui/internal/chats"
-	"ollamui/internal/hf"
-	"ollamui/internal/hw"
-	"ollamui/internal/limits"
-	"ollamui/internal/llamacpp"
-	"ollamui/internal/ollama"
-	"ollamui/internal/presets"
-	"ollamui/internal/projects"
-	"ollamui/internal/pulls"
-	"ollamui/internal/scores"
-	"ollamui/internal/service"
-	"ollamui/internal/tools"
-	"ollamui/internal/update"
-	"ollamui/internal/voice"
-	"ollamui/web"
+	"assay/internal/bench"
+	"assay/internal/chats"
+	"assay/internal/hf"
+	"assay/internal/hw"
+	"assay/internal/limits"
+	"assay/internal/llamacpp"
+	"assay/internal/ollama"
+	"assay/internal/presets"
+	"assay/internal/projects"
+	"assay/internal/pulls"
+	"assay/internal/scores"
+	"assay/internal/service"
+	"assay/internal/tools"
+	"assay/internal/update"
+	"assay/internal/voice"
+	"assay/web"
 )
 
 // Backend runs the models: the llama.cpp engine (a fake in tests).
@@ -65,7 +65,7 @@ func (s *Server) forgetChat(id string) {
 }
 
 // fitter is a backend that sizes the context itself (llama.cpp's --fit):
-// ollamui's own auto context then stays out of the way.
+// Assay's own auto context then stays out of the way.
 type fitter interface{ CacheType() string }
 
 // Options configures a Server.
@@ -181,7 +181,7 @@ func New(opts Options) (*Server, error) {
 		s.bench = bench.Open("")
 	}
 	if s.projects == nil {
-		dir, err := os.MkdirTemp("", "ollamui-projects-")
+		dir, err := os.MkdirTemp("", "assay-projects-")
 		if err != nil {
 			return nil, err
 		}
@@ -366,7 +366,7 @@ func hostGuard(extra []string, next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		http.Error(w, fmt.Sprintf("Host %q is not allowed. Restart ollamui with -allow-host %s to permit it.", host, host), http.StatusForbidden)
+		http.Error(w, fmt.Sprintf("Host %q is not allowed. Restart Assay with -allow-host %s to permit it.", host, host), http.StatusForbidden)
 	})
 }
 

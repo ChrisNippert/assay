@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"strings"
 
-	"ollamui/internal/ollama"
-	"ollamui/internal/presets"
+	"assay/internal/ollama"
+	"assay/internal/presets"
 )
 
 // apiEngine is a backend that can pass OpenAI-style requests to its
@@ -63,12 +63,12 @@ func (s *Server) handleV1Models(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		seen[strings.ToLower(m.Name)] = true
-		data = append(data, entry{m.Name, "model", m.ModifiedAt.Unix(), "ollamui"})
+		data = append(data, entry{m.Name, "model", m.ModifiedAt.Unix(), "assay"})
 	}
 	if list, err := s.presets.List(); err == nil {
 		for _, p := range list {
 			if !seen[p.Name] {
-				data = append(data, entry{p.Name, "model", 0, "ollamui"})
+				data = append(data, entry{p.Name, "model", 0, "assay"})
 			}
 		}
 	}

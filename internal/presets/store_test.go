@@ -42,7 +42,7 @@ func TestRoundTrip(t *testing.T) {
 	if stop := got.Options["stop"].([]string); len(stop) != 1 || stop[0] != "<|im_end|>" {
 		t.Fatalf("stop = %#v", got.Options["stop"])
 	}
-	if got.OllamaName() != "ollamui/coder" {
+	if got.OllamaName() != "assay/coder" {
 		t.Error(got.OllamaName())
 	}
 

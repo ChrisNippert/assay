@@ -128,7 +128,7 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (*Page, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; ollamui; +local assistant)")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Assay; +local assistant)")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,text/plain,application/json;q=0.9,*/*;q=0.5")
 	res, err := f.client.Do(req)
 	if err != nil {

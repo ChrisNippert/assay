@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"ollamui/internal/bench"
-	"ollamui/internal/hf"
-	"ollamui/internal/ollama"
-	"ollamui/internal/scores"
+	"assay/internal/bench"
+	"assay/internal/hf"
+	"assay/internal/ollama"
+	"assay/internal/scores"
 )
 
 // maxCompare is how many models fit side by side.
@@ -192,7 +192,7 @@ func (s *Server) handleBench(w http.ResponseWriter, r *http.Request) {
 }
 
 // runBench measures a model the way chats use it: alone in memory, loaded
-// fresh at the context ollamui would pick, then a fixed prompt of about a thousand
+// fresh at the context Assay would pick, then a fixed prompt of about a thousand
 // tokens and a reply capped at bench.GenTokens.
 func (s *Server) runBench(ctx context.Context, name string) (bench.Result, error) {
 	models, err := s.ollama.List(ctx)

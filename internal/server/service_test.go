@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"ollamui/internal/service"
-	"ollamui/internal/update"
+	"assay/internal/service"
+	"assay/internal/update"
 )
 
 const (

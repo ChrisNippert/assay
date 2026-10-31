@@ -14,14 +14,14 @@ import (
 	"testing"
 	"time"
 
-	"ollamui/internal/chats"
-	"ollamui/internal/hf"
-	"ollamui/internal/hw"
-	"ollamui/internal/ollama"
-	"ollamui/internal/ollama/ollamatest"
-	"ollamui/internal/presets"
-	"ollamui/internal/projects"
-	"ollamui/internal/pulls"
+	"assay/internal/chats"
+	"assay/internal/hf"
+	"assay/internal/hw"
+	"assay/internal/ollama"
+	"assay/internal/ollama/ollamatest"
+	"assay/internal/presets"
+	"assay/internal/projects"
+	"assay/internal/pulls"
 )
 
 // fakeOllama answers the handful of endpoints the server uses.

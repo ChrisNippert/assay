@@ -14,8 +14,8 @@ func TestStore(t *testing.T) {
 		t.Error("blank name accepted")
 	}
 	b, _ := s.Create("Taxes 2026")
-	a, _ := s.Create("  ollamui\n dev ")
-	if a.Name != "ollamui dev" || !ValidID(a.ID) {
+	a, _ := s.Create("  Assay\n dev ")
+	if a.Name != "Assay dev" || !ValidID(a.ID) {
 		t.Errorf("created %+v", a)
 	}
 	list, _ := s.List()

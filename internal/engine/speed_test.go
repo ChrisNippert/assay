@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"ollamui/internal/ollama"
+	"assay/internal/ollama"
 )
 
 // specFlags returns the --spec-type value and -md file of the arguments.
