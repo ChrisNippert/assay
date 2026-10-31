@@ -667,8 +667,42 @@ Design reference: direction **F** on the design canvas
   docking beside it. A mic button next to Send dictates
   into the box; the bar under the composer shows listening / reading aloud
   and holds the Spoken style and Read aloud toggles.
-- **Library**: installed models, size, quant, what's loaded and its VRAM,
-  delete.
+- **Library** (design D, "Calm numbers"; `library.html`, `library.js`,
+  `internal/server/library.go`, `measure.go`, `prettyname.go`): a stat strip
+  (GPU memory, system memory, models on disk and free space; the first two
+  open a popover of what's using it, from `/api/loaded` and `/api/gpu`, polled
+  every 4 s; disk links to Settings → Models), then one row per model:
+  readable name (`prettyModel`: "gemma-4-12b-it-qat:ud-q4_k_xl" → "Gemma 4
+  12B" + QAT chip; the raw name stays the identifier, in the tooltip, and in
+  `data-model`), quant from the tag (UD-Q4_K_XL), size, a green dot when
+  loaded; Speed (measured tok/s, fastest in accent, "Measure" when missing),
+  Memory (estimate at 8k, GPU / Tight / + RAM, amber bar when not fitting),
+  Score. Every number is clickable: speed → Compare, memory → a fit
+  explanation with a link to Tune (`/chat?model=…&tune=1`, which `app.js`
+  honours by clicking the Tune button), score → a popover of similar-size
+  scores. Column headers sort (Speed ↓, Memory ↑, Score ↓; missing values
+  last), as do the Name/Recent/Size chips; the sort lives in `?sort=` and
+  localStorage, and rows reorder with a FLIP animation (`--dur-2`, off under
+  reduced motion). Chat and ⋯ (Load/Eject, Tune, Compare, Measure, Star,
+  Delete) show on hover or focus-within.
+  Scores: the page renders instantly with cached ones; `GET
+  /api/library/scores` resolves the rest (Hugging Face `base_model:quantized`
+  tag → Artificial Analysis score, cached 24 h per repo in memory, failures
+  1 min) and `GET /api/library/nearby?name=` returns the model's score among
+  rated models within about 0.65–1.55× its size, two above and two below,
+  with the reason when unrated (local, no base model, not listed, offline).
+  **Measure all**: `POST /api/library/measure {names?, evictPinned?}` (no
+  names: every untested non-embedding model) starts a server-side job that
+  runs `runBench` on each in turn, so it survives leaving the page;
+  `GET` reports `{running, items[{name,title,state,reason,genTps}], done,
+  total, current, waiting, keptPinned, cancelled}` and `DELETE` cancels. If a
+  pinned model is loaded the job keeps it (`unloadFor` unloads only the
+  unpinned) and skips models that can't fit next to it, and the pinned model
+  itself, with the reason; the page offers "Eject the pinned model and
+  measure these". It waits while a chat reply is being written, refuses to
+  start during one, and when done unloads what it loaded and reloads what was
+  loaded (unpinned) before. The progress line polls every 1.5 s and fills
+  numbers in as they land.
 - **Discover**: filters (total params range, dense/MoE, architecture,
   capabilities, fits on GPU, Ollama can run it, author), sort (intelligence,
   speed on my GPU, size, newest, downloads). Results as rows, each with an

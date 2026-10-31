@@ -1,86 +1,98 @@
 {{define "appbar"}}<h1 class="appbar-title">Library</h1><span class="muted small">{{len .ModelGroups}} installed</span>{{end}}
 {{define "content"}}
 <div class="page lib">
-
+  {{$d := .Data}}
   {{if .Models}}
+  <div class="lib-stats" id="lib-stats" data-vram="{{$d.Live.VRAMTotal}}" data-ram="{{$d.Live.RAMTotal}}">
+    <button type="button" class="lib-stat" data-pop="gpu" aria-haspopup="dialog" title="What's using GPU memory">
+      <span class="lib-stat-label">GPU memory</span>
+      <span class="lib-stat-value" id="st-gpu">{{if $d.HasGPU}}{{$d.GB $d.Live.VRAMUsed}} <span class="lib-unit">of {{$d.GB $d.Live.VRAMTotal}} GB</span>{{else}}<span class="lib-unit">No GPU found</span>{{end}}</span>
+      <span class="lib-track"><span class="lib-fill accent" id="st-gpu-bar" style="width: {{$d.Pct $d.Live.VRAMUsed $d.Live.VRAMTotal}}%"></span></span>
+    </button>
+    <button type="button" class="lib-stat" data-pop="ram" aria-haspopup="dialog" title="What's using system memory">
+      <span class="lib-stat-label">System memory</span>
+      <span class="lib-stat-value" id="st-ram">{{if $d.Live.RAMTotal}}{{$d.GB $d.Live.RAMUsed}} <span class="lib-unit">of {{$d.GB $d.Live.RAMTotal}} GB</span>{{else}}<span class="lib-unit">Unknown</span>{{end}}</span>
+      <span class="lib-track"><span class="lib-fill" id="st-ram-bar" style="width: {{$d.Pct $d.Live.RAMUsed $d.Live.RAMTotal}}%"></span></span>
+    </button>
+    <a class="lib-stat" href="/settings#models" title="Where the models are stored, in Settings">
+      <span class="lib-stat-label">Models on disk</span>
+      <span class="lib-stat-value">{{$d.GB $d.DiskUsed}} <span class="lib-unit">GB{{if $d.FreeKnown}} · {{$d.GB $d.DiskFree}} GB free{{end}}</span></span>
+      <span class="lib-track"><span class="lib-fill" style="width: {{$d.DiskPct}}%"></span></span>
+    </a>
+  </div>
+
   <div class="lib-tools">
-    <div class="lib-summary muted"><span id="lib-count">{{len .ModelGroups}}</span> models · {{bytes .DiskUsed}} on disk</div>
-    <div class="lib-bar">
+    <label class="lib-search">
+      {{template "icon-search"}}
       <input type="search" id="lib-filter" class="lib-filter" placeholder="Filter models" aria-label="Filter models" autocomplete="off">
-      <div class="chips" role="group" aria-label="Sort">
-        <button type="button" class="chip on" data-sort="name">Name</button>
-        <button type="button" class="chip" data-sort="size">Size</button>
-        <button type="button" class="chip" data-sort="recent">Recent</button>
-        <button type="button" class="chip" data-sort="speed" title="Measured speed, from Compare's speed test">Speed</button>
-      </div>
+    </label>
+    <div class="lib-sorts" role="group" aria-label="Sort by">
+      <span class="muted small">Sort</span>
+      <button type="button" class="lib-sortchip" data-sort="name">Name</button>
+      <button type="button" class="lib-sortchip" data-sort="recent">Recent</button>
+      <button type="button" class="lib-sortchip" data-sort="size">Size</button>
+    </div>
+    <div class="lib-measure">
+      <button type="button" class="btn" id="measure-all" {{if not $d.Untested}}hidden{{end}} data-untested="{{$d.Untested}}" title="Run the speed test on each model that hasn't had one, one after another, in the background">Measure all · <span id="measure-n">{{$d.Untested}}</span> untested</button>
     </div>
   </div>
-  <div class="boxed-list" id="lib-list">
-    {{range .ModelGroups}}
-    {{$g := .}}{{with .Primary}}
-    <div class="row lib-row" data-model="{{.Name}}" data-names="{{$g.NamesJoined}}" data-size="{{.Size}}" data-mod="{{.ModifiedAt.Unix}}" data-speed="{{with $g.Bench}}{{.GenTPS}}{{else}}0{{end}}">
-      <div class="row-text">
-        <div class="row-title lib-title">
-          {{if $g.HFRepo}}<a class="row-link" href="/discover?author={{$g.Owner}}&amp;open={{$g.HFRepo}}" title="{{.Name}} (open on Discover)">{{$g.ShortName}}</a>{{else}}<a class="row-link" href="/chat?model={{.Name}}" title="{{.Name}} (chat)">{{.Name}}</a>{{end}}
-          {{with $g.PrimaryOwner}}<span class="lib-owner muted">{{.}}</span>{{end}}
-          <span class="status">{{if $g.Loaded}}<button type="button" class="status-btn tag good" data-eject="{{$g.EjectName}}" title="Loaded. Click to eject">● Loaded</button>{{end}}</span>
+  <div class="lib-progress" id="measure-status" role="status" aria-live="polite" hidden></div>
+
+  <div class="lib-table" id="lib-list">
+    <div class="lib-head" role="presentation">
+      <button type="button" class="lib-th left" data-sort="name">Model</button>
+      <button type="button" class="lib-th right" data-sort="speed">Speed</button>
+      <button type="button" class="lib-th left" data-sort="memory">Memory</button>
+      <button type="button" class="lib-th right" data-sort="score">Score</button>
+      <span></span>
+    </div>
+    {{range $d.Rows}}
+    {{$g := .Group}}{{$name := .RawName}}
+    <div class="lr" data-model="{{$name}}" data-names="{{$g.NamesJoined}}" data-title="{{.Title}}" data-size="{{.Size}}" data-mod="{{$g.Primary.ModifiedAt.Unix}}" data-speed="{{.Speed}}" data-mem="{{.MemNeed}}" data-fit="{{.FitLevel}}" data-score="{{if .Rated}}{{.Score}}{{end}}" data-repo="{{$g.HFRepo}}" data-embed="{{.Embedding}}" data-loaded="{{if $g.Loaded}}{{$g.LoadedName}}{{end}}"{{with $g.Bench}} data-bench-ctx="{{.Ctx}}" data-bench-gpu="{{.GPUPct}}"{{end}}>
+      <div class="lr-main">
+        <div class="lr-title">
+          <a class="lr-name" href="{{if $g.HFRepo}}/discover/{{$g.HFRepo}}{{else}}/chat?model={{$name}}{{end}}" title="{{$name}}{{with $g.Others}} (also {{range $i, $o := .}}{{if $i}}, {{end}}{{$o}}{{end}}){{end}}">{{.Title}}</a>
+          {{range .Tags}}<span class="lr-tag">{{.}}</span>{{end}}
+          <span class="lr-dot{{if not $g.Loaded}} off{{end}}" role="img" aria-label="Loaded in memory" title="Loaded in memory"></span>
+          {{if $g.Has $.Starred}}<span class="lr-star" title="Default model for new chats" aria-label="Default model">★</span>{{end}}
         </div>
-        <div class="row-sub">{{with .Details.Family}}{{.}}{{end}}{{with .Details.ParameterSize}} · {{.}}{{end}}{{with .Details.QuantizationLevel}} · <span class="mono">{{.}}</span>{{end}} · {{bytes .Size}} · {{ago .ModifiedAt}}{{with $g.Others}} · also: {{range $i, $o := .}}{{if $i}}, {{end}}{{$o}}{{end}}{{end}}{{with $g.Link}} · <span class="{{if .Missing}}lib-missing{{else}}muted{{end}}" title="{{.Title}}">{{.Text}}</span>{{end}}</div>
+        <div class="lr-sub">{{with .Quant}}<span class="lr-quant">{{.}}</span> · {{end}}{{bytes .Size}} on disk{{with $g.Link}} · <span class="{{if .Missing}}lib-missing{{end}}" title="{{.Title}}">{{.Text}}</span>{{end}}</div>
       </div>
-      {{with $g.Fit}}<div class="lib-fit" title="{{if $g.Bench}}Measured in a speed test{{else}}Estimated: weights + 8k context, {{bytes .Need}} of your GPU's memory{{end}}">
-        <span class="fit-label fit-{{.Level}}">{{.Label}}</span>
-        <span class="bar fit-{{.Level}}"><span style="width: {{.Percent}}%"></span></span>
-        <span class="muted small">{{with $g.Speed}}{{.}}{{else}}~{{bytes .Need}}{{end}}</span>
-      </div>{{end}}
-      <div class="row-ctrl actions">
-        <button type="button" class="icon-btn star-btn" data-star="{{.Name}}" aria-pressed="{{if $g.Has $.Starred}}true{{else}}false{{end}}" title="{{if $g.Has $.Starred}}Default model for new chats. Click to unstar{{else}}Star: use as the default model when none is loaded{{end}}" aria-label="Star {{.Name}}"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></svg></button>
-        <a class="icon-btn" href="/compare?add={{.Name}}" title="Compare {{.Name}} with other models" aria-label="Compare {{.Name}}">{{template "icon-chart"}}</a>
-        {{if $g.Loaded}}<button type="button" class="btn" data-eject="{{$g.EjectName}}">Eject</button>{{else}}<button type="button" class="btn" data-load="{{.Name}}">Load</button>{{end}}
-        <a class="btn primary" href="/chat?model={{.Name}}">Chat</a>
-        <button type="button" class="icon-btn lib-del" data-delete="{{.Name}}" title="Delete {{.Name}}" aria-label="Delete {{.Name}}"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9h6.6L12 4M6.5 6.5v4.5M9.5 6.5v4.5"/></svg></button>
+      <div class="lr-speed">
+        {{if .Embedding}}<span class="muted" title="Embedding models don't write text">–</span>
+        {{else if .Speed}}<a class="lr-num{{if .SpeedBest}} best{{end}}" href="/compare?add={{$name}}" title="Measured on this computer {{with $g.Bench}}{{ago .At}}{{end}}. Click for the full speed test.">{{.SpeedText}}</a> <span class="lr-unit">tok/s</span>
+        {{else}}<button type="button" class="lr-measure" data-measure="{{$name}}" title="Run the speed test on this model">Measure</button>{{end}}
+      </div>
+      <div class="lr-mem">
+        {{if .MemNeed}}<button type="button" class="lr-membtn" data-pop="mem" aria-haspopup="dialog" title="Estimated memory with an 8k context. Click for details.">
+          <span class="lr-memrow"><span>{{.GB .MemNeed}} <span class="lr-unit">GB</span></span><span class="lr-fit {{.FitLevel}}">{{.FitShort}}</span></span>
+          <span class="lib-track thin"><span class="lib-fill fit-{{.FitLevel}}" style="width: {{.FitPct}}%"></span></span>
+        </button>{{end}}
+      </div>
+      <div class="lr-score">
+        {{if .Rated}}<button type="button" class="lr-num lr-scorebtn" data-pop="score" aria-haspopup="dialog" title="Intelligence score. Click to compare with similar models.">{{.ScoreText}}</button>
+        {{else if .Embedding}}<span class="muted">–</span>
+        {{else}}<button type="button" class="lr-scorebtn lr-none" data-pop="score" aria-haspopup="dialog" title="No score yet. Click to see why.">…</button>{{end}}
+      </div>
+      <div class="lr-actions">
+        <a class="lr-chat" href="/chat?model={{$name}}">Chat</a>
+        <button type="button" class="lr-more" aria-haspopup="menu" aria-expanded="false" aria-label="More actions for {{.Title}}" title="More actions">⋯</button>
+        <div class="lr-menu" role="menu" hidden>
+          <button type="button" role="menuitem" class="keep-text" data-act="toggle" {{if $g.Loaded}}data-eject="{{$g.EjectName}}"{{else}}data-load="{{$name}}"{{end}}>{{if $g.Loaded}}Eject{{else}}Load{{end}}</button>
+          <a role="menuitem" href="/chat?model={{$name}}&amp;tune=1">Tune…</a>
+          <a role="menuitem" href="/compare?add={{$name}}">Compare</a>
+          {{if not .Embedding}}<button type="button" role="menuitem" data-measure="{{$name}}">{{if .Speed}}Measure speed again{{else}}Measure speed{{end}}</button>{{end}}
+          <button type="button" role="menuitem" data-star="{{$name}}" class="keep-text" aria-pressed="{{if $g.Has $.Starred}}true{{else}}false{{end}}">{{if $g.Has $.Starred}}Unstar{{else}}Star as default{{end}}</button>
+          <button type="button" role="menuitem" class="danger keep-text" data-delete="{{$name}}">Delete…</button>
+        </div>
       </div>
     </div>
-    {{end}}
     {{end}}
   </div>
   <p class="muted lib-none" id="lib-none" hidden>No models match.</p>
-  <script>
-  (() => {
-    const list = document.getElementById('lib-list');
-    const filter = document.getElementById('lib-filter');
-    const none = document.getElementById('lib-none');
-    const count = document.getElementById('lib-count');
-    let sort = 'name';
-    const rows = () => [...list.querySelectorAll('.lib-row')];
-    function apply() {
-      const q = filter.value.trim().toLowerCase();
-      let shown = 0;
-      for (const r of rows()) {
-        const hit = !q || (r.dataset.names + ' ' + r.textContent).toLowerCase().includes(q);
-        r.hidden = !hit;
-        if (hit) shown++;
-      }
-      none.hidden = shown > 0 || rows().length === 0;
-      count.textContent = rows().length;
-    }
-    function order() {
-      const key = {
-        name: (a, b) => a.dataset.model.localeCompare(b.dataset.model),
-        size: (a, b) => b.dataset.size - a.dataset.size,
-        recent: (a, b) => b.dataset.mod - a.dataset.mod,
-        speed: (a, b) => b.dataset.speed - a.dataset.speed,
-      }[sort];
-      list.append(...rows().sort(key));
-    }
-    filter.addEventListener('input', apply);
-    document.querySelectorAll('[data-sort]').forEach((c) => c.addEventListener('click', () => {
-      sort = c.dataset.sort;
-      document.querySelectorAll('[data-sort]').forEach((o) => o.classList.toggle('on', o === c));
-      order();
-    }));
-    new MutationObserver(apply).observe(list, { childList: true });
-  })();
-  </script>
+  <p class="muted small lib-foot">Speed is measured on this computer. Memory is an estimate with an 8k context. Score is the <a href="{{$d.ScoreURL}}" target="_blank" rel="noopener">Artificial Analysis</a> Intelligence Index of the base model.</p>
+  <div class="lib-pop" id="lib-pop" role="dialog" aria-modal="false" hidden></div>
+  <script src="/static/library.js" defer></script>
   {{else if not .ModelsErr}}
   <div class="lib-empty">
     <h2>No models yet</h2>

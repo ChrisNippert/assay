@@ -35,6 +35,7 @@ type fakeOllama struct {
 	replies    []string // answers used first, one per request, before reply
 	caps       string   // /api/show's capabilities, if set
 	modelInfo  string   // /api/show's model_info, if set
+	tags       string   // /api/tags's body, if set
 	// gate, if set, holds /api/chat after its first line until it is closed.
 	gate chan struct{}
 }
@@ -44,6 +45,10 @@ func (f *fakeOllama) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 	switch r.URL.Path {
 	case "/api/tags":
+		if f.tags != "" {
+			io.WriteString(w, f.tags)
+			return
+		}
 		io.WriteString(w, `{"models":[{"name":"qwen3:8b","size":5000000000,"details":{"family":"qwen3","parameter_size":"8.2B","quantization_level":"Q4_K_M"}}]}`)
 	case "/api/ps":
 		var out struct {

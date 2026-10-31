@@ -179,7 +179,7 @@ func (s *Server) handleBench(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer benchMu.Unlock()
-	res, err := s.runBench(r.Context(), req.Name)
+	res, err := s.runBench(r.Context(), req.Name, false)
 	if err != nil {
 		writeError(w, ollamaStatus(err), err.Error())
 		return
@@ -194,7 +194,7 @@ func (s *Server) handleBench(w http.ResponseWriter, r *http.Request) {
 // runBench measures a model the way chats use it: alone in memory, loaded
 // fresh at the context Assay would pick, then a fixed prompt of about a thousand
 // tokens and a reply capped at bench.GenTokens.
-func (s *Server) runBench(ctx context.Context, name string) (bench.Result, error) {
+func (s *Server) runBench(ctx context.Context, name string, keepPinned bool) (bench.Result, error) {
 	models, err := s.ollama.List(ctx)
 	if err != nil {
 		return bench.Result{}, err
@@ -207,7 +207,7 @@ func (s *Server) runBench(ctx context.Context, name string) (bench.Result, error
 
 	// Alone on the GPU, so models are measured the same way whatever
 	// happened to be loaded.
-	if err := s.unloadAll(ctx); err != nil {
+	if err := s.unloadFor(ctx, keepPinned); err != nil {
 		return res, err
 	}
 	// Settle the context first: this measures the model and, if the first
@@ -222,7 +222,7 @@ func (s *Server) runBench(ctx context.Context, name string) (bench.Result, error
 	}
 	// Unload again (measuring may have loaded it), so the load is timed and
 	// the prompt isn't cached.
-	if err := s.unloadAll(ctx); err != nil {
+	if err := s.unloadFor(ctx, keepPinned); err != nil {
 		return res, err
 	}
 	t := time.Now()

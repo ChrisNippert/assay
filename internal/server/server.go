@@ -152,6 +152,12 @@ type Server struct {
 	manualGPU sync.Map
 	// thinkers remembers, per model, whether it thought when left to decide.
 	thinkers sync.Map
+	// libScores caches each repo's intelligence score for the Library.
+	libScores sync.Map
+	// measure is the Library's measure-all run; benchFn runs one speed test
+	// (nil: runBench; tests swap it).
+	measure measureJob
+	benchFn func(ctx context.Context, name string, keepPinned bool) (bench.Result, error)
 	// otherVRAM is the last measured VRAM used outside Ollama (desktop etc.).
 	otherVRAM atomic.Int64
 	// vramUsed reports GPU memory in use; swapped out in tests.
@@ -260,6 +266,11 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("GET /api/limits", s.handleLimits)
 	mux.HandleFunc("PUT /api/limits", s.handleLimitsSave)
 	mux.HandleFunc("POST /api/bench", s.handleBench)
+	mux.HandleFunc("GET /api/library/scores", s.handleLibScores)
+	mux.HandleFunc("GET /api/library/nearby", s.handleLibNearby)
+	mux.HandleFunc("GET /api/library/measure", s.handleMeasureState)
+	mux.HandleFunc("POST /api/library/measure", s.handleMeasureStart)
+	mux.HandleFunc("DELETE /api/library/measure", s.handleMeasureCancel)
 
 	mux.HandleFunc("GET /api/loaded", s.handleLoaded)
 	mux.HandleFunc("GET /api/gpu", s.handleGPU)
