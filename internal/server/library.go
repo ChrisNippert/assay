@@ -121,7 +121,7 @@ func (s *Server) libraryData(p *page) *libraryData {
 			title, tags = prettyModel(g.ShortName())
 		}
 		row := libRow{
-			Group: g, Title: title, Tags: tags, Quant: g.Primary.Details.QuantizationLevel, Size: g.Primary.Size,
+			Group: g, Title: title, Tags: tags, Quant: quantOf(g), Size: g.Primary.Size,
 			Embedding: isEmbeddingName(g.Primary.Name),
 			MemNeed:   g.Fit.Need, FitLevel: g.Fit.Level, FitShort: fitShort[g.Fit.Level], FitPct: g.Fit.Percent,
 		}
@@ -365,6 +365,19 @@ func (s *Server) handleLibNearby(w http.ResponseWriter, r *http.Request) {
 	list, rank, n := nearScores(near, mine)
 	resp["score"], resp["of"], resp["params"], resp["near"], resp["rank"], resp["count"] = ls.score, ls.of, params, list, rank, n
 	writeJSON(w, http.StatusOK, resp)
+}
+
+var quantTag = regexp.MustCompile(`(?i)^((ud|iq)-)?i?q\d|^(bf|f)(16|32)$|^mxfp4`)
+
+// quantOf is the quantization as the model's tag spells it ("UD-Q4_K_XL",
+// which says more than the file type's "Q4_0"), else the file type's.
+func quantOf(g modelGroup) string {
+	for _, n := range g.Names {
+		if _, tag, ok := strings.Cut(n, ":"); ok && quantTag.MatchString(tag) {
+			return strings.ToUpper(tag)
+		}
+	}
+	return g.Primary.Details.QuantizationLevel
 }
 
 func afterSlash(id string) string {

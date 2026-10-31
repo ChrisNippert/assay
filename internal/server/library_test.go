@@ -61,6 +61,19 @@ func TestBillionsIn(t *testing.T) {
 	}
 }
 
+func TestQuantOf(t *testing.T) {
+	g := modelGroup{Names: []string{"gemma-4-12b-it-qat:ud-q4_k_xl", "hf.co/unsloth/x-GGUF:UD-Q4_K_XL"}}
+	g.Primary.Details.QuantizationLevel = "Q4_0"
+	if got := quantOf(g); got != "UD-Q4_K_XL" {
+		t.Errorf("quantOf = %q", got)
+	}
+	g = modelGroup{Names: []string{"qwen3-embedding:0.6b"}}
+	g.Primary.Details.QuantizationLevel = "Q8_0"
+	if got := quantOf(g); got != "Q8_0" {
+		t.Errorf("quantOf = %q", got)
+	}
+}
+
 func TestLibraryPage(t *testing.T) {
 	s, _, _ := newTestServer(t)
 	rec := httptest.NewRecorder()
