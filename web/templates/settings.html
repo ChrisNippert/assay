@@ -2,6 +2,7 @@
 {{define "content"}}
 <div class="column settings">
   <nav class="settings-nav" aria-label="Settings sections">
+    <a href="#appearance">Appearance</a>
     <a href="#models">Models</a>
     {{if .Data.Knowledge}}<a href="#knowledge">Knowledge</a>{{end}}
     <a href="#chats">Chats</a>
@@ -10,6 +11,18 @@
     {{if .Data.Voice}}<a href="#voice">Voice</a>{{end}}
     <a href="#machine">This machine</a>
   </nav>
+
+  <h2 class="group-title" id="appearance">Appearance</h2>
+  <div class="boxed-list">
+    <div class="row">
+      <div class="row-text"><span class="row-title">Theme</span><span class="row-sub">Follow the system, or always light or dark.</span></div>
+      <div class="row-ctrl"><div class="segmented" role="group" aria-label="Theme"><button type="button" data-theme-choice="system">System</button><button type="button" data-theme-choice="light">Light</button><button type="button" data-theme-choice="dark">Dark</button></div></div>
+    </div>
+    <div class="row">
+      <div class="row-text"><span class="row-title">Accent</span><span class="row-sub">The colour of buttons, selections and meters.</span></div>
+      <div class="row-ctrl"><div class="segmented" role="group" aria-label="Accent"><button type="button" data-accent-choice="copper"><i class="swatch swatch-copper" aria-hidden="true"></i>Copper</button><button type="button" data-accent-choice="indigo"><i class="swatch swatch-indigo" aria-hidden="true"></i>Indigo</button></div></div>
+    </div>
+  </div>
 
   <h2 class="group-title" id="models">Models</h2>
   {{with .Data.Engine}}

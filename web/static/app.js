@@ -74,20 +74,40 @@ window.assaySheets = (() => {
 (() => {
   const root = document.documentElement;
 
-  // ---- theme ----
+  // ---- theme and accent ----
+  // The sidebar button flips light/dark; Settings -> Appearance also offers
+  // "follow the system" and the accent. theme.js applies both before paint.
   const themeBtn = document.getElementById('theme-toggle');
   const currentTheme = () =>
     root.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-  const syncThemeLabel = () => {
+  const store = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} };
+  const syncAppearance = () => {
     if (themeBtn) themeBtn.querySelector('span').textContent = currentTheme() === 'dark' ? 'Light mode' : 'Dark mode';
+    for (const b of document.querySelectorAll('[data-theme-choice]')) {
+      const v = b.dataset.themeChoice;
+      b.classList.toggle('on', v === 'system' ? !root.dataset.theme : root.dataset.theme === v);
+    }
+    for (const b of document.querySelectorAll('[data-accent-choice]')) b.classList.toggle('on', root.dataset.accent === b.dataset.accentChoice);
   };
   themeBtn?.addEventListener('click', () => {
     const next = currentTheme() === 'dark' ? 'light' : 'dark';
     root.dataset.theme = next;
-    try { localStorage.setItem('theme', next); } catch {}
-    syncThemeLabel();
+    store('theme', next);
+    syncAppearance();
   });
-  syncThemeLabel();
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-theme-choice]');
+    if (t) {
+      if (t.dataset.themeChoice === 'system') { delete root.dataset.theme; store('theme', null); }
+      else { root.dataset.theme = t.dataset.themeChoice; store('theme', t.dataset.themeChoice); }
+      syncAppearance();
+      return;
+    }
+    const a = e.target.closest('[data-accent-choice]');
+    if (a) { root.dataset.accent = a.dataset.accentChoice; store('accent', a.dataset.accentChoice); syncAppearance(); }
+  });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', syncAppearance);
+  syncAppearance();
 
   // ---- helpers ----
   async function errorText(res) {
@@ -366,8 +386,7 @@ window.assaySheets = (() => {
       if (document.hidden) clearTimeout(sampleT);
       else { sampleGpu(); refreshLoaded(true); scheduleSample(); }
     });
-    sampleGpu();
-    scheduleSample();
+    window.assayWhenVisible(() => { sampleGpu(); scheduleSample(); });
   }
 
   // While a model loads, the list is polled until it's done; listeners
@@ -395,7 +414,7 @@ window.assaySheets = (() => {
   }
   // A page opened while a model loads picks it up (the page's own list was
   // rendered by the server without it).
-  if (document.getElementById('loaded-list')) refreshLoaded(true);
+  if (document.getElementById('loaded-list')) window.assayWhenVisible(() => refreshLoaded(true));
 
   // Makes a text button act as Load or Eject for a model.
   function setLoadButton(btn, name, loaded) {
@@ -676,7 +695,7 @@ window.assaySheets = (() => {
     }
   });
   // Already-running downloads (e.g. started on another page) show up right away.
-  pollDownloads();
+  window.assayWhenVisible(pollDownloads);
 
   // ---- presets page ----
   document.addEventListener('click', async (e) => {
@@ -760,7 +779,7 @@ window.assaySheets = (() => {
       if (!document.querySelector('.chat-row.running')) { clearInterval(runPoll); runPoll = null; }
     }, 3000);
   }
-  trackRunning();
+  window.assayWhenVisible(trackRunning);
 
   // Adds a newly created chat to the top of the Today group (creating it if missing).
   function addSidebarChat(id, title, projectId) {

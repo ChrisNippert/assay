@@ -490,6 +490,8 @@
     if (wanted) { author.append(new Option(wanted, wanted)); author.value = wanted; }
   }
   const deep = new URLSearchParams(location.search).get('open');
-  if (deep && /^[\w.-]+\/[\w.-]+$/.test(deep)) showPanel(deep);
-  search();
+  window.assayWhenVisible(() => {
+    if (deep && /^[\w.-]+\/[\w.-]+$/.test(deep)) showPanel(deep);
+    search();
+  });
 })();

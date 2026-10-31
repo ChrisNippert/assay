@@ -1226,11 +1226,11 @@
 
   // Opening a chat whose reply is still being written (the page was left
   // and come back to) shows it as it goes: the server replays what it has.
-  if (chatEl.dataset.running && chatId) {
+  if (chatEl.dataset.running && chatId) window.assayWhenVisible(() => {
     fetch(`/api/chats/${chatId}/stream`).then((res) => {
       if (res.status === 200) send('', undefined, [], [], res);
     }).catch(() => {});
-  }
+  });
 
   // The divider for a chat's summary sits before the message it stands
   // above: message number upTo. Only one is shown; null removes it.
