@@ -247,3 +247,21 @@ func TestEditCodeAttachedFile(t *testing.T) {
 		t.Fatalf("%+v", r2)
 	}
 }
+
+// A multi-line find with the wrong indentation (Gemma copied a maze with 4
+// spaces where the file had 12) still matches, and the replacement takes
+// the file's indentation.
+func TestEditCodeLooseIndent(t *testing.T) {
+	code := "```html\n<script>\n        const maze = [\n            [1,1,1],\n            [1,0,1],\n        ];\n</script>\n```"
+	c := &chats.Chat{Messages: []chats.Message{asst(code)}}
+	r := editCodeTool(c, nil).Run(context.Background(), json.RawMessage(`{"find":"const maze = [\n    [1,1,1],\n    [1,0,1],","replace":"const maze = [\n    [1,1,1],\n    [1,0,0],\n    [1,1,1],"}`))
+	want := "        const maze = [\n            [1,1,1],\n            [1,0,0],\n            [1,1,1],\n        ];"
+	if r.Err || !strings.Contains(r.Full, want) {
+		t.Fatalf("%s\n%s", r.Text, r.Full)
+	}
+	// A real mismatch says which line differs.
+	r = editCodeTool(c, nil).Run(context.Background(), json.RawMessage(`{"find":"const maze = [\n    [1,1,1],\n    [1,9,1],","replace":"x"}`))
+	if !r.Err || !strings.Contains(r.Text, `line 3 differs: the block has "[1,0,1],"`) {
+		t.Fatalf("%s", r.Text)
+	}
+}

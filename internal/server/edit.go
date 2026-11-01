@@ -166,11 +166,6 @@ func applyEdit(msgs []chats.Message, file fileText, find, replace string) (edite
 		return edited{}, errors.New("find is empty: copy the exact text to change")
 	}
 	cands := editCandidates(msgs, file)
-	if t := strings.TrimSpace(find); t != find && t != "" && !strings.Contains(t, "\n") && !slices.ContainsFunc(cands, func(b codeBlock) bool { return strings.Contains(b.body, find) }) {
-		// One line with the wrong indentation: match the line's text and
-		// keep the block's own indentation.
-		find, replace = t, strings.TrimSpace(replace)
-	}
 	for i := len(cands) - 1; i >= 0; i-- {
 		b := cands[i]
 		n := strings.Count(b.body, find)
@@ -181,19 +176,132 @@ func applyEdit(msgs []chats.Message, file fileText, find, replace string) (edite
 			return edited{}, fmt.Errorf("find occurs %d times in the newest block that contains it: copy more of the line, or the line around it, so it occurs once", n)
 		}
 		at := strings.Index(b.body, find)
-		body := b.body[:at] + replace + b.body[at+len(find):]
-		e := edited{block: b.open + "\n" + body + "\n" + b.close, name: b.name}
-		lines := strings.Split(body, "\n")
-		first := strings.Count(body[:at], "\n")
-		last := first + strings.Count(replace, "\n")
-		lo, hi := max(0, first-3), min(len(lines)-1, last+3)
-		e.whole = len(lines) <= excerptLines
-		if e.whole {
-			lo, hi = 0, len(lines)-1
-		}
-		e.from, e.to, e.of = lo+1, hi+1, len(lines)
-		e.excerpt = b.open + "\n" + strings.Join(lines[lo:hi+1], "\n") + "\n" + b.close
-		return e, nil
+		return b.edit(at, at+len(find), replace), nil
 	}
-	return edited{}, errors.New("no code block in this chat contains find: copy the exact text from the block")
+	// No exact match: models often get the indentation wrong, so match
+	// line by line ignoring leading and trailing spaces, and indent the
+	// replacement like the block.
+	for i := len(cands) - 1; i >= 0; i-- {
+		b := cands[i]
+		start, end, n, indent := looseFind(b.body, find)
+		if n == 0 {
+			continue
+		}
+		if n > 1 {
+			return edited{}, fmt.Errorf("find occurs %d times in the newest block that contains it: copy more of the line, or the line around it, so it occurs once", n)
+		}
+		return b.edit(start, end, reindent(replace, find, indent)), nil
+	}
+	return edited{}, errors.New(missHint(cands, find))
+}
+
+// edit replaces body[start:end] and describes the result.
+func (b codeBlock) edit(start, end int, replace string) edited {
+	body := b.body[:start] + replace + b.body[end:]
+	e := edited{block: b.open + "\n" + body + "\n" + b.close, name: b.name}
+	lines := strings.Split(body, "\n")
+	first := strings.Count(body[:start], "\n")
+	last := first + strings.Count(replace, "\n")
+	lo, hi := max(0, first-3), min(len(lines)-1, last+3)
+	e.whole = len(lines) <= excerptLines
+	if e.whole {
+		lo, hi = 0, len(lines)-1
+	}
+	e.from, e.to, e.of = lo+1, hi+1, len(lines)
+	e.excerpt = b.open + "\n" + strings.Join(lines[lo:hi+1], "\n") + "\n" + b.close
+	return e
+}
+
+// findLines is find split into lines, without blank lines at either end.
+func findLines(find string) []string {
+	fl := strings.Split(find, "\n")
+	for len(fl) > 0 && strings.TrimSpace(fl[0]) == "" {
+		fl = fl[1:]
+	}
+	for len(fl) > 0 && strings.TrimSpace(fl[len(fl)-1]) == "" {
+		fl = fl[:len(fl)-1]
+	}
+	return fl
+}
+
+// looseFind looks for find's lines as whole lines of body, ignoring
+// leading and trailing spaces. It returns the byte range of the first match
+// (whole lines), how many matches there are, and the indentation of the
+// match's first line.
+func looseFind(body, find string) (start, end, n int, indent string) {
+	fl := findLines(find)
+	if len(fl) == 0 {
+		return 0, 0, 0, ""
+	}
+	bl := strings.Split(body, "\n")
+	offs := make([]int, len(bl)+1)
+	for i, l := range bl {
+		offs[i+1] = offs[i] + len(l) + 1
+	}
+	for k := 0; k+len(fl) <= len(bl); k++ {
+		ok := true
+		for j, l := range fl {
+			if strings.TrimSpace(bl[k+j]) != strings.TrimSpace(l) {
+				ok = false
+				break
+			}
+		}
+		if !ok {
+			continue
+		}
+		if n++; n == 1 {
+			start, end = offs[k], offs[k+len(fl)]-1
+			indent = bl[k][:len(bl[k])-len(strings.TrimLeft(bl[k], " \t"))]
+		}
+	}
+	return start, end, n, indent
+}
+
+// reindent shifts replace from find's indentation to the block's: the
+// indentation find's first line had is swapped for indent on every line.
+func reindent(replace, find, indent string) string {
+	fl := findLines(find)
+	from := ""
+	if len(fl) > 0 {
+		from = fl[0][:len(fl[0])-len(strings.TrimLeft(fl[0], " \t"))]
+	}
+	lines := findLines(replace)
+	for i, l := range lines {
+		if strings.TrimSpace(l) == "" {
+			lines[i] = ""
+		} else if rest, ok := strings.CutPrefix(l, from); ok {
+			lines[i] = indent + rest
+		} else {
+			lines[i] = indent + strings.TrimLeft(l, " \t")
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// missHint says why find matched nothing, as precisely as it can: where its
+// first line is, and which of its lines differs there, so the model can fix
+// the call instead of giving up.
+func missHint(cands []codeBlock, find string) string {
+	const none = "no code block in this chat contains find: copy the exact text from the block, a line or two is enough"
+	fl := findLines(find)
+	if len(fl) < 2 {
+		return none
+	}
+	for i := len(cands) - 1; i >= 0; i-- {
+		bl := strings.Split(cands[i].body, "\n")
+		for k, l := range bl {
+			if strings.TrimSpace(l) != strings.TrimSpace(fl[0]) {
+				continue
+			}
+			for j := 1; j < len(fl); j++ {
+				if k+j >= len(bl) {
+					return fmt.Sprintf("find's first line is at line %d of a block, but the block ends before find does. Use fewer lines.", k+1)
+				}
+				if strings.TrimSpace(bl[k+j]) != strings.TrimSpace(fl[j]) {
+					return fmt.Sprintf("find's first line is at line %d of a block, but find's line %d differs: the block has %q there, find has %q. Copy the block's text exactly, or use fewer lines.", k+1, j+1, strings.TrimSpace(bl[k+j]), strings.TrimSpace(fl[j]))
+				}
+			}
+		}
+	}
+	return none
 }
