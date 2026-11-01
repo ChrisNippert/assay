@@ -25,7 +25,35 @@
       <button type="button" class="lib-sortchip" role="radio" data-think="">Model's default</button>
       <button type="button" class="lib-sortchip" role="radio" data-think="off">Off</button>
     </div>
-    <div class="bm-seg" role="radiogroup" aria-label="Show">
+
+    <div class="lib-measure"><button type="button" class="btn" id="bm-run-open">Run on several models…</button></div>
+  </div>
+  <div class="lib-progress" id="bm-status" role="status" aria-live="polite" hidden></div>
+
+  <section id="bm-model" class="bm-section">
+    <div class="bm-pickrow">
+      <div class="bm-combo" id="bm-combo">
+        <input type="search" id="bm-combo-input" class="bm-combo-input" placeholder="Search your models…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="bm-combo-list" aria-label="Model">
+        <div class="bm-combo-list" id="bm-combo-list" role="listbox" hidden></div>
+      </div>
+      <div class="bm-model-sum" id="bm-model-sum"></div>
+    </div>
+    <div class="boxed-list bm-setrows" id="bm-setrows"></div>
+    <div class="bm-runbar" id="bm-runbar">
+      <div class="bm-pickers"><span class="muted small">Tick</span>
+        <button type="button" class="lib-sortchip" data-tick="all">All</button>
+        <button type="button" class="lib-sortchip" data-tick="none">None</button>
+        <button type="button" class="lib-sortchip" data-tick="new">Not run yet</button>
+      </div>
+      <label class="bm-check"><input type="checkbox" id="bm-one-redo"> Run again where finished</label>
+      <span class="grow"></span>
+      <button type="button" class="btn primary" id="bm-one-run">Run</button>
+    </div>
+  </section>
+
+  <section id="bm-compare" class="bm-section">
+    <div class="bm-h-row"><h2 class="bm-h">Compare</h2>
+      <div class="bm-seg" role="radiogroup" aria-label="Show">
       <span class="muted small">Show</span>
       <button type="button" class="lib-sortchip" role="radio" data-metric="score">Score</button>
       <button type="button" class="lib-sortchip" role="radio" data-metric="tps" title="Tokens written per second, including reading each question">Tokens/s</button>
@@ -33,14 +61,17 @@
       <button type="button" class="lib-sortchip" role="radio" data-metric="tpm" title="Questions answered per minute">Tasks/min</button>
       <button type="button" class="lib-sortchip" role="radio" data-metric="tpr" title="All tokens written divided by the right answers: what one right answer costs">Tokens/right</button>
     </div>
-    <div class="lib-measure"><button type="button" class="btn primary" id="bm-run-open">Run benchmarks…</button></div>
-  </div>
-  <div class="lib-progress" id="bm-status" role="status" aria-live="polite" hidden></div>
+    </div>
+    <div class="bm-subset" id="bm-subset" role="group" aria-label="Sets to compare on"></div>
+    <div class="bm-bars" id="bm-bars"></div>
+    <p class="muted small" id="bm-bars-note"></p>
+  </section>
 
-  <section id="bm-results" class="bm-section">
+  <details class="bm-section bm-all" id="bm-results">
+    <summary class="bm-h">All results</summary>
     <div class="bm-scroll"><div class="bm-table" id="bm-table"></div></div>
     <p class="muted bm-empty" id="bm-none" hidden></p>
-  </section>
+  </details>
 
   <section id="bm-fit" class="bm-section">
     <h2 class="bm-h">Placing models on the Intelligence Index</h2>
@@ -112,7 +143,7 @@
     </form>
   </dialog>
 
-  <p class="muted small bm-foot">Each question is asked once, at temperature 0, one model at a time. Runs wait while a chat reply is being written, and pick up where they stopped. The estimate fits a straight line from your overall score to the <a href="https://artificialanalysis.ai" target="_blank" rel="noopener">Artificial Analysis</a> Intelligence Index of the models that have one; it's an estimate, not a published score.</p>
+  <p class="muted small bm-foot">Each question is asked once, at temperature 1 with a fixed seed, one model at a time. Runs wait while a chat reply is being written, and pick up where they stopped. The estimate fits a straight line from your overall score to the <a href="https://artificialanalysis.ai" target="_blank" rel="noopener">Artificial Analysis</a> Intelligence Index of the models that have one; it's an estimate, not a published score.</p>
   <script>window.assayBench = {{.Data.Initial}};</script>
   <script src="/static/benchmarks.js" defer></script>
 </div>

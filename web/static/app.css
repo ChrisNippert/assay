@@ -2274,3 +2274,52 @@ button.bm-th:hover { color: var(--text); }
 .bm-ans-stat-k { font-size: var(--fs-xs); color: var(--muted); }
 .bm-ans-stat-v { font-size: 17px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .bm-ans-stat-n { font-size: var(--fs-xs); color: var(--muted); line-height: 1.3; }
+
+/* Benchmarks: one model at a time, then a bar chart to compare. */
+.bm-pickrow { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s3, 12px); margin-bottom: var(--s3, 12px); }
+.bm-combo { position: relative; flex: 1 1 320px; max-width: 460px; }
+.bm-combo-input { width: 100%; height: 44px; padding: 0 14px; font: inherit; font-size: 15px; font-weight: 500; color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; }
+.bm-combo-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.bm-combo-list { position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); max-height: min(60vh, 420px); overflow-y: auto; background: var(--panel); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.14); padding: 4px; }
+.bm-opt { display: flex; flex-direction: column; gap: 1px; padding: 8px 10px; border-radius: 7px; cursor: pointer; }
+.bm-opt.at { background: var(--soft, var(--raised)); }
+.bm-opt.sel .bm-opt-name { color: var(--accent); }
+.bm-opt-name { font-weight: 500; }
+.bm-opt-sub { font-size: var(--fs-xs); color: var(--muted); }
+.bm-model-sum { display: flex; flex-wrap: wrap; gap: var(--s2, 8px); }
+.bm-sum { display: flex; flex-direction: column; padding: 6px 12px; border: 1px solid var(--border); border-radius: 10px; min-width: 80px; }
+.bm-sum-k { font-size: var(--fs-xs); color: var(--muted); }
+.bm-sum-v { font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.bm-setrow { display: grid; grid-template-columns: auto 1fr minmax(120px, auto); align-items: center; gap: var(--s3, 12px); }
+.bm-tick { display: flex; align-items: center; padding: 6px; margin: -6px; cursor: pointer; }
+.bm-tick input { width: 18px; height: 18px; accent-color: var(--accent); }
+.bm-setscore { display: flex; justify-content: flex-end; align-items: center; gap: 8px; min-width: 120px; }
+.bm-setscore .bm-score { min-width: 120px; }
+.bm-runbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s3, 12px); margin-top: var(--s3, 12px); }
+.bm-runbar[hidden] { display: none; }
+.bm-pickers { display: flex; align-items: center; gap: 6px; }
+.bm-subset { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: var(--s2, 8px) 0 var(--s3, 12px); }
+.bm-chipgap { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+.lib-sortchip.soft { background: var(--accent-soft); }
+.bm-bars { display: flex; flex-direction: column; gap: 2px; }
+.bm-bar { display: grid; grid-template-columns: minmax(150px, 34%) 1fr 64px; align-items: center; gap: var(--s3, 12px); padding: 7px 10px; border: 0; border-radius: 8px; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.bm-bar:hover { background: var(--soft, var(--raised)); }
+.bm-bar:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.bm-bar-name { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.bm-bar-rank { width: 1.6em; flex: none; text-align: right; font-size: var(--fs-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+.bm-bar-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bm-bar-quant { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
+.bm-bar-track { height: 14px; border-radius: 4px; background: var(--track, var(--border)); overflow: hidden; }
+.bm-bar-fill { display: block; height: 100%; border-radius: 4px; background: color-mix(in srgb, var(--muted) 55%, transparent); }
+.bm-bar-val { text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; }
+.bm-bar.sel { background: var(--accent-soft); }
+.bm-bar.sel .bm-bar-fill { background: var(--accent); }
+.bm-bar.sel .bm-bar-title { font-weight: 600; }
+.bm-all > summary { cursor: pointer; }
+@media (max-width: 640px) {
+  .bm-bar { grid-template-columns: minmax(110px, 40%) 1fr 52px; gap: 8px; padding: 7px 4px; }
+  .bm-bar-quant { display: none; }
+  .bm-setrow { grid-template-columns: auto 1fr; }
+  .bm-setscore { grid-column: 2; justify-content: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) { .bm-bar { transition: none; } }

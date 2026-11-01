@@ -81,6 +81,8 @@
   // ---- rendering ----
   function render() {
     renderStats();
+    renderModel();
+    renderCompare();
     renderTable();
     renderFit();
     renderSets();
@@ -317,6 +319,263 @@
     }).catch(() => {});
   }
 
+  // ---- one model: pick it, see its sets, run some ----
+  let picked = params.get('model') || store.get('bm-model') || '';
+  let ticked = null; // set ids ticked to run; null until the model's rows are first drawn
+  const pickedRow = () => {
+    let r = data.rows.find((x) => x.name === picked);
+    if (!r && data.rows.length) {
+      // Default: the model with the most finished sets.
+      const done = (x) => Object.values(x.cells).filter((c) => c.done && !c.stale).length;
+      r = [...data.rows].sort((a, b) => done(b) - done(a))[0];
+      picked = r.name;
+    }
+    return r;
+  };
+  function pick(name) {
+    if (name !== picked) ticked = null;
+    picked = name;
+    store.set('bm-model', name);
+    renderModel();
+    renderCompare();
+  }
+  const itemFor = (row, setId) => run.running && run.think === think && run.items.find((it) => it.model === row.name && it.set === setId && (it.state === 'running' || it.state === 'pending'));
+  const finished = (c) => c && c.done && !c.stale;
+  function progressText(item) {
+    let text = item.judging ? `judging, ${item.judging} left` : `${item.answered} of ${item.total}`;
+    const done = item.answered - (item.from || 0);
+    if (!item.judging && item.since && done > 0) {
+      const per = (Date.now() - new Date(item.since).getTime()) / done;
+      text += ` · ${dur(per * (item.total - item.answered))} left`;
+    }
+    return text;
+  }
+
+  function renderModel() {
+    const r = pickedRow();
+    const input = $('bm-combo-input');
+    if (document.activeElement !== input) input.value = r ? r.title + (r.quant ? ' · ' + r.quant : '') : '';
+    const sum = $('bm-model-sum');
+    sum.innerHTML = '';
+    const rows = $('bm-setrows');
+    rows.innerHTML = '';
+    $('bm-runbar').hidden = !r;
+    if (!r) return;
+    const bits = [];
+    if (r.overall != null) bits.push(['Overall', `${pct(r.overall)}%`]);
+    if (r.index != null) bits.push(['Index', String(Math.round(r.index))]);
+    else if (r.estimate != null) bits.push(['Estimate', `${r.outside ? '≈' : ''}${Math.round(r.estimate)}`]);
+    const all = sumCells(Object.values(r.cells));
+    if (all.ms) bits.push(['Tokens/s', num(METRICS.tps.val(all))]);
+    for (const [k, v] of bits) {
+      const t = el('div', 'bm-sum');
+      t.append(el('span', 'bm-sum-k', k), el('span', 'bm-sum-v', v));
+      sum.append(t);
+    }
+    if (!ticked) ticked = new Set(data.sets.filter((s) => !finished(r.cells[s.id]) && data.suite.includes(s.id)).map((s) => s.id));
+    for (const s of data.sets) {
+      const c = r.cells[s.id];
+      const item = itemFor(r, s.id);
+      const row = el('div', 'row bm-setrow');
+      const box = el('label', 'bm-tick');
+      const cb = el('input');
+      cb.type = 'checkbox';
+      cb.checked = ticked.has(s.id);
+      cb.setAttribute('aria-label', `Run ${s.name}`);
+      cb.onchange = () => { if (cb.checked) ticked.add(s.id); else ticked.delete(s.id); runLabel(); };
+      box.append(cb);
+      const t = el('div', 'row-text');
+      const title = el('div', 'row-title', s.name);
+      if (s.code) title.append(' ', el('span', 'tag', 'runs code'));
+      if (s.lean) title.append(' ', el('span', 'tag', 'Lean'));
+      if (s.judge) title.append(' ', el('span', 'tag', 'judged'));
+      const subText = c && c.answered ? cellStats(c) : `${s.questions} questions${s.description ? ' · ' + s.description : ''}`;
+      t.append(title, el('div', 'row-sub', subText));
+      const right = el('div', 'bm-setscore');
+      if (item) {
+        right.classList.add('busy');
+        if (item.state === 'running') right.append(el('span', 'lib-spin'));
+        right.append(el('span', 'muted small', item.state === 'running' ? progressText(item) : 'queued'));
+      } else if (c) {
+        const b = el('button', 'bm-score');
+        b.type = 'button';
+        b.title = `${c.correct} of ${c.answered} right${c.stale ? '. Out of date: the set or the way runs sample has changed since.' : ''}${c.cut ? `. ${c.cut} ran out of tokens or looped.` : ''} Click to read the answers.`;
+        const n = el('span', 'bm-num' + (finished(c) ? '' : ' partial'), c.done ? `${pct(c.score)}%` : `${c.answered}/${c.total}`);
+        if (c.stale) n.append(el('span', 'bm-mark', '*'));
+        const track = el('span', 'lib-track thin');
+        const fill = el('span', 'lib-fill' + (finished(c) ? ' accent' : ''));
+        fill.style.width = pct(c.score) + '%';
+        track.append(fill);
+        b.append(n, track);
+        b.onclick = () => openAnswers(r, s.id);
+        right.append(b);
+      } else right.append(el('span', 'muted small', 'not run'));
+      row.append(box, t, right);
+      rows.append(row);
+    }
+    runLabel();
+  }
+  function runLabel() {
+    const b = $('bm-one-run');
+    const n = ticked ? ticked.size : 0;
+    b.textContent = n ? `Run ${n} set${n === 1 ? '' : 's'}` : 'Run';
+    b.disabled = !n || run.running;
+    b.title = run.running ? 'A run is going; wait for it to finish or stop it' : '';
+  }
+  root.querySelectorAll('[data-tick]').forEach((b) => {
+    b.onclick = () => {
+      const r = pickedRow();
+      if (!r) return;
+      const k = b.dataset.tick;
+      ticked = new Set(k === 'all' ? data.sets.map((s) => s.id) : k === 'new' ? data.sets.filter((s) => !r.cells[s.id]).map((s) => s.id) : []);
+      renderModel();
+    };
+  });
+  $('bm-one-run').onclick = async () => {
+    const r = pickedRow();
+    const sets = data.sets.filter((s) => ticked.has(s.id));
+    if (!r || !sets.length) return;
+    if (sets.some((s) => s.judge || (s.lean && !leanReady()))) { openRun([r.name], sets.map((s) => s.id)); return; } // needs the dialog's judge or Lean install
+    const b = $('bm-one-run');
+    b.disabled = true;
+    try {
+      run = await api('POST', '/api/evals/run', { models: [r.name], sets: sets.map((s) => s.id), think, redo: $('bm-one-redo').checked });
+      ticked = new Set();
+      renderRun();
+      render();
+      poll();
+    } catch (e) {
+      status(e.message, true);
+      b.disabled = false;
+    }
+  };
+
+  // The searchable model picker.
+  const comboIn = $('bm-combo-input'), comboList = $('bm-combo-list');
+  let comboAt = 0;
+  function comboMatches() {
+    const q = comboIn.value.trim().toLowerCase();
+    return data.rows.filter((r) => !q || `${r.title} ${r.name} ${r.quant || ''}`.toLowerCase().includes(q));
+  }
+  function showCombo() {
+    const ms = comboMatches();
+    comboAt = Math.min(comboAt, Math.max(0, ms.length - 1));
+    comboList.innerHTML = '';
+    ms.forEach((r, i) => {
+      const o = el('div', 'bm-opt' + (i === comboAt ? ' at' : '') + (r.name === picked ? ' sel' : ''));
+      o.setAttribute('role', 'option');
+      o.setAttribute('aria-selected', r.name === picked ? 'true' : 'false');
+      const done = Object.values(r.cells).filter(finished).length;
+      o.append(el('span', 'bm-opt-name', r.title), el('span', 'bm-opt-sub', [r.quant, r.params ? `${r.params < 10 ? r.params.toFixed(1) : Math.round(r.params)}B` : '', done ? `${done} set${done === 1 ? '' : 's'} done` : 'not tested', r.overall != null ? `${pct(r.overall)}% overall` : ''].filter(Boolean).join(' · ')));
+      o.onmousedown = (e) => { e.preventDefault(); choose(r); };
+      comboList.append(o);
+    });
+    if (!ms.length) comboList.append(el('div', 'bm-opt muted', 'No model matches'));
+    comboList.hidden = false;
+    comboIn.setAttribute('aria-expanded', 'true');
+    comboList.querySelector('.at')?.scrollIntoView({ block: 'nearest' });
+  }
+  function hideCombo() {
+    comboList.hidden = true;
+    comboIn.setAttribute('aria-expanded', 'false');
+  }
+  function choose(r) {
+    hideCombo();
+    comboIn.blur();
+    pick(r.name);
+  }
+  comboIn.addEventListener('focus', () => { comboIn.select(); comboAt = 0; comboIn.value = ''; showCombo(); });
+  comboIn.addEventListener('input', () => { comboAt = 0; showCombo(); });
+  comboIn.addEventListener('blur', () => { hideCombo(); renderModel(); });
+  comboIn.addEventListener('keydown', (e) => {
+    const ms = comboMatches();
+    if (e.key === 'ArrowDown') { comboAt = Math.min(comboAt + 1, ms.length - 1); showCombo(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { comboAt = Math.max(comboAt - 1, 0); showCombo(); e.preventDefault(); }
+    else if (e.key === 'Enter') { if (ms[comboAt]) choose(ms[comboAt]); e.preventDefault(); }
+    else if (e.key === 'Escape') { comboIn.blur(); }
+  });
+
+  // ---- compare: bars over a chosen group of sets ----
+  let subset = (() => { try { return JSON.parse(store.get('bm-subset') || 'null'); } catch { return null; } })(); // null: the overall sets
+  const LOWER_BETTER = { tpt: true, tpr: true };
+  function renderCompare() {
+    if (subset) subset = subset.filter((id) => data.sets.some((s) => s.id === id));
+    if (subset && !subset.length) subset = null;
+    const ids = subset || data.suite;
+    const chips = $('bm-subset');
+    chips.innerHTML = '';
+    const ov = el('button', 'lib-sortchip' + (subset ? '' : ' on'), 'Overall');
+    ov.type = 'button';
+    ov.title = `The sets that make up the overall score: ${data.suite.map(setName).join(', ')}`;
+    ov.onclick = () => { subset = null; store.set('bm-subset', 'null'); renderCompare(); };
+    chips.append(ov, el('span', 'bm-chipgap'));
+    for (const s of data.sets) {
+      const on = ids.includes(s.id);
+      const b = el('button', 'lib-sortchip' + (on ? (subset ? ' on' : ' soft') : ''), shortName(s));
+      b.type = 'button';
+      b.setAttribute('aria-pressed', on && subset ? 'true' : 'false');
+      b.title = subset ? (on ? 'Click to leave it out' : 'Click to add it') : 'Click to compare on this set alone; click more to add them';
+      b.onclick = () => {
+        if (!subset) subset = [s.id];
+        else if (subset.includes(s.id)) subset = subset.filter((x) => x !== s.id);
+        else subset = [...subset, s.id];
+        if (!subset.length) subset = null;
+        store.set('bm-subset', JSON.stringify(subset));
+        renderCompare();
+      };
+      chips.append(b);
+    }
+    if (subset && (subset.length !== data.suite.length || subset.some((id) => !data.suite.includes(id)))) {
+      const use = el('button', 'bm-linkbtn', 'Make these the overall');
+      use.type = 'button';
+      use.title = 'The overall score and the index estimate will use these sets';
+      use.onclick = () => { suite = [...subset]; store.set('bm-suite', JSON.stringify(suite)); subset = null; store.set('bm-subset', 'null'); reload(); };
+      chips.append(use);
+    }
+    const m = METRICS[metric];
+    const value = (r) => {
+      const cs = ids.map((id) => r.cells[id]);
+      if (!cs.every(finished)) return null;
+      return m.val ? m.val(sumCells(cs)) : cs.reduce((n, c) => n + c.score, 0) / cs.length;
+    };
+    const have = [], missing = [];
+    for (const r of data.rows) {
+      const v = value(r);
+      if (v == null) missing.push(r); else have.push({ r, v });
+    }
+    have.sort((a, b) => (LOWER_BETTER[metric] ? a.v - b.v : b.v - a.v));
+    const max = Math.max(...have.map((x) => x.v), m.val ? 0 : 1);
+    const bars = $('bm-bars');
+    bars.innerHTML = '';
+    have.forEach(({ r, v }, i) => {
+      const b = el('button', 'bm-bar' + (r.name === picked ? ' sel' : ''));
+      b.type = 'button';
+      b.title = `${r.title}${r.quant ? ' · ' + r.quant : ''}: ${m.val ? `${num(v)} ${m.name.toLowerCase()}` : `${pct(v)}%`} over ${ids.length} set${ids.length === 1 ? '' : 's'}. Click to pick it.`;
+      const name = el('span', 'bm-bar-name');
+      name.append(el('span', 'bm-bar-rank', String(i + 1)), el('span', 'bm-bar-title', r.title));
+      if (r.quant) name.append(el('span', 'bm-bar-quant', r.quant));
+      const track = el('span', 'bm-bar-track');
+      const fill = el('span', 'bm-bar-fill');
+      fill.style.width = (max ? (v / max) * 100 : 0) + '%';
+      track.append(fill);
+      b.append(name, track, el('span', 'bm-bar-val', m.val ? num(v) : `${pct(v)}%`));
+      b.onclick = () => { pick(r.name); $('bm-model').scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+      bars.append(b);
+    });
+    const note = $('bm-bars-note');
+    const parts = [];
+    if (!have.length) parts.push(`No model has finished ${ids.length === 1 ? setName(ids[0]) : `all of ${ids.map(setName).join(', ')}`} yet.`);
+    else parts.push(`${m.val ? m.name : 'Average score'} over ${ids.length === 1 ? setName(ids[0]) : `${ids.length} sets (${ids.map(setName).join(', ')})`}${LOWER_BETTER[metric] ? '; fewer is better' : ''}.`);
+    const me = data.rows.find((r) => r.name === picked);
+    if (me && missing.includes(me)) {
+      const left = ids.filter((id) => !finished(me.cells[id]));
+      parts.push(`${me.title} isn't on the chart: it hasn't finished ${left.map(setName).join(', ')}.`);
+    }
+    const others = missing.filter((r) => r !== me).length;
+    if (others) parts.push(`${others} other model${others === 1 ? '' : 's'} left out for the same reason.`);
+    note.textContent = parts.join(' ');
+  }
+
   // ---- run progress ----
   function status(msg, bad) {
     const s = $('bm-status');
@@ -327,6 +586,7 @@
   let pollTimer = 0;
   let lastDone = -1;
   function renderRun() {
+    renderModel();
     const s = $('bm-status');
     if (!run.running) {
       const failed = run.items.filter((it) => it.state === 'failed');
