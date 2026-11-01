@@ -23,6 +23,10 @@ const maxToolSteps = 8
 // schemas carry the detail; a long prompt makes thinking models think longer.
 const toolsSystem = "You can use tools when they help. When your answer relies on a web page or search result, mention its URL."
 
+// editSystem is added when edit_code is on: small models otherwise reprint
+// whole files for a one-line change, in the reply and in their thinking.
+const editSystem = "To change code that is already in this chat, call edit_code with only the lines that change. Don't write the whole file or block again, and don't copy out the old code or the conversation first; go straight to the edit, then say in a sentence what you changed."
+
 // toolsPage is the Tools section of Settings.
 type toolsPage struct {
 	Settings tools.Settings

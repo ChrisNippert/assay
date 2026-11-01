@@ -52,7 +52,8 @@ How it works:
 - replace: what that piece becomes (empty to delete it).
 - Any earlier code block can be edited, not only the last one: the tool looks through the code blocks from newest to oldest and edits the first one that contains find. After an edit, the edited version counts as the newest block, so further edits apply to it.
 - find must appear only once in that block; if it appears more often, copy more of the line or the line around it.
-- Make one call per change (several calls for several changes). The user sees the updated block in full, so don't print it again afterwards; just say what you changed.
+- Send only the lines that change, never the whole block. Make one call per change (several calls for several changes).
+- The user sees the updated block in full, so don't print it again before or after; just say in a sentence what you changed.
 
 Example: an earlier block contains
     System.out.println("Hello, World!");

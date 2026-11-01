@@ -118,6 +118,9 @@ func TestEditCodeTurn(t *testing.T) {
 			t.Fatalf("edit_code offered with the switch off")
 		}
 	}
+	if m := fake.chatReqs[len(fake.chatReqs)-1].Messages; strings.Contains(m[0].Content, editSystem) {
+		t.Errorf("edit instruction sent with the switch off")
+	}
 
 	// On: the model calls it, and the updated block is in the reply's call.
 	fake.replies = []string{`{"message":{"role":"assistant","tool_calls":[{"id":"e1","function":{"name":"edit_code","arguments":{"find":"a()","replace":"b()"}}}]},"done":true}` + "\n"}
@@ -132,6 +135,9 @@ func TestEditCodeTurn(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("edit_code not offered with the switch on")
+	}
+	if m := fake.chatReqs[len(fake.chatReqs)-2].Messages; m[0].Role != "system" || !strings.Contains(m[0].Content, editSystem) {
+		t.Errorf("no edit instruction in the system message: %+v", m[0])
 	}
 	var res string
 	for _, e := range events(t, rec) {

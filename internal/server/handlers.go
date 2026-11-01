@@ -553,6 +553,9 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 	}
 	if len(t.tools) > 0 {
 		system = strings.TrimSpace(system + "\n\n" + toolsSystem)
+		if slices.ContainsFunc(t.tools, func(x tools.Tool) bool { return x.Name == "edit_code" }) {
+			system += "\n" + editSystem
+		}
 	}
 	t.system, t.dropped, t.compress = system, dropped, s.compressOn(c, preset)
 	// Without a context length from the chat or preset, Ollama would use its
