@@ -25,6 +25,14 @@
       <button type="button" class="lib-sortchip" role="radio" data-think="">Model's default</button>
       <button type="button" class="lib-sortchip" role="radio" data-think="off">Off</button>
     </div>
+    <div class="bm-seg" role="radiogroup" aria-label="Show">
+      <span class="muted small">Show</span>
+      <button type="button" class="lib-sortchip" role="radio" data-metric="score">Score</button>
+      <button type="button" class="lib-sortchip" role="radio" data-metric="tps" title="Tokens written per second, including reading each question">Tokens/s</button>
+      <button type="button" class="lib-sortchip" role="radio" data-metric="tpt" title="Tokens written per question, thinking included">Tokens/task</button>
+      <button type="button" class="lib-sortchip" role="radio" data-metric="tpm" title="Questions answered per minute">Tasks/min</button>
+      <button type="button" class="lib-sortchip" role="radio" data-metric="tpr" title="All tokens written divided by the right answers: what one right answer costs">Tokens/right</button>
+    </div>
     <div class="lib-measure"><button type="button" class="btn primary" id="bm-run-open">Run benchmarks…</button></div>
   </div>
   <div class="lib-progress" id="bm-status" role="status" aria-live="polite" hidden></div>
@@ -68,6 +76,7 @@
     <div class="bm-dlg-body">
       <div class="bm-dlg-head"><h2 class="bm-dlg-title" id="bm-ans-title"></h2><button type="button" class="icon-btn" data-close aria-label="Close">×</button></div>
       <div class="bm-ans-sub muted small" id="bm-ans-sub"></div>
+      <div class="bm-ans-stats" id="bm-ans-stats"></div>
       <div class="bm-ans-filter" role="group" aria-label="Show">
         <button type="button" class="lib-sortchip on" data-show="all">All</button>
         <button type="button" class="lib-sortchip" data-show="wrong">Wrong</button>

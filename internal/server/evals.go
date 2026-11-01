@@ -43,6 +43,10 @@ type evalItem struct {
 	// still wait for one after the run (no judge was picked).
 	Judging int `json:"judging,omitempty"`
 	Waiting int `json:"waiting,omitempty"`
+	// Since is when this item started running and From how many answers
+	// it had then, so the page can show the pace and the time left.
+	Since time.Time `json:"since,omitzero"`
+	From  int       `json:"from,omitempty"`
 }
 
 type evalJob struct {
@@ -323,6 +327,7 @@ func (s *Server) runEvalItem(ctx context.Context, i int, redo bool) error {
 	for _, a := range res.Answers {
 		answered[a.ID] = true
 	}
+	j.set(i, func(it *evalItem) { it.Since, it.From = time.Now(), len(res.Answers) })
 	if err := s.evalWait(ctx); err != nil {
 		return err
 	}
@@ -632,6 +637,11 @@ type evalCell struct {
 	Errors   int       `json:"errors,omitempty"`
 	Pending  int       `json:"pending,omitempty"` // waiting for a judge
 	At       time.Time `json:"at"`
+	// For the speed stats: tokens written and time taken over all answers,
+	// and the tokens of the right ones.
+	Tokens      int   `json:"tokens"`
+	Ms          int64 `json:"ms"`
+	RightTokens int   `json:"rightTokens"`
 }
 
 type evalRow struct {
@@ -714,6 +724,11 @@ func (s *Server) evalResultsFor(ctx context.Context, think string, suite []strin
 			c := evalCell{Score: r.Score(), Correct: r.Correct, Answered: len(r.Answers), Total: r.Total, Done: r.Done(), At: r.At, Pending: r.Pending()}
 			c.Stale = hashes[r.Set] != "" && !r.Current(hashes[r.Set])
 			for _, a := range r.Answers {
+				c.Tokens += a.Tokens
+				c.Ms += a.Ms
+				if a.Correct {
+					c.RightTokens += a.Tokens
+				}
 				if a.Cut || a.Looped {
 					c.Cut++
 				}

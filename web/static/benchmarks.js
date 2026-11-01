@@ -34,6 +34,32 @@
     return out;
   }
   const pct = (x) => Math.round(x * 100);
+
+  // What the table shows per cell: the score or one of the speed stats.
+  const num = (v) => (v >= 100 ? Math.round(v).toLocaleString() : v >= 10 ? v.toFixed(1) : v.toFixed(2));
+  const METRICS = {
+    score: { name: 'Score' },
+    tps: { name: 'Tokens/s', val: (c) => (c.ms ? c.tokens / (c.ms / 1000) : null) },
+    tpt: { name: 'Tokens/task', val: (c) => (c.answered ? c.tokens / c.answered : null) },
+    tpm: { name: 'Tasks/min', val: (c) => (c.ms ? c.answered / (c.ms / 60000) : null) },
+    tpr: { name: 'Tokens/right', val: (c) => (c.correct ? c.tokens / c.correct : null) },
+  };
+  let metric = METRICS[store.get('bm-metric')] ? store.get('bm-metric') : 'score';
+  // sumCells adds cells up, so speed stats can be had over several sets.
+  const sumCells = (cs) => cs.reduce((a, c) => ({ tokens: a.tokens + (c.tokens || 0), ms: a.ms + (c.ms || 0), answered: a.answered + c.answered, correct: a.correct + c.correct }), { tokens: 0, ms: 0, answered: 0, correct: 0 });
+  const dur = (ms) => {
+    const s = Math.round(ms / 1000);
+    if (s < 90) return `${s} s`;
+    const m = Math.round(s / 60);
+    return m < 90 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`;
+  };
+  const cellStats = (c) => {
+    const parts = [];
+    if (c.ms) parts.push(`${num(METRICS.tps.val(c))} tokens/s`, `${num(METRICS.tpm.val(c))} tasks/min`, `${dur(c.ms)} in all`);
+    if (c.answered) parts.push(`${Math.round(METRICS.tpt.val(c)).toLocaleString()} tokens/task`);
+    if (c.correct) parts.push(`${Math.round(METRICS.tpr.val(c)).toLocaleString()} tokens per right answer`);
+    return parts.join(' · ');
+  };
   const setName = (id) => (data.sets.find((s) => s.id === id) || { name: id }).name;
   const shortName = (s) => s.short || s.name;
 
@@ -58,6 +84,11 @@
     renderTable();
     renderFit();
     renderSets();
+    root.querySelectorAll('[data-metric]').forEach((b) => {
+      const on = b.dataset.metric === metric;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
     root.querySelectorAll('[data-think]').forEach((b) => {
       const on = b.dataset.think === think;
       b.classList.toggle('on', on);
@@ -91,7 +122,15 @@
     const box = el('div', 'bm-cell');
     if (item && item.state === 'running') {
       box.classList.add('busy');
-      box.append(el('span', 'lib-spin'), el('span', 'bm-sub', item.judging ? `judging ${item.judging}` : `${item.answered}/${item.total}`));
+      let text = item.judging ? `judging ${item.judging}` : `${item.answered}/${item.total}`;
+      const done = item.answered - (item.from || 0);
+      if (!item.judging && item.since && done > 0) {
+        const ms = Date.now() - new Date(item.since).getTime();
+        const per = ms / done;
+        text += ` · ${dur(per * (item.total - item.answered))} left`;
+        box.title = `${num(60000 / per)} tasks/min this run, ${dur(per)} per task`;
+      }
+      box.append(el('span', 'lib-spin'), el('span', 'bm-sub', text));
       return box;
     }
     if (item) {
@@ -109,11 +148,16 @@
     const b = el('button', 'bm-score');
     b.type = 'button';
     b.title = `${c.correct} of ${c.answered} right${c.pending ? ` (${c.pending} waiting for a judge)` : ''}${c.answered < c.total ? ` (${c.total - c.answered} not asked yet)` : ''}${c.stale ? '. Out of date: the set or the way runs sample has changed since.' : ''}${c.cut ? `. ${c.cut} hit the token limit or looped.` : ''}${c.errors ? `. ${c.errors} failed.` : ''} Click to read the answers.`;
-    const n = el('span', 'bm-num' + (c.done && !c.stale ? '' : ' partial'), c.done ? `${pct(c.score)}%` : c.pending && c.answered >= c.total ? 'judge' : `${c.answered}/${c.total}`);
+    const stats = cellStats(c);
+    if (stats) b.title += `\n${stats}`;
+    const m = METRICS[metric];
+    const v = m.val ? m.val(c) : null;
+    const label = m.val ? (v == null ? '–' : num(v)) : c.done ? `${pct(c.score)}%` : c.pending && c.answered >= c.total ? 'judge' : `${c.answered}/${c.total}`;
+    const n = el('span', 'bm-num' + (c.done && !c.stale ? '' : ' partial'), label);
     if (c.stale) n.append(el('span', 'bm-mark', '*'));
     const track = el('span', 'lib-track thin');
     const fill = el('span', 'lib-fill' + (c.done && !c.stale ? ' accent' : ''));
-    fill.style.width = pct(c.score) + '%';
+    fill.style.width = (m.val ? (v == null ? 0 : (v / (colMax[set.id] || v)) * 100) : pct(c.score)) + '%';
     track.append(fill);
     b.append(n, track);
     b.onclick = () => openAnswers(row, set.id);
@@ -121,10 +165,14 @@
     return box;
   }
 
+  let colMax = {}; // per set, the largest value of the shown speed stat, for the bars
   function renderTable() {
     const table = $('bm-table');
     table.innerHTML = '';
     const sets = data.sets;
+    const m = METRICS[metric];
+    colMax = {};
+    if (m.val) for (const s of sets) colMax[s.id] = Math.max(0, ...data.rows.map((r) => (r.cells[s.id] && m.val(r.cells[s.id])) || 0));
     table.style.setProperty('--sets', sets.length);
     const inSuite = (id) => data.suite.includes(id);
     const head = el('div', 'bm-row bm-head');
@@ -143,7 +191,7 @@
       };
       head.append(b);
     });
-    for (const [t, tip] of [['Overall', 'Average over the highlighted sets'], ['Index', 'Published Intelligence Index of the base model'], ['Estimate', 'Placed on the index from your overall score']]) {
+    for (const [t, tip] of [[m.val ? m.name : 'Overall', m.val ? `${m.name} over the highlighted sets` : 'Average over the highlighted sets'], ['Index', 'Published Intelligence Index of the base model'], ['Estimate', 'Placed on the index from your overall score']]) {
       const h = el('span', 'bm-th', t);
       h.title = tip;
       head.append(h);
@@ -168,8 +216,15 @@
       row.append(name);
       sets.forEach((s) => row.append(cellFor(r, s)));
       const ov = el('div', 'bm-cell bm-big');
-      ov.append(r.overall != null ? `${pct(r.overall)}%` : el('span', 'muted', '–'));
-      if (r.overall == null) ov.title = 'Finish every highlighted set for an overall score';
+      if (m.val) {
+        const all = sumCells(data.suite.map((id) => r.cells[id]).filter(Boolean));
+        const v = m.val(all);
+        ov.append(v != null ? num(v) : el('span', 'muted', '–'));
+        if (all.answered) ov.title = `Over ${all.answered} answers: ${cellStats(all)}`;
+      } else {
+        ov.append(r.overall != null ? `${pct(r.overall)}%` : el('span', 'muted', '–'));
+        if (r.overall == null) ov.title = 'Finish every highlighted set for an overall score';
+      }
       row.append(ov);
       const idx = el('div', 'bm-cell');
       if (r.index != null) {
@@ -393,6 +448,46 @@
     }
   });
 
+  // The fun numbers over one run's answers.
+  function renderAnswerStats(answers) {
+    const box = $('bm-ans-stats');
+    box.innerHTML = '';
+    const as = answers.filter((a) => !a.error);
+    if (!as.length) return;
+    const sum = (xs, f) => xs.reduce((n, a) => n + f(a), 0);
+    const median = (xs) => {
+      const s = [...xs].sort((a, b) => a - b);
+      return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
+    };
+    const toks = sum(as, (a) => a.tokens), ms = sum(as, (a) => a.ms);
+    const right = as.filter((a) => a.correct), wrong = as.filter((a) => !a.correct && !a.pending);
+    const think = sum(as, (a) => (a.thinking || '').length), said = sum(as, (a) => (a.reply || '').length);
+    const longest = as.reduce((x, a) => (a.tokens > x.tokens ? a : x));
+    const quickRight = right.length ? right.reduce((x, a) => (a.ms < x.ms ? a : x)) : null;
+    const stuck = as.filter((a) => a.cut || a.looped).length;
+    const tiles = [
+      ['Tokens/s', ms ? num(toks / (ms / 1000)) : '–', 'tokens written per second, reading the question included'],
+      ['Tasks/min', ms ? num(as.length / (ms / 60000)) : '–', `${dur(ms)} for ${as.length} answers`],
+      ['Tokens/task', Math.round(toks / as.length).toLocaleString(), `median ${Math.round(median(as.map((a) => a.tokens))).toLocaleString()}`],
+      ['Time/task', dur(median(as.map((a) => a.ms))), 'median'],
+      ['Tokens/right', right.length ? Math.round(toks / right.length).toLocaleString() : '–', 'everything written, divided by the right answers'],
+    ];
+    if (right.length && wrong.length) {
+      const r = sum(right, (a) => a.tokens) / right.length, w = sum(wrong, (a) => a.tokens) / wrong.length;
+      tiles.push(['Right vs wrong', `${Math.round(r).toLocaleString()} / ${Math.round(w).toLocaleString()}`, w > r * 1.15 ? `wrong answers take ${num(w / r)}× the tokens` : r > w * 1.15 ? `right answers take ${num(r / w)}× the tokens` : 'about the same tokens either way']);
+    }
+    if (think + said) tiles.push(['Thinking', `${pct(think / (think + said))}%`, 'of the text written was thinking']);
+    tiles.push(['Longest', `${longest.tokens.toLocaleString()}`, `tokens, on ${longest.id} (${dur(longest.ms)})`]);
+    if (quickRight) tiles.push(['Quickest right', dur(quickRight.ms), `${quickRight.id}, ${quickRight.tokens.toLocaleString()} tokens`]);
+    if (stuck) tiles.push(['Ran out', String(stuck), 'hit the token limit or looped']);
+    for (const [k, v, note] of tiles) {
+      const t = el('div', 'bm-ans-stat');
+      t.title = note;
+      t.append(el('span', 'bm-ans-stat-k', k), el('span', 'bm-ans-stat-v', v), el('span', 'bm-ans-stat-n', note));
+      box.append(t);
+    }
+  }
+
   // ---- answers ----
   const ansDlg = $('bm-answers');
   let ansFor = null;
@@ -410,6 +505,7 @@
     const secs = res.answers.reduce((n, a) => n + a.ms, 0) / 1000;
     const toks = res.answers.reduce((n, a) => n + a.tokens, 0);
     $('bm-ans-sub').textContent = `${res.correct} of ${res.answers.length} right${res.answers.length < res.total ? ` · ${res.total - res.answers.length} not asked yet` : ''} · ${think === 'off' ? 'thinking off' : "model's default thinking"} · up to ${res.maxTokens} tokens each · ${Math.round(secs)} s, ${toks.toLocaleString()} tokens · ${new Date(res.at).toLocaleString()}${j.stale ? ' · ' + j.stale : ''}`;
+    renderAnswerStats(res.answers);
     const list = $('bm-ans-list');
     for (const a of res.answers) {
       const qq = byId[a.id] || {};
@@ -608,6 +704,13 @@ answer = "7.5"
       if (think) u.searchParams.set('think', think); else u.searchParams.delete('think');
       history.replaceState(null, '', u);
       reload();
+    };
+  });
+  root.querySelectorAll('[data-metric]').forEach((b) => {
+    b.onclick = () => {
+      metric = b.dataset.metric;
+      store.set('bm-metric', metric);
+      render();
     };
   });
   if (suite) reload(); else render();

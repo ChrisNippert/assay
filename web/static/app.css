@@ -2266,3 +2266,11 @@ button.bm-th:hover { color: var(--text); }
   .bm-dlg-cols { grid-template-columns: 1fr; }
   .bm-row { padding-left: 4px; padding-right: 4px; }
 }
+
+/* Benchmarks: speed and fun stats over one run's answers. */
+.bm-ans-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--s2, 8px); margin: var(--s3, 12px) 0; }
+.bm-ans-stats:empty { display: none; }
+.bm-ans-stat { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; min-width: 0; }
+.bm-ans-stat-k { font-size: var(--fs-xs); color: var(--muted); }
+.bm-ans-stat-v { font-size: 17px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.bm-ans-stat-n { font-size: var(--fs-xs); color: var(--muted); line-height: 1.3; }
