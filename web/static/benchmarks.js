@@ -87,8 +87,10 @@
     renderTable();
     renderFit();
     renderSets();
+    const shown = view === 'trade' && metric === 'score' ? 'tpm' : metric;
     root.querySelectorAll('[data-metric]').forEach((b) => {
-      const on = b.dataset.metric === metric;
+      const on = b.dataset.metric === shown;
+      if (b.dataset.metric === 'score') b.hidden = view === 'trade';
       b.classList.toggle('on', on);
       b.setAttribute('aria-checked', on ? 'true' : 'false');
     });
@@ -522,6 +524,7 @@
   const LOWER_BETTER = { tpt: true, tpr: true };
   const BOARD_COLS = ['score', 'rpm', 'tpm', 'tps', 'tpt', 'tpr'];
   let cat = store.get('bm-cat') || 'overall';
+  let view = store.get('bm-view') === 'trade' ? 'trade' : 'bars';
   let subset = (() => { try { return JSON.parse(store.get('bm-subset') || 'null'); } catch { return null; } })();
   const catSets = (name) => {
     const c = CATS.find(([n]) => n === name);
@@ -615,9 +618,24 @@
     }
     const m = METRICS[metric];
     const { ranked, unranked } = standings(ids, metric);
-    $('bm-chart-title').textContent = `${metric === 'score' ? 'Score' : m.name} · ${label}`;
-    $('bm-chart-note').textContent = `${METRIC_NOTE[metric]}. ${LOWER_BETTER[metric] ? 'Lower' : 'Higher'} is better. ${ids.length === 1 ? setName(ids[0]) : `${ids.length} sets: ${ids.map(setName).join(', ')}`}.` +
+    const setsText = `${ids.length === 1 ? setName(ids[0]) : `${ids.length} sets: ${ids.map(setName).join(', ')}`}.` +
       (dropped.length ? ` Leaving out ${dropped.map(setName).join(', ')} until more models have run ${dropped.length === 1 ? 'it' : 'them'}.` : '');
+    root.querySelectorAll('[data-view]').forEach((b) => {
+      const on = b.dataset.view === view;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+    $('bm-trade').hidden = view !== 'trade';
+    $('bm-bars').parentElement.hidden = view === 'trade';
+    if (view === 'trade') {
+      const xk = metric === 'score' ? 'tpm' : metric;
+      $('bm-chart-title').textContent = `Score against ${METRICS[xk].name} · ${label}`;
+      $('bm-chart-note').textContent = `Up and to the right is better${LOWER_BETTER[xk] ? ' (fewer tokens to the right)' : ''}. The line joins the best tradeoffs: no other model is both better and ${LOWER_BETTER[xk] ? 'cheaper' : 'faster'}. ${setsText}`;
+      renderTradeoff(ranked, xk, ids);
+    } else {
+      $('bm-chart-title').textContent = `${metric === 'score' ? 'Score' : m.name} · ${label}`;
+      $('bm-chart-note').textContent = `${METRIC_NOTE[metric]}. ${LOWER_BETTER[metric] ? 'Lower' : 'Higher'} is better. ${setsText}`;
+    }
     // Bars.
     const bars = $('bm-bars');
     bars.innerHTML = '';
@@ -684,6 +702,106 @@
     }
     renderRanks(ids, label, ranked, unranked);
   }
+  // renderTradeoff plots score against a speed or token metric (log scale,
+  // better to the right) and joins the frontier: the models no other model
+  // beats on both.
+  function renderTradeoff(ranked, xk, ids) {
+    const box = $('bm-trade');
+    box.innerHTML = '';
+    const pts = ranked.filter((x) => x.vals[xk] > 0 && isFinite(x.vals[xk]));
+    if (!pts.length) { box.append(el('p', 'muted small bm-vbars-empty', `No model has finished ${ids.length === 1 ? setName(ids[0]) : 'all of these sets'} yet.`)); return; }
+    const W = 760, H = 380, L = 48, R = 24, T = 16, B = 44;
+    const lo = LOWER_BETTER[xk];
+    // good: bigger is better along x.
+    const good = (v) => (lo ? -Math.log10(v) : Math.log10(v));
+    const gs = pts.map((p) => good(p.vals[xk]));
+    let g0 = Math.min(...gs), g1 = Math.max(...gs);
+    const pad = Math.max(0.15, (g1 - g0) * 0.08);
+    g0 -= pad; g1 += pad;
+    const scores = pts.map((p) => p.vals.score);
+    const y0 = Math.max(0, Math.floor(Math.min(...scores) * 10 - 0.5) / 10), y1 = 1;
+    const X = (v) => L + ((good(v) - g0) / (g1 - g0)) * (W - L - R);
+    const Y = (v) => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
+    const NS = 'http://www.w3.org/2000/svg';
+    const mk = (tag, attrs, text) => {
+      const n = document.createElementNS(NS, tag);
+      for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+      if (text != null) n.textContent = text;
+      return n;
+    };
+    const svg = mk('svg', { viewBox: `0 0 ${W} ${H}`, class: 'bm-trade-svg', role: 'img', 'aria-label': `Score against ${METRICS[xk].name.toLowerCase()}` });
+    // Grid: score every 10 points, x at 1-2-5 steps.
+    for (let v = Math.ceil(y0 * 10) / 10; v <= 1.0001; v += 0.1) {
+      svg.append(mk('line', { x1: L, x2: W - R, y1: Y(v), y2: Y(v), class: 'bm-trade-grid' }));
+      svg.append(mk('text', { x: L - 8, y: Y(v) + 4, class: 'bm-trade-tick', 'text-anchor': 'end' }, String(Math.round(v * 100))));
+    }
+    const raw = (g) => Math.pow(10, lo ? -g : g);
+    const vmin = Math.min(raw(g0), raw(g1)), vmax = Math.max(raw(g0), raw(g1));
+    for (let e = Math.floor(Math.log10(vmin)); e <= Math.ceil(Math.log10(vmax)); e++) {
+      for (const f of [1, 2, 5]) {
+        const v = f * Math.pow(10, e);
+        if (v < vmin || v > vmax) continue;
+        svg.append(mk('line', { x1: X(v), x2: X(v), y1: T, y2: H - B, class: 'bm-trade-grid' }));
+        svg.append(mk('text', { x: X(v), y: H - B + 18, class: 'bm-trade-tick', 'text-anchor': 'middle' }, v >= 1000 ? `${v / 1000}k` : String(v)));
+      }
+    }
+    svg.append(mk('text', { x: W - R, y: H - 6, class: 'bm-trade-axis', 'text-anchor': 'end' }, `${METRICS[xk].name}${lo ? ' (fewer →)' : ' →'}`));
+    svg.append(mk('text', { x: 12, y: T + 4, class: 'bm-trade-axis', transform: `rotate(-90 12 ${T + 4})`, 'text-anchor': 'end' }, 'Score'));
+    // Frontier: from the best on x leftwards, keep each model that scores
+    // higher than every one to its right.
+    const byX = [...pts].sort((a, b) => good(b.vals[xk]) - good(a.vals[xk]));
+    const front = [];
+    let best = -1;
+    for (const p of byX) if (p.vals.score > best) { front.push(p); best = p.vals.score; }
+    const onFront = new Set(front.map((p) => p.r.name));
+    if (front.length > 1) {
+      // A step line: a model on the frontier holds its score leftwards until
+      // the next better one.
+      const f = [...front].reverse();
+      let d = `M${X(f[0].vals[xk])},${Y(f[0].vals.score)}`;
+      for (let i = 1; i < f.length; i++) d += ` H${X(f[i].vals[xk])} V${Y(f[i].vals.score)}`;
+      svg.append(mk('path', { d, class: 'bm-trade-front' }));
+    }
+    // Labels: beside each dot, nudged up or down (or to the other side)
+    // until they don't cover one another.
+    const placed = [];
+    const labelAt = new Map();
+    const hits = (a) => placed.some((b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1);
+    for (const p of [...pts].sort((a, b) => (b.r.name === picked) - (a.r.name === picked) || b.vals.score - a.vals.score)) {
+      const x = X(p.vals[xk]), y = Y(p.vals.score), w = p.r.title.length * 7.4 + 4;
+      const pref = x > W - R - 150 ? ['end', 'start'] : ['start', 'end'];
+      let spot = null;
+      for (const dy of [0, -15, 15, -30, 30, -45, 45]) {
+        for (const side of pref) {
+          const lx = side === 'start' ? x + 11 : x - 11;
+          const box = { x0: side === 'start' ? lx : lx - w, x1: side === 'start' ? lx + w : lx, y0: y + dy - 9, y1: y + dy + 7 };
+          if (!hits(box)) { spot = { lx, ly: y + dy + 4, side, box }; break; }
+        }
+        if (spot) break;
+      }
+      if (!spot) spot = { lx: x + 11, ly: y + 4, side: 'start', box: { x0: 0, x1: 0, y0: 0, y1: 0 } };
+      placed.push(spot.box);
+      labelAt.set(p.r.name, spot);
+    }
+    // Dots, the picked one last so it sits on top.
+    const order = [...pts].sort((a, b) => (a.r.name === picked) - (b.r.name === picked));
+    for (const p of order) {
+      const x = X(p.vals[xk]), y = Y(p.vals.score);
+      const sel = p.r.name === picked;
+      const g = mk('g', { class: 'bm-trade-pt' + (onFront.has(p.r.name) ? ' front' : '') + (sel ? ' sel' : ''), tabindex: '0', role: 'button',
+        'aria-label': `${p.r.title}: score ${pct(p.vals.score)}, ${fmtMetric(xk, p.vals[xk])} ${METRICS[xk].name.toLowerCase()}` });
+      g.append(mk('title', {}, `${p.r.title}${p.r.quant ? ' · ' + p.r.quant : ''}\nScore ${pct(p.vals.score)}% · ${fmtMetric(xk, p.vals[xk])} ${METRICS[xk].name.toLowerCase()}`));
+      g.append(mk('circle', { cx: x, cy: y, r: 16, class: 'bm-trade-hit' }));
+      g.append(mk('circle', { cx: x, cy: y, r: sel ? 7 : 5.5, class: 'bm-trade-dot' }));
+      const at = labelAt.get(p.r.name);
+      g.append(mk('text', { x: at.lx, y: at.ly, 'text-anchor': at.side, class: 'bm-trade-label' }, p.r.title));
+      g.addEventListener('click', () => pick(p.r.name));
+      g.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(p.r.name); } });
+      svg.append(g);
+    }
+    box.append(svg);
+  }
+
   // renderRanks says where the picked model stands on each metric.
   function renderRanks(ids, label, ranked, unranked) {
     const box = $('bm-ranks');
@@ -1235,6 +1353,9 @@ answer = "7.5"
       history.replaceState(null, '', u);
       reload();
     };
+  });
+  root.querySelectorAll('[data-view]').forEach((b) => {
+    b.onclick = () => { view = b.dataset.view; store.set('bm-view', view); render(); };
   });
   root.querySelectorAll('[data-metric]').forEach((b) => {
     b.onclick = () => {
