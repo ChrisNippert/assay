@@ -103,18 +103,26 @@
     </form>
   </dialog>
 
-  <dialog class="bm-dialog wide" id="bm-answers" aria-labelledby="bm-ans-title">
+  <dialog class="bm-dialog wide bm-browser" id="bm-answers" aria-labelledby="bm-ans-title">
     <div class="bm-dlg-body">
       <div class="bm-dlg-head"><h2 class="bm-dlg-title" id="bm-ans-title"></h2><button type="button" class="icon-btn" data-close aria-label="Close">×</button></div>
       <div class="bm-ans-sub muted small" id="bm-ans-sub"></div>
-      <div class="bm-ans-stats" id="bm-ans-stats"></div>
-      <div class="bm-ans-filter" role="group" aria-label="Show">
-        <button type="button" class="lib-sortchip on" data-show="all">All</button>
-        <button type="button" class="lib-sortchip" data-show="wrong">Wrong</button>
-        <button type="button" class="lib-sortchip" data-show="right">Right</button>
+      <details class="bm-ans-statbox" id="bm-ans-statbox"><summary>Stats</summary><div class="bm-ans-stats" id="bm-ans-stats"></div></details>
+      <div class="bm-browse">
+        <div class="bm-tasks">
+          <div class="bm-tasks-top">
+            <input type="search" id="bm-ans-search" class="bm-ans-search" placeholder="Find a task…" aria-label="Find a task">
+            <div class="bm-ans-filter" role="group" aria-label="Show">
+              <button type="button" class="lib-sortchip on" data-show="all">All</button>
+              <button type="button" class="lib-sortchip" data-show="wrong">Wrong</button>
+              <button type="button" class="lib-sortchip" data-show="right">Right</button>
+            </div>
+          </div>
+          <div id="bm-ans-list" class="bm-tasklist" role="listbox" aria-label="Tasks" tabindex="0"></div>
+        </div>
+        <div class="bm-task" id="bm-ans-detail" aria-live="polite"></div>
       </div>
-      <div id="bm-ans-list" class="bm-ans-list"></div>
-      <div class="bm-dlg-actions"><button type="button" class="btn danger" id="bm-ans-delete">Delete this result</button><span class="grow"></span><button type="button" class="btn" id="bm-ans-rerun">Run again</button></div>
+      <div class="bm-dlg-actions"><button type="button" class="btn danger" id="bm-ans-delete">Delete this result</button><button type="button" class="btn" id="bm-ans-toml" hidden>Edit as TOML</button><span class="grow"></span><span class="muted small bm-keys">↑ ↓ to move</span><button type="button" class="btn" id="bm-ans-rerun">Run again</button></div>
     </div>
   </dialog>
 
@@ -145,6 +153,7 @@
 
   <p class="muted small bm-foot">Each question is asked once, at temperature 1 with a fixed seed, one model at a time. Runs wait while a chat reply is being written, and pick up where they stopped. The estimate fits a straight line from your overall score to the <a href="https://artificialanalysis.ai" target="_blank" rel="noopener">Artificial Analysis</a> Intelligence Index of the models that have one; it's an estimate, not a published score.</p>
   <script>window.assayBench = {{.Data.Initial}};</script>
+  <link rel="stylesheet" href="/static/katex/katex.min.css"><script src="/static/katex/katex.min.js" defer></script><script src="/static/hljs/highlight.min.js" defer></script><link rel="stylesheet" href="/static/hljs/theme.css"><script src="/static/markdown.js" defer></script>
   <script src="/static/benchmarks.js" defer></script>
 </div>
 {{end}}

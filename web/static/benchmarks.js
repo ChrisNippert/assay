@@ -299,9 +299,10 @@
       if (s.judge) title.append(' ', el('span', 'tag', 'judged'));
       t.append(title, el('div', 'row-sub', `${s.questions} questions${s.check ? ' · ' + s.check : ''}${s.description ? ' · ' + s.description : ''}`));
       const ctrl = el('div', 'row-ctrl');
-      const open = el('button', 'btn', s.builtIn ? 'View' : 'Edit');
+      const open = el('button', 'btn', 'Questions');
       open.type = 'button';
-      open.onclick = () => openEditor(s.id, false);
+      open.title = s.builtIn ? 'Browse the questions' : 'Browse the questions; edit them from there';
+      open.onclick = () => openQuestions(s.id);
       const copy = el('button', 'btn ghost', 'Copy');
       copy.type = 'button';
       copy.title = 'Start a new set from this one';
@@ -748,85 +749,218 @@
     }
   }
 
-  // ---- answers ----
+  // ---- answers: a task browser (list on the left, one task on the right) ----
   const ansDlg = $('bm-answers');
-  let ansFor = null;
+  let ansFor = null; // {row, setId} for a model's run; null when only browsing a set's questions
+  let ans = null; // {set, byId, items, res}
+  let ansSel = '';
+  let show = 'all';
+  const md = (text) => {
+    const d = el('div', 'md bm-md');
+    if (window.assayMarkdown) d.innerHTML = window.assayMarkdown.render(text || '');
+    else d.textContent = text || '';
+    return d;
+  };
+  function openBrowser(title, sub) {
+    $('bm-ans-title').textContent = title;
+    $('bm-ans-sub').textContent = sub;
+    $('bm-ans-list').innerHTML = '';
+    $('bm-ans-detail').innerHTML = '';
+    $('bm-ans-stats').innerHTML = '';
+    $('bm-ans-search').value = '';
+    show = 'all';
+    if (!ansDlg.open) ansDlg.showModal();
+  }
   async function openAnswers(row, setId) {
     ansFor = { row, setId };
-    $('bm-ans-title').textContent = `${row.title} · ${setName(setId)}`;
-    $('bm-ans-sub').textContent = 'Loading…';
-    $('bm-ans-list').innerHTML = '';
-    ansDlg.showModal();
+    openBrowser(`${row.title} · ${setName(setId)}`, 'Loading…');
     const q = new URLSearchParams({ digest: row.digest, set: setId, think });
     let j;
     try { j = await api('GET', '/api/evals/result?' + q); } catch (e) { $('bm-ans-sub').textContent = e.message; return; }
     const res = j.result, set = j.set || { questions: [] };
-    const byId = Object.fromEntries((set.questions || []).map((qq) => [qq.id, qq]));
-    const secs = res.answers.reduce((n, a) => n + a.ms, 0) / 1000;
     const toks = res.answers.reduce((n, a) => n + a.tokens, 0);
-    $('bm-ans-sub').textContent = `${res.correct} of ${res.answers.length} right${res.answers.length < res.total ? ` · ${res.total - res.answers.length} not asked yet` : ''} · ${think === 'off' ? 'thinking off' : "model's default thinking"} · up to ${res.maxTokens} tokens each · ${Math.round(secs)} s, ${toks.toLocaleString()} tokens · ${new Date(res.at).toLocaleString()}${j.stale ? ' · ' + j.stale : ''}`;
+    const ms = res.answers.reduce((n, a) => n + a.ms, 0);
+    $('bm-ans-sub').textContent = `${res.correct} of ${res.answers.length} right${res.answers.length < res.total ? ` · ${res.total - res.answers.length} not asked yet` : ''} · ${think === 'off' ? 'thinking off' : "model's default thinking"} · up to ${res.maxTokens.toLocaleString()} tokens each · ${dur(ms)}, ${toks.toLocaleString()} tokens · ${new Date(res.at).toLocaleString()}${j.stale ? ' · ' + j.stale : ''}`;
     renderAnswerStats(res.answers);
-    const list = $('bm-ans-list');
-    for (const a of res.answers) {
-      const qq = byId[a.id] || {};
-      const item = el('div', 'bm-ans' + (a.correct ? ' right' : ' wrong'));
-      item.dataset.right = a.correct ? '1' : '0';
-      const head = el('div', 'bm-ans-head');
-      head.append(el('span', 'bm-ans-mark', a.correct ? '✓' : '✗'), el('span', 'bm-ans-id', a.id));
-      const facts = el('span', 'bm-ans-facts muted small');
-      const parts = [];
-      const chk = qq.check || set.check;
-      if (qq.answer && !['regex', 'judge', 'code'].includes(chk)) parts.push(`expected ${qq.answer}`);
-      if (a.got) parts.push(`got ${a.got}`);
-      parts.push(`${a.tokens} tokens`, `${(a.ms / 1000).toFixed(1)} s`);
-      if (a.cut) parts.push('hit the token limit');
-      if (a.looped) parts.push('stopped: it kept repeating itself');
-      if (a.error) parts.push('error: ' + a.error);
-      facts.textContent = parts.join(' · ');
-      head.append(facts);
-      item.append(head);
-      if (qq.prompt) {
-        const d = el('details', 'bm-ans-q');
-        d.open = !a.correct;
-        d.append(el('summary', null, 'Question'), el('pre', 'bm-pre', qq.prompt + (qq.choices ? '\n\n' + qq.choices.map((c, i) => String.fromCharCode(65 + i) + '. ' + c).join('\n') : '')));
-        if (chk === 'regex') d.append(el('div', 'muted small', 'Must match: ' + qq.answer));
-        if (chk === 'judge' && qq.answer) { d.append(el('div', 'muted small', 'Reference:'), el('pre', 'bm-pre muted', qq.answer)); }
-        if (chk === 'lean') { d.append(el('div', 'muted small', 'Must prove:'), el('pre', 'bm-pre bm-out', 'theorem goal : ' + qq.statement + (qq.preamble ? '\n\n-- given:\n' + qq.preamble : ''))); }
-        if (chk === 'code' && qq.tests) { d.append(el('div', 'muted small', 'Tests:'), el('pre', 'bm-pre bm-out', qq.tests)); }
-        item.append(d);
-      }
-      if (a.thinking) {
-        const d = el('details', 'bm-ans-q');
-        d.append(el('summary', null, `Thinking`), el('pre', 'bm-pre muted', a.thinking));
-        item.append(d);
-      }
-      item.append(el('pre', 'bm-pre bm-reply', a.reply || '(empty reply)'));
-      if (a.output) {
-        const d = el('details', 'bm-ans-q');
-        d.open = !a.correct;
-        d.append(el('summary', null, chk === 'lean' ? "Lean's verdict" : 'Test output'), el('pre', 'bm-pre bm-out', a.output));
-        item.append(d);
-      }
-      if (a.pending) item.append(el('div', 'muted small', 'Waiting for a judge.'));
-      if (a.judge) {
-        const d = el('details', 'bm-ans-q');
-        d.open = !a.correct;
-        const self = a.judgeModel === res.model;
-        d.append(el('summary', null, `Judged by ${a.judgeModel}${self ? ' (itself)' : ''}`), el('pre', 'bm-pre', a.judge));
-        item.append(d);
-      }
-      list.append(item);
-    }
-    applyShow();
+    ans = { set, byId: Object.fromEntries((set.questions || []).map((qq) => [qq.id, qq])), items: res.answers, res };
+    browserMode();
+    const firstWrong = res.answers.find((a) => !a.correct);
+    selectTask((firstWrong || res.answers[0] || {}).id);
   }
-  let show = 'all';
-  function applyShow() {
-    ansDlg.querySelectorAll('[data-show]').forEach((b) => b.classList.toggle('on', b.dataset.show === show));
-    $('bm-ans-list').querySelectorAll('.bm-ans').forEach((it) => {
-      it.hidden = (show === 'wrong' && it.dataset.right === '1') || (show === 'right' && it.dataset.right === '0');
+  async function openQuestions(setId) {
+    ansFor = null;
+    openBrowser(setName(setId), 'Loading…');
+    let j;
+    try { j = await api('GET', '/api/evals/sets/' + encodeURIComponent(setId)); } catch (e) { $('bm-ans-sub').textContent = e.message; return; }
+    const set = j.set || { questions: [] };
+    $('bm-ans-sub').textContent = `${set.questions.length} questions · checked by ${set.check || 'exact match'}${set.generated ? ' · written by code from a fixed seed' : ''}${set.description ? ' · ' + set.description : ''}`;
+    ans = { set, byId: Object.fromEntries(set.questions.map((qq) => [qq.id, qq])), items: set.questions.map((qq) => ({ id: qq.id, only: true })), setId };
+    browserMode();
+    selectTask(set.questions[0]?.id);
+  }
+  function browserMode() {
+    const run = !!ansFor;
+    $('bm-ans-statbox').hidden = !run;
+    ansDlg.querySelector('.bm-ans-filter').hidden = !run;
+    $('bm-ans-delete').hidden = $('bm-ans-rerun').hidden = !run;
+    $('bm-ans-toml').hidden = run;
+    $('bm-ans-toml').textContent = ans.set.builtIn ? 'View as TOML' : 'Edit as TOML';
+  }
+  function visibleTasks() {
+    const q = $('bm-ans-search').value.trim().toLowerCase();
+    return ans.items.filter((a) => {
+      if (show === 'wrong' && a.correct) return false;
+      if (show === 'right' && !a.correct) return false;
+      if (!q) return true;
+      const qq = ans.byId[a.id] || {};
+      return `${a.id} ${qq.prompt || ''} ${a.got || ''}`.toLowerCase().includes(q);
     });
   }
-  ansDlg.querySelectorAll('[data-show]').forEach((b) => { b.onclick = () => { show = b.dataset.show; applyShow(); }; });
+  function verdictOf(a) {
+    if (a.only) return { mark: '•', cls: 'only', word: '' };
+    if (a.error) return { mark: '!', cls: 'wrong', word: 'Failed' };
+    if (a.pending) return { mark: '…', cls: 'pending', word: 'Waiting for a judge' };
+    return a.correct ? { mark: '✓', cls: 'right', word: 'Right' } : { mark: '✗', cls: 'wrong', word: 'Wrong' };
+  }
+  function renderTaskList() {
+    const list = $('bm-ans-list');
+    list.innerHTML = '';
+    ansDlg.querySelectorAll('[data-show]').forEach((b) => b.classList.toggle('on', b.dataset.show === show));
+    const vis = visibleTasks();
+    for (const a of vis) {
+      const qq = ans.byId[a.id] || {};
+      const v = verdictOf(a);
+      const b = el('button', `bm-tk ${v.cls}${a.id === ansSel ? ' sel' : ''}`);
+      b.type = 'button';
+      b.setAttribute('role', 'option');
+      b.setAttribute('aria-selected', a.id === ansSel ? 'true' : 'false');
+      b.dataset.id = a.id;
+      const top = el('span', 'bm-tk-top');
+      top.append(el('span', 'bm-tk-mark', v.mark), el('span', 'bm-tk-id', a.id));
+      const sub = a.only
+        ? (qq.prompt || '').replace(/\s+/g, ' ').slice(0, 90)
+        : [a.got ? `got ${a.got}` : a.reply ? '' : 'no answer', `${a.tokens.toLocaleString()} tok`, dur(a.ms), a.looped ? 'looped' : a.cut ? 'ran out' : ''].filter(Boolean).join(' · ');
+      b.append(top, el('span', 'bm-tk-sub', sub));
+      b.onclick = () => selectTask(a.id);
+      list.append(b);
+    }
+    if (!vis.length) list.append(el('div', 'muted small bm-tk-none', 'Nothing matches.'));
+  }
+  function selectTask(id) {
+    if (!ans) return;
+    ansSel = id || '';
+    renderTaskList();
+    $('bm-ans-list').querySelector('.bm-tk.sel')?.scrollIntoView({ block: 'nearest' });
+    renderTask();
+  }
+  function moveTask(d) {
+    const vis = visibleTasks();
+    const i = vis.findIndex((a) => a.id === ansSel);
+    const next = vis[Math.max(0, Math.min(vis.length - 1, i + d))];
+    if (next) selectTask(next.id);
+  }
+  function section(title, ...kids) {
+    const s = el('section', 'bm-tsec');
+    s.append(el('h3', 'bm-tsec-h', title), ...kids);
+    return s;
+  }
+  function renderTask() {
+    const box = $('bm-ans-detail');
+    box.innerHTML = '';
+    box.scrollTop = 0;
+    const a = ans.items.find((x) => x.id === ansSel);
+    if (!a) return;
+    const qq = ans.byId[a.id] || {};
+    const chk = qq.check || ans.set.check;
+    const v = verdictOf(a);
+    const head = el('div', 'bm-task-head');
+    head.append(el('h3', 'bm-task-id', a.id));
+    if (v.word) head.append(el('span', `bm-pill ${v.cls}`, v.word));
+    box.append(head);
+    const facts = [];
+    if (qq.answer && !['regex', 'judge', 'code', 'lean'].includes(chk)) {
+      let want = qq.answer;
+      if (chk === 'number' && /^-?[\d.]+(e-?\d+)?$/i.test(want) && want.replace(/[^\d]/g, '').length > 6) want = String(Number(Number(want).toPrecision(6)));
+      if (chk === 'number' && qq.tolerance && qq.tolerance !== 0.5) want += ` ± ${Number(qq.tolerance.toPrecision(2))}`;
+      facts.push(['Expected', want]);
+    }
+    if (!a.only) {
+      if (a.got) facts.push(['Got', a.got]);
+      facts.push(['Tokens', a.tokens.toLocaleString()], ['Time', dur(a.ms)]);
+      if (a.ms && a.tokens) facts.push(['Speed', `${num(a.tokens / (a.ms / 1000))} tok/s`]);
+    }
+    if (facts.length) {
+      const f = el('div', 'bm-facts');
+      for (const [k, val] of facts) {
+        const t = el('div', 'bm-fact');
+        t.append(el('span', 'bm-fact-k', k), el('span', 'bm-fact-v', val));
+        f.append(t);
+      }
+      box.append(f);
+    }
+    if (a.looped) box.append(el('div', 'msg-warn', 'Stopped early: it kept writing the same thing over and over.'));
+    else if (a.cut) box.append(el('div', 'msg-warn', `Ran out of room: it hit the ${ans.res ? ans.res.maxTokens.toLocaleString() + '-token' : ''} limit before finishing.`));
+    if (a.error) box.append(el('div', 'msg-warn', 'Error: ' + a.error));
+    const q = section('Question', md(qq.prompt || '(question not found)'));
+    if (qq.choices) {
+      const ol = el('ol', 'bm-choices');
+      qq.choices.forEach((c, i) => {
+        const li = el('li', String.fromCharCode(65 + i) === (qq.answer || '').toUpperCase() ? 'key' : '');
+        li.append(el('span', 'bm-choice-l', String.fromCharCode(65 + i)), el('span', null, c));
+        ol.append(li);
+      });
+      q.append(ol);
+    }
+    if (chk === 'regex') q.append(el('div', 'muted small', `${qq.not ? 'Must not match' : 'Must match'}: ${qq.answer}`));
+    box.append(q);
+    if (chk === 'lean') box.append(section('Must prove', md('```lean\ntheorem goal : ' + qq.statement + (qq.preamble ? '\n\n-- given:\n' + qq.preamble : '') + '\n```')));
+    if (chk === 'code' && qq.tests) {
+      const d = el('details', 'bm-tdet');
+      d.append(el('summary', null, 'Hidden tests'), md('```python\n' + qq.tests + '\n```'));
+      box.append(d);
+    }
+    if (chk === 'judge' && qq.answer) {
+      const d = el('details', 'bm-tdet');
+      d.append(el('summary', null, 'Reference solution'), md(qq.answer));
+      box.append(d);
+    }
+    if (a.only) return;
+    if (a.thinking) {
+      const d = el('details', 'bm-tdet');
+      const words = a.thinking.split(/\s+/).length;
+      d.append(el('summary', null, `Thinking · about ${words.toLocaleString()} words`));
+      d.addEventListener('toggle', () => { if (d.open && d.children.length === 1) d.append(md(a.thinking)); }, { once: false });
+      box.append(d);
+    }
+    box.append(section('Answer', a.reply ? md(a.reply) : el('p', 'muted', '(no answer written)')));
+    if (a.output) {
+      const d = el('details', 'bm-tdet');
+      d.open = !a.correct;
+      d.append(el('summary', null, chk === 'lean' ? "Lean's verdict" : 'Test output'), el('pre', 'bm-pre bm-out', a.output));
+      box.append(d);
+    }
+    if (a.judge) {
+      const d = el('details', 'bm-tdet');
+      d.open = !a.correct;
+      d.append(el('summary', null, `Judged by ${a.judgeModel}${a.judgeModel === ans.res.model ? ' (itself)' : ''}`), md(a.judge));
+      box.append(d);
+    }
+    const nav = el('div', 'bm-task-nav');
+    const prev = el('button', 'btn ghost', '← Previous'), next = el('button', 'btn ghost', 'Next →');
+    prev.type = next.type = 'button';
+    prev.onclick = () => moveTask(-1);
+    next.onclick = () => moveTask(1);
+    nav.append(prev, next);
+    box.append(nav);
+  }
+  ansDlg.querySelectorAll('[data-show]').forEach((b) => { b.onclick = () => { show = b.dataset.show; const vis = visibleTasks(); if (!vis.some((a) => a.id === ansSel)) selectTask(vis[0]?.id); else renderTaskList(); }; });
+  $('bm-ans-search').addEventListener('input', () => { const vis = visibleTasks(); if (vis.length && !vis.some((a) => a.id === ansSel)) selectTask(vis[0].id); else renderTaskList(); });
+  ansDlg.addEventListener('keydown', (e) => {
+    if (e.target.closest('input, textarea, select') || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === 'ArrowDown' || e.key === 'j') { moveTask(1); e.preventDefault(); }
+    else if (e.key === 'ArrowUp' || e.key === 'k') { moveTask(-1); e.preventDefault(); }
+  });
+  $('bm-ans-toml').onclick = () => { const id = ans?.setId; if (!id) return; ansDlg.close(); openEditor(id, false); };
   $('bm-ans-delete').onclick = async () => {
     if (!ansFor || !confirm('Delete this result? The answers are gone for good.')) return;
     const q = new URLSearchParams({ digest: ansFor.row.digest, set: ansFor.setId, think });
