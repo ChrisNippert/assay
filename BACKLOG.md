@@ -28,8 +28,13 @@ through the models that have both your score and a public one.
   Equations to code (both run against hidden tests) and Proofs in Lean
   (checked by the Lean prover; one-click install). Judged sets are only
   for your own; the user prefers machine-checked grading.
-- Open: show the estimate on Library rows, Compare and the model page;
-  harder knowledge/logic sets (the easy ones saturate: a 2B gets 85–95%);
+- ✅ (2026-10-31) Generated sets: Physics, Calculus and Hard math (written
+  by code from a fixed seed, answers cross-checked by sympy/mpmath); the
+  old hard math is now Medium math.
+- Open: run the new sets on a few models and tune difficulty (aim: a 2B
+  at 20–40%); show the estimate on Library rows, Compare and the model page;
+  harder knowledge/logic sets (the easy ones saturate: a 2B gets 85–95%;
+  logic could be generated the same way);
   re-judge with another judge; other languages than Python for code sets.
 
 ### 2. Scores and Compare follow-ups (M)
