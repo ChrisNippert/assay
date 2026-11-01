@@ -1,8 +1,8 @@
 package evals
 
 import (
-	"encoding/json"
 	"context"
+	"encoding/json"
 	"math"
 	"math/rand/v2"
 	"os"
