@@ -30,6 +30,8 @@ func TestApplyEdit(t *testing.T) {
 			want: "```go\nfunc a() int {\n\treturn 3\n}\n```"},
 		{name: "empty replace deletes", msgs: []chats.Message{asst(code)}, find: "\treturn 1\n", replace: "",
 			want: "```go\nfunc a() int {\n}\n```"},
+		{name: "wrong indentation still matches the line", msgs: []chats.Message{asst(code)}, find: "    return 1", replace: "    return 4",
+			want: "```go\nfunc a() int {\n\treturn 4\n}\n```"},
 		{name: "not found", msgs: []chats.Message{asst(code)}, find: "return 9", replace: "x", err: "no code block"},
 		{name: "empty find", msgs: []chats.Message{asst(code)}, find: "", replace: "x", err: "find is empty"},
 		{name: "found twice in one block", msgs: []chats.Message{asst("```\nx\nx\n```")}, find: "x", replace: "y", err: "occurs 2 times"},
