@@ -42,6 +42,7 @@
     tps: { name: 'Tokens/s', val: (c) => (c.ms ? c.tokens / (c.ms / 1000) : null) },
     tpt: { name: 'Tokens/answer', val: (c) => (c.answered ? c.tokens / c.answered : null) },
     tpm: { name: 'Answers/min', val: (c) => (c.ms ? c.answered / (c.ms / 60000) : null) },
+    rpm: { name: 'Right/min', val: (c) => (c.ms ? c.correct / (c.ms / 60000) : null) },
     tpr: { name: 'Tokens/right', val: (c) => (c.correct ? c.tokens / c.correct : null) },
   };
   let metric = METRICS[store.get('bm-metric')] ? store.get('bm-metric') : 'score';
@@ -55,7 +56,7 @@
   };
   const cellStats = (c) => {
     const parts = [];
-    if (c.ms) parts.push(`${num(METRICS.tps.val(c))} tokens/s`, `${num(METRICS.tpm.val(c))} answers/min`, `${dur(c.ms)} in all`);
+    if (c.ms) parts.push(`${num(METRICS.tps.val(c))} tokens/s`, `${num(METRICS.tpm.val(c))} answers/min`, `${num(METRICS.rpm.val(c))} right/min`, `${dur(c.ms)} in all`);
     if (c.answered) parts.push(`${Math.round(METRICS.tpt.val(c)).toLocaleString()} tokens/answer`);
     if (c.correct) parts.push(`${Math.round(METRICS.tpr.val(c)).toLocaleString()} tokens per right answer`);
     return parts.join(' · ');
@@ -513,11 +514,13 @@
   const METRIC_NOTE = {
     score: 'Share of questions right, averaged over the sets',
     tpm: 'Questions finished a minute, thinking included',
+    rpm: 'Right answers a minute: answers a minute times the share right',
     tps: 'Tokens written per second on this computer',
     tpt: 'Tokens written per question, thinking included',
     tpr: 'Tokens written for each right answer',
   };
   const LOWER_BETTER = { tpt: true, tpr: true };
+  const BOARD_COLS = ['score', 'rpm', 'tpm', 'tps', 'tpt', 'tpr'];
   let cat = store.get('bm-cat') || 'overall';
   let subset = (() => { try { return JSON.parse(store.get('bm-subset') || 'null'); } catch { return null; } })();
   const catSets = (name) => {
@@ -638,7 +641,7 @@
     t.innerHTML = '';
     const head = el('tr');
     head.append(el('th', 'bm-rank-n', '#'), el('th', 'bm-rank-model', 'Model'));
-    for (const k of ['score', 'tpm', 'tps', 'tpt', 'tpr']) {
+    for (const k of BOARD_COLS) {
       const th = el('th', 'bm-rank-num');
       const hb = el('button', 'bm-rank-sort' + (k === metric ? ' on' : ''), k === 'score' ? 'Score' : METRICS[k].name);
       hb.type = 'button';
@@ -661,7 +664,7 @@
       nb.onclick = () => pick(r.name);
       nameCell.append(nb);
       tr.append(el('td', 'bm-rank-n', String(i + 1)), nameCell);
-      for (const k of ['score', 'tpm', 'tps', 'tpt', 'tpr']) tr.append(el('td', 'bm-rank-num' + (k === metric ? ' on' : ''), fmtMetric(k, v[k])));
+      for (const k of BOARD_COLS) tr.append(el('td', 'bm-rank-num' + (k === metric ? ' on' : ''), fmtMetric(k, v[k])));
       tbody.append(tr);
     });
     t.append(thead, tbody);
@@ -697,7 +700,7 @@
       box.append(b);
       return;
     }
-    for (const k of ['score', 'tpm', 'tps', 'tpt', 'tpr']) {
+    for (const k of BOARD_COLS) {
       const order = standings(ids, k).ranked;
       const i = order.findIndex((x) => x.r === r);
       const b = el('button', 'bm-rankchip' + (k === metric ? ' on' : '') + (i === 0 ? ' top' : ''));
