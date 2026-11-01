@@ -917,11 +917,21 @@
       b.textContent = 'undo failed, try again';
     }
   });
+  // Of a reply's edits only the newest stays open: each holds the whole
+  // block, so several open ones repeat the file.
+  function lastEditOpen(root) {
+    const boxes = root ? [...root.querySelectorAll('details[data-edit]')] : [];
+    boxes.forEach((d, i) => { d.open = i === boxes.length - 1; });
+  }
+  document.querySelectorAll('.msg.assistant').forEach(lastEditOpen);
   function fillTool(box, call) {
     box.classList.remove('pending');
     box.classList.toggle('err', !!call.error);
     box.querySelector('summary').textContent = call.label;
-    if (call.name === 'edit_code') box.open = true; // the updated block is the point
+    if (call.name === 'edit_code' && !call.error) { // the updated block is the point
+      box.dataset.edit = '';
+      lastEditOpen(box.closest('.msg') || box.parentElement);
+    }
     if (call.trim) box.after(trimLine(call));
     box.querySelector('.tool-body').append(el('div', 'tool-k', 'Result'), el('pre', 'tool-pre', call.result));
   }

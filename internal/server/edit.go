@@ -16,7 +16,12 @@ import (
 // by sending the exact text to find and what replaces it, instead of
 // reprinting the whole block. Saved messages are never changed: the updated
 // block is the tool's result, which the reply keeps as a new call.
+//
+// The tool is built for one reply, and the edits it makes during that reply
+// aren't in c.Messages yet, so it keeps them itself: each edit applies on
+// top of the ones before it in the same reply.
 func editCodeTool(c *chats.Chat) tools.Tool {
+	var thisReply []chats.ToolCall
 	return tools.Tool{
 		Name:        "edit_code",
 		Description: editCodeHelp,
@@ -33,11 +38,14 @@ func editCodeTool(c *chats.Chat) tools.Tool {
 			if err := json.Unmarshal(args, &a); err != nil || a.Find == nil || a.Replace == nil {
 				return editFail("find and replace are both required")
 			}
-			block, err := applyEdit(c.Messages, *a.Find, *a.Replace)
+			msgs := append(slices.Clone(c.Messages), chats.Message{Role: "assistant", Calls: thisReply})
+			block, err := applyEdit(msgs, *a.Find, *a.Replace)
 			if err != nil {
 				return editFail(err.Error())
 			}
-			return tools.Result{Text: "Edited. The updated block:\n" + block, Label: "Edited a code block"}
+			text := "Edited. The updated block:\n" + block
+			thisReply = append(thisReply, chats.ToolCall{Name: "edit_code", Result: text})
+			return tools.Result{Text: text, Label: "Edited a code block"}
 		},
 	}
 }

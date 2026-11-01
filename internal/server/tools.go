@@ -139,6 +139,7 @@ func (s *Server) chatLoop(ctx context.Context, t *turn, emit func(event) error) 
 		var c, th strings.Builder
 		var final ollama.ChatResponse
 		loop := newLoopCheck()
+		held := false
 		err = s.ollama.Chat(ctx, req, func(resp ollama.ChatResponse) error {
 			if x := resp.Message.Thinking; x != "" {
 				th.WriteString(x)
@@ -151,6 +152,10 @@ func (s *Server) chatLoop(ctx context.Context, t *turn, emit func(event) error) 
 			}
 			if x := resp.Message.Content; x != "" {
 				c.WriteString(x)
+				if held || len(req.Tools) > 0 && strings.Contains(c.String(), tcOpen) {
+					held = true // a tool call written as text: read below, not shown
+					return nil
+				}
 				if err := emit(event{Type: "content", Text: x}); err != nil {
 					return err
 				}
@@ -167,6 +172,16 @@ func (s *Server) chatLoop(ctx context.Context, t *turn, emit func(event) error) 
 			stats = mergeStats(stats, t.stats(final))
 		}
 		calls := final.Message.ToolCalls
+		if len(calls) == 0 && len(req.Tools) > 0 && held {
+			var rest string
+			if calls, rest = textToolCalls(c.String()); len(calls) > 0 {
+				c.Reset()
+				c.WriteString(rest)
+			} else if err == nil {
+				// Not a call after all: show what was held back.
+				err = emit(event{Type: "content", Text: c.String()[strings.Index(c.String(), tcOpen):]})
+			}
+		}
 		if err != nil || len(calls) == 0 || len(req.Tools) == 0 {
 			return c.String(), th.String(), stats, err
 		}

@@ -149,3 +149,61 @@ func TestEditCodeTurn(t *testing.T) {
 		t.Errorf("tool result: %q", res)
 	}
 }
+
+// Edits made earlier in the same reply aren't saved yet, but later edits
+// in that reply build on them.
+func TestEditCodeStacksInOneReply(t *testing.T) {
+	c := &chats.Chat{Messages: []chats.Message{asst("```cpp\nstruct Node {\n    Node* next;\n    Node(int v) {\n        next = nullptr;\n    }\n};\n```")}}
+	tool := editCodeTool(c)
+	r1 := tool.Run(context.Background(), json.RawMessage(`{"find":"    Node* next;","replace":"    Node* next;\n    Node* prev;"}`))
+	r2 := tool.Run(context.Background(), json.RawMessage(`{"find":"        next = nullptr;","replace":"        next = nullptr;\n        prev = nullptr;"}`))
+	if r1.Err || r2.Err || !strings.Contains(r2.Text, "Node* prev;") || !strings.Contains(r2.Text, "prev = nullptr;") {
+		t.Fatalf("second edit lost the first:\n%s\n%s", r1.Text, r2.Text)
+	}
+	// Adding prev again now finds the edited block, where it would be a duplicate the model can see.
+	if r3 := tool.Run(context.Background(), json.RawMessage(`{"find":"    Node* prev;","replace":"    Node* prev; // back"}`)); r3.Err || strings.Count(r3.Text, "Node* prev") != 1 {
+		t.Fatalf("third edit: %s", r3.Text)
+	}
+}
+
+func TestTextToolCalls(t *testing.T) {
+	text := "Sure.\n<|tool_call>call:edit_code{find:<|\"|>    Node* next;<|\"|>,replace:<|\"|>    Node* next;\n    Node* prev;<|\"|>}<tool_call|>"
+	calls, rest := textToolCalls(text)
+	if len(calls) != 1 || calls[0].Function.Name != "edit_code" || rest != "Sure." {
+		t.Fatalf("calls %+v rest %q", calls, rest)
+	}
+	var a struct{ Find, Replace string }
+	if err := json.Unmarshal(calls[0].Function.Arguments, &a); err != nil || a.Find != "    Node* next;" || a.Replace != "    Node* next;\n    Node* prev;" {
+		t.Fatalf("args %s (%v)", calls[0].Function.Arguments, err)
+	}
+	calls, _ = textToolCalls("<|tool_call>call:web_search{query:<|\"|>go 1.27<|\"|>,count:3,safe:true}<tool_call|>")
+	if len(calls) != 1 || string(calls[0].Function.Arguments) != `{"count":3,"query":"go 1.27","safe":true}` {
+		t.Fatalf("%+v", calls)
+	}
+	if calls, rest := textToolCalls("no calls <|tool_call> broken"); len(calls) != 0 || rest != "no calls <|tool_call> broken" {
+		t.Fatalf("%+v %q", calls, rest)
+	}
+}
+
+// A call left in the reply text still runs, and the markup isn't saved.
+func TestEditCodeTextCallRuns(t *testing.T) {
+	s, fake, _ := newTestServer(t)
+	fake.caps = `"completion","tools"`
+	fake.reply = `{"message":{"role":"assistant","content":"` + "```go\\nfunc a() {}\\n```" + `"},"done":true}` + "\n"
+	id := events(t, do(s, "POST", "/api/chat", `{"model":"qwen3:8b","content":"write a()"}`))[0].ID
+	fake.replies = []string{`{"message":{"role":"assistant","content":"<|tool_call>call:edit_code{find:<|\"|>a()<|\"|>,replace:<|\"|>b()<|\"|>}<tool_call|>"},"done":true}` + "\n"}
+	fake.reply = `{"message":{"role":"assistant","content":"Renamed."},"done":true}` + "\n"
+	rec := do(s, "POST", "/api/chat", `{"model":"qwen3:8b","chatId":"`+id+`","content":"rename it","editCode":true}`)
+	var res, shown string
+	for _, e := range events(t, rec) {
+		if e.Type == "toolresult" {
+			res = e.Call.Result
+		}
+		if e.Type == "content" {
+			shown += e.Text
+		}
+	}
+	if !strings.Contains(res, "func b() {}") || strings.Contains(shown, "tool_call") {
+		t.Fatalf("result %q shown %q", res, shown)
+	}
+}
