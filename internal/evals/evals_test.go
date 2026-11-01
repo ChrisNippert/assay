@@ -1,6 +1,7 @@
 package evals
 
 import (
+	"encoding/json"
 	"context"
 	"math"
 	"math/rand/v2"
@@ -374,6 +375,32 @@ func TestGeneratedSets(t *testing.T) {
 				t.Errorf("%s/%s: answer %s", g.ID, q.ID, q.Answer)
 			}
 		}
+		verifyGenerated(t, a)
+	}
+}
+
+// verifyGenerated runs verify/<id>.py, an independent checker written in
+// Python with sympy/mpmath, on the set's questions (as JSON: a list of
+// {id, prompt, answer, tolerance}). It reads each prompt's numbers from the
+// text and recomputes the answer another way, so a slip in the Go code or
+// a prompt that says something else than the code computed fails here.
+// Skipped when python3 with sympy and mpmath isn't installed.
+func verifyGenerated(t *testing.T, s *Set) {
+	script, _ := filepath.Abs(filepath.Join("verify", s.ID+".py"))
+	if _, err := os.Stat(script); err != nil {
+		t.Errorf("%s: no checker at verify/%s.py", s.ID, s.ID)
+		return
+	}
+	if exec.Command("python3", "-I", "-c", "import sympy, mpmath").Run() != nil {
+		t.Logf("%s: python3 with sympy and mpmath not found; not verified", s.ID)
+		return
+	}
+	b, _ := json.Marshal(s.Questions)
+	f := filepath.Join(t.TempDir(), s.ID+".json")
+	os.WriteFile(f, b, 0o644)
+	out, err := exec.Command("python3", "-I", script, f).CombinedOutput()
+	if err != nil {
+		t.Errorf("%s: checker failed: %v\n%s", s.ID, err, out)
 	}
 }
 
