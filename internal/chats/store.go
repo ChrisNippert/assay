@@ -70,6 +70,9 @@ type ToolCall struct {
 	Name   string `json:"name"`
 	Args   string `json:"args"`   // the JSON arguments as the model wrote them
 	Result string `json:"result"` // what went back to the model (truncated)
+	// Block is edit_code's whole updated block, shown to the user and used
+	// by later edits (the model may have got only the changed lines).
+	Block string `json:"block,omitempty"`
 	Label  string `json:"label"`  // "Searched the web for “…” · 5 results"
 	Error  bool   `json:"error,omitempty"`
 	Trim   string `json:"trim,omitempty"` // the trim a forget call made

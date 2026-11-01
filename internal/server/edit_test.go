@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -56,7 +57,8 @@ func TestApplyEdit(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			before := make([]chats.Message, len(tt.msgs))
 			copy(before, tt.msgs)
-			got, err := applyEdit(tt.msgs, tt.find, tt.replace)
+			e, err := applyEdit(tt.msgs, nil, tt.find, tt.replace)
+			got := e.block
 			if tt.err != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.err) {
 					t.Fatalf("error %v, want one containing %q", err, tt.err)
@@ -77,7 +79,7 @@ func TestApplyEdit(t *testing.T) {
 
 func TestEditCodeTool(t *testing.T) {
 	c := &chats.Chat{Messages: []chats.Message{{Role: "user", Content: "write it"}, asst("```\nfoo()\n```")}}
-	tl := editCodeTool(c)
+	tl := editCodeTool(c, nil)
 	if tl.Name != "edit_code" || len(tl.Parameters["required"].([]string)) != 2 {
 		t.Fatalf("schema: %+v", tl)
 	}
@@ -154,7 +156,7 @@ func TestEditCodeTurn(t *testing.T) {
 // in that reply build on them.
 func TestEditCodeStacksInOneReply(t *testing.T) {
 	c := &chats.Chat{Messages: []chats.Message{asst("```cpp\nstruct Node {\n    Node* next;\n    Node(int v) {\n        next = nullptr;\n    }\n};\n```")}}
-	tool := editCodeTool(c)
+	tool := editCodeTool(c, nil)
 	r1 := tool.Run(context.Background(), json.RawMessage(`{"find":"    Node* next;","replace":"    Node* next;\n    Node* prev;"}`))
 	r2 := tool.Run(context.Background(), json.RawMessage(`{"find":"        next = nullptr;","replace":"        next = nullptr;\n        prev = nullptr;"}`))
 	if r1.Err || r2.Err || !strings.Contains(r2.Text, "Node* prev;") || !strings.Contains(r2.Text, "prev = nullptr;") {
@@ -205,5 +207,43 @@ func TestEditCodeTextCallRuns(t *testing.T) {
 	}
 	if !strings.Contains(res, "func b() {}") || strings.Contains(shown, "tool_call") {
 		t.Fatalf("result %q shown %q", res, shown)
+	}
+}
+
+// A long block sends the model only the lines around the change; the whole
+// block is kept for the user and for the next edit.
+func TestEditCodeLongBlock(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("```go\n")
+	for i := range 200 {
+		fmt.Fprintf(&b, "x%d := %d\n", i, i)
+	}
+	b.WriteString("```")
+	c := &chats.Chat{Messages: []chats.Message{asst(b.String())}}
+	tool := editCodeTool(c, nil)
+	r := tool.Run(context.Background(), json.RawMessage(`{"find":"x100 := 100","replace":"x100 := -1"}`))
+	if r.Err || !strings.Contains(r.Text, "Lines 98–104 of 200") || strings.Contains(r.Text, "x0 := 0") || !strings.Contains(r.Text, "x100 := -1") {
+		t.Fatalf("model got: %s", r.Text)
+	}
+	if !strings.Contains(r.Full, "x0 := 0") || !strings.Contains(r.Full, "x199 := 199") || !strings.Contains(r.Full, "x100 := -1") {
+		t.Fatalf("full block missing lines")
+	}
+	if r2 := tool.Run(context.Background(), json.RawMessage(`{"find":"x0 := 0","replace":"x0 := 9"}`)); r2.Err || !strings.Contains(r2.Full, "x100 := -1") || !strings.Contains(r2.Full, "x0 := 9") {
+		t.Fatalf("second edit lost the first")
+	}
+}
+
+// An attached file can be edited, and the call is labelled with its name.
+func TestEditCodeAttachedFile(t *testing.T) {
+	c := &chats.Chat{Messages: []chats.Message{{Role: "user", Content: "fix this", Attachments: []chats.Attachment{{Name: "list.cpp", Kind: "doc", File: "f1"}}}}}
+	file := func(a chats.Attachment) (string, bool) { return "struct Node {\n    Node* next;\n};\n", a.File == "f1" }
+	r := editCodeTool(c, file).Run(context.Background(), json.RawMessage(`{"find":"    Node* next;","replace":"    Node* next;\n    Node* prev;"}`))
+	if r.Err || r.Label != "Edited list.cpp" || !strings.Contains(r.Full, "```cpp\nstruct Node {\n    Node* next;\n    Node* prev;\n};\n```") {
+		t.Fatalf("%+v", r)
+	}
+	// The saved call keeps the name for the next reply's edits.
+	c.Messages = append(c.Messages, asst("Added prev.", chats.ToolCall{Name: "edit_code", Label: r.Label, Result: r.Text, Block: r.Full}))
+	if r2 := editCodeTool(c, file).Run(context.Background(), json.RawMessage(`{"find":"    Node* prev;","replace":"    Node* prev = nullptr;"}`)); r2.Err || r2.Label != "Edited list.cpp" || !strings.Contains(r2.Full, "prev = nullptr") {
+		t.Fatalf("%+v", r2)
 	}
 }

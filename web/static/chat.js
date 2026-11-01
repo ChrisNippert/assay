@@ -933,7 +933,7 @@
       lastEditOpen(box.closest('.msg') || box.parentElement);
     }
     if (call.trim) box.after(trimLine(call));
-    box.querySelector('.tool-body').append(el('div', 'tool-k', 'Result'), el('pre', 'tool-pre', call.result));
+    box.querySelector('.tool-body').append(el('div', 'tool-k', 'Result'), el('pre', 'tool-pre', call.block || call.result));
   }
 
   // The excerpts a reply was given, folded under it like the server renders them.

@@ -84,7 +84,10 @@ func (s *Server) turnTools(ctx context.Context, c *chats.Chat, want *bool, model
 	}
 	out := tools.Build(d)
 	if c.EditCode && d.Settings.On("edit_code") { // also opt-in per chat
-		out = append(out, editCodeTool(c))
+		out = append(out, editCodeTool(c, func(a chats.Attachment) (string, bool) {
+			text, err := s.chats.FileText(c.ID, a.File)
+			return text, err == nil
+		}))
 	}
 	if c.Forget && d.Settings.On("forget") {
 		out = append(out, forgetTool(c))
@@ -211,7 +214,7 @@ func (s *Server) chatLoop(ctx context.Context, t *turn, emit func(event) error) 
 				return "", "", stats, ctx.Err()
 			}
 			text := tools.Clip(res.Text, toolResultLimit)
-			t.calls[idx].Result, t.calls[idx].Label, t.calls[idx].Error = text, res.Label, res.Err
+			t.calls[idx].Result, t.calls[idx].Label, t.calls[idx].Error, t.calls[idx].Block = text, res.Label, res.Err, res.Full
 			if call.Name == "forget" && !res.Err && len(t.chat.Trims) > 0 {
 				// forget adds its trim to the chat when it succeeds; the call shows it.
 				t.calls[idx].Trim = t.chat.Trims[len(t.chat.Trims)-1].ID

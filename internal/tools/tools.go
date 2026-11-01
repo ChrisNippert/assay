@@ -102,6 +102,9 @@ type Result struct {
 	Label string
 	// Err means the call failed; Text then says why.
 	Err bool
+	// Full, if set, is what the user sees instead of Text (edit_code: the
+	// whole updated block, where the model got only the changed lines).
+	Full string
 }
 
 // Tool is one function the model may call.
