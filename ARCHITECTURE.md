@@ -886,7 +886,12 @@ checked by `TestBuiltinLeanReferences`; `TestCheck` covers the cheats.
 
 **Running.** `POST /api/evals/run` takes models × sets, a think mode
 (`""` = the model's default, `off`) and a token limit per reply (8192 with
-thinking, 2048 without). One background job, one question at a time:
+thinking, 2048 without; a set's `max_tokens` raises it). Sampling is
+temperature 1, top_p 0.95, min_p 0.05, seed 1 (`evals.Sampling`, "t1"):
+temperature 0 made thinking models repeat a check until the limit.
+Results record their sampling; others are stale. A reply whose last
+200 characters repeat 4 times in the 12k before, or whose one 20+ character
+line fills 10 of the last 120, is stopped and marked `looped`. One background job, one question at a time:
 `loadAuto` once per model × set, then each question at temperature 0,
 seed 1, saved after every answer to
 `<data>/evals/results/<digest>/<set>[@nothink].json` (every reply and
@@ -894,6 +899,27 @@ thinking, clipped at 40k characters). A stopped run resumes where it
 left off; finished pairs are skipped unless `redo`. Between questions the
 job waits while a chat reply is being written or a speed test holds
 `benchMu`. Models aren't unloaded first: speed doesn't matter here.
+
+**The page (2026-11-01).** One model at a time: a searchable picker
+(remembered per browser, `?model=` works), then that model's sets as rows
+with a tick box, score and speed line; "Run N sets" starts a run for it
+(sets needing a judge or a Lean install go through the run dialog, which
+is now "Run on several models…"). A running row shows "12 of 90 · 40 min
+left" from the item's `since`/`from`. Compare draws bars over a group of
+sets: Overall (the suite), one set, or any mix of chips; only models with
+a finished, current result on every set in the group are drawn (mean of
+the set scores, or a speed stat summed over the sets), best first, the
+picked model highlighted; "Make these the overall" sets the suite. The
+Show switch (Score, Tokens/s, Tokens/task, Tasks/min, Tokens/right)
+applies to the bars and to the old grid, now under "All results". Cells
+carry `tokens`, `ms` and `rightTokens` sums; time includes reading the
+question. Answers and a set's questions open in one task browser: a list
+(search, All/Wrong/Right) and the task (expected ± tolerance, got, tokens,
+time, speed; question, answer and, on demand, thinking rendered by
+`markdown.js`, the chat's renderer moved to its own file; tests, Lean
+statement, judge reasoning). ↑/↓ or j/k move. A Stats fold shows tok/s,
+tasks/min, median tokens and time, tokens per right answer, right vs
+wrong length, thinking share, the longest task and the quickest right one.
 
 **The estimate.** Overall = the mean score over the highlighted sets
 (the suite; default every built-in set; click a column header to change
