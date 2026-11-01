@@ -77,6 +77,12 @@ type Set struct {
 	Questions []Question `toml:"questions" json:"questions"`
 	// BuiltIn sets come with Assay and can't be edited (copy one instead).
 	BuiltIn bool `toml:"-" json:"builtIn"`
+	// Generated sets are built in, with questions written by code from a
+	// fixed seed (see gen.go).
+	Generated bool `toml:"-" json:"generated,omitempty"`
+	// MaxTokens raises the reply limit for this set when a run uses the
+	// default limit.
+	MaxTokens int `toml:"max_tokens,omitempty" json:"maxTokens,omitempty"`
 	// Hash changes whenever a question, answer or check changes, so old
 	// results can be told apart from current ones.
 	Hash string `toml:"-" json:"hash"`
@@ -255,6 +261,13 @@ func OpenLibrary(dir string) (*Library, error) {
 		s.BuiltIn = true
 		l.builtin = append(l.builtin, s)
 	}
+	for _, g := range genSpecs {
+		s, err := g.Build()
+		if err != nil {
+			return nil, err
+		}
+		l.builtin = append(l.builtin, s)
+	}
 	return l, nil
 }
 
@@ -316,6 +329,11 @@ func (l *Library) Get(id string) (*Set, error) {
 // Raw returns a set's TOML as written (built-in or the user's file).
 func (l *Library) Raw(id string) ([]byte, error) {
 	if l.isBuiltin(id) {
+		for _, s := range l.builtin {
+			if s.ID == id && s.Generated {
+				return Encode(s) // written by code; shown as TOML to copy
+			}
+		}
 		return builtinFS.ReadFile("builtin/" + id + ".toml")
 	}
 	if l.dir == "" || !ValidID(id) {

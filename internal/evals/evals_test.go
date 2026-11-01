@@ -3,9 +3,11 @@ package evals
 import (
 	"context"
 	"math"
+	"math/rand/v2"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -79,6 +81,8 @@ func TestGrade(t *testing.T) {
 	frac := Question{Prompt: "p", Answer: "5/36", Check: CheckNumber, Tolerance: 0.0005}
 	choice := Question{Prompt: "p", Answer: "C", Choices: []string{"a", "b", "c", "d"}}
 	exact := Question{Prompt: "p", Answer: "('c', 2)", Accept: []string{"(c, 2)"}, Check: CheckExact}
+	sci := Question{Prompt: "p", Answer: "32000", Check: CheckNumber, Tolerance: 100}
+	small := Question{Prompt: "p", Answer: "0.0045", Check: CheckNumber, Tolerance: 0.00002}
 	notRe := Question{Prompt: "p", Answer: "(?i)e", Check: CheckRegex, Not: true}
 	cases := []struct {
 		q     Question
@@ -103,6 +107,15 @@ func TestGrade(t *testing.T) {
 		{exact, "Answer: ('c', 2)", true},
 		{exact, "Answer: `(c, 2)`", true},
 		{exact, "Answer: ('b', 1)", false},
+		{sci, "Answer: 3.2 × 10^4 N", true},
+		{sci, "Answer: $3.2 \\times 10^{4}$", true},
+		{sci, "Answer: 3.2·10⁴", true},
+		{sci, "Answer: 3.2e4", true},
+		{sci, "Answer: 32,000 newtons", true},
+		{sci, "Answer: 3.2 × 10^3", false},
+		{small, "Answer: 4.5 \\cdot 10^{-3} s", true},
+		{small, "Answer: 4.5×10⁻³", true},
+		{small, "Answer: -4.5×10⁻³", false},
 		{notRe, "A cat naps", true},
 		{notRe, "The cat naps", false},
 	}
@@ -336,5 +349,55 @@ func TestBuiltinLeanReferences(t *testing.T) {
 	}
 	if n == 0 {
 		t.Error("no Lean questions")
+	}
+}
+
+// Generated sets build the same questions every time, with unique ids and
+// finite answers.
+func TestGeneratedSets(t *testing.T) {
+	for _, g := range genSpecs {
+		a, err := g.Build()
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := g.Build()
+		if a.Hash != b.Hash {
+			t.Errorf("%s: not deterministic", g.ID)
+		}
+		seen := map[string]bool{}
+		for _, q := range a.Questions {
+			if seen[q.Prompt] {
+				t.Errorf("%s/%s: same prompt twice", g.ID, q.ID)
+			}
+			seen[q.Prompt] = true
+			if x, _ := parseNumber(q.Answer); math.IsNaN(x) || math.IsInf(x, 0) {
+				t.Errorf("%s/%s: answer %s", g.ID, q.ID, q.Answer)
+			}
+		}
+	}
+}
+
+func TestGenBuild(t *testing.T) {
+	g := &GenSpec{ID: "toy", Name: "Toy", Seed: 7, PerGen: 5, RelTol: 0.005, Gens: []Generator{{
+		ID: "add",
+		Make: func(r *rand.Rand) (Question, bool) {
+			x, y := decimal(r, 0.1, 9.9, 0.1), between(r, 1, 9)
+			return Question{Prompt: "What is " + show(x) + " + " + strconv.Itoa(y) + "?", Answer: num(x + float64(y))}, true
+		},
+	}}}
+	s, err := g.Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Questions) != 5 || s.Questions[4].ID != "add-5" || !s.Generated {
+		t.Fatalf("%+v", s.Questions)
+	}
+	for _, q := range s.Questions {
+		if strings.Contains(q.Prompt, "0000") || strings.Contains(q.Prompt, "9999") {
+			t.Errorf("float noise in %q", q.Prompt)
+		}
+		if got, ok := s.Grade(q, "Answer: "+q.Answer); !ok {
+			t.Errorf("%s: %q graded wrong", q.Prompt, got)
+		}
 	}
 }

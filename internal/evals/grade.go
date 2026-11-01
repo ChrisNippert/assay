@@ -102,7 +102,10 @@ var (
 	answerRe = regexp.MustCompile(`(?im)^[\s>*#_-]*(?:final\s+)?answer\s*(?:is)?\s*[:：]\s*(.+?)\s*$`)
 	fracRe   = regexp.MustCompile(`\\d?frac\{([^{}]*)\}\{([^{}]*)\}`)
 	boxedRe  = regexp.MustCompile(`\\boxed\{((?:[^{}]|\{[^{}]*\})*)\}`)
-	numRe    = regexp.MustCompile(`-?\d[\d,]*(?:\.\d+)?(?:\s*/\s*\d+)?|-?\.\d+`)
+	numRe    = regexp.MustCompile(`-?\d[\d,]*(?:\.\d+)?(?:[eE][+-]?\d+)?(?:\s*/\s*\d+)?|-?\.\d+(?:[eE][+-]?\d+)?`)
+	// sciRe finds "1.2 × 10^5", "1.2\times10^{-3}", "1.2·10⁻³" and the like.
+	sciRe    = regexp.MustCompile(`(\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:×|x|\*|·|⋅|\\times|\\cdot)\s*10\s*(?:\^\s*\{?\s*([+\-−]?\s*\d+)\s*\}?|([⁺⁻]?[⁰¹²³⁴⁵⁶⁷⁸⁹]+))`)
+	supers   = strings.NewReplacer("⁰", "0", "¹", "1", "²", "2", "³", "3", "⁴", "4", "⁵", "5", "⁶", "6", "⁷", "7", "⁸", "8", "⁹", "9", "⁻", "-", "⁺", "+")
 	letterRe = regexp.MustCompile(`\b([A-Z])\b`)
 )
 
@@ -125,6 +128,12 @@ func extract(reply, check string, choices int) string {
 		if src == "" {
 			src = reply
 		}
+		src = sciRe.ReplaceAllStringFunc(src, func(m string) string {
+			p := sciRe.FindStringSubmatch(m)
+			e := p[2] + supers.Replace(p[3])
+			e = strings.NewReplacer("−", "-", " ", "").Replace(e)
+			return p[1] + "e" + e
+		})
 		if m := numRe.FindAllString(fracRe.ReplaceAllString(src, "$1/$2"), -1); m != nil {
 			if got != "" {
 				return m[0]

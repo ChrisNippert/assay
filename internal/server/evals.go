@@ -311,6 +311,7 @@ func (s *Server) runEvalItem(ctx context.Context, i int, redo bool) error {
 	if mi < 0 {
 		return errors.New("the model is gone")
 	}
+	maxTok = min(max(maxTok, set.MaxTokens), 65536) // hard sets ask for room to reason
 	res := &evals.Result{Model: models[mi].Name, Digest: models[mi].Digest, Set: set.ID, SetHash: set.Hash, Think: think, MaxTokens: maxTok, Total: len(set.Questions)}
 	if old, ok := s.evalRes.Get(res.Digest, set.ID, think); ok && old.SetHash == set.Hash && !redo {
 		res.Answers = old.Answers
