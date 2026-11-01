@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"assay/internal/gguf"
 	"assay/internal/hf"
 	"assay/internal/ollama"
 )
@@ -166,6 +168,25 @@ func (e *Engine) Pull(ctx context.Context, name string, fn func(ollama.PullProgr
 	m.Modified = time.Now()
 	if p, err := e.HF.RecommendedParams(ctx, repo); err == nil {
 		m.Params = p
+	}
+	if len(onlySampling(m.Params)) == 0 {
+		// No sampling in a params file: take the GGUF's own, else the
+		// model card's first recommendation.
+		var rec map[string]any
+		if f, err := gguf.Read(e.store.Blob(m.Files[0])); err == nil {
+			rec = samplingFromGGUF(f)
+		}
+		if len(rec) == 0 {
+			if ps := hf.CardSettings(e.card(ctx, repo)); len(ps) > 0 {
+				rec = ps[0].Options
+			}
+		}
+		if len(rec) > 0 {
+			if m.Params == nil {
+				m.Params = map[string]any{}
+			}
+			maps.Copy(m.Params, rec)
+		}
 	}
 	if old, err := e.store.Get(m.Name); err == nil {
 		m.Aliases, m.Settings = old.Aliases, old.Settings

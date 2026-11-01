@@ -2,12 +2,16 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"runtime"
+	"slices"
 	"time"
 
 	"assay/internal/engine"
+	"assay/internal/hf"
 	"assay/internal/ollama"
 	"assay/internal/presets"
 )
@@ -268,4 +272,73 @@ func (s *Server) defaultsContext(ctx context.Context, name string) autoContext {
 		return s.fittedContext(ctx, name)
 	}
 	return s.pickContext(ctx, name, false)
+}
+
+// recommender is the engine's recommended-settings lookup.
+type recommender interface {
+	Recommended(ctx context.Context, name string) ([]engine.RecProfile, error)
+	UseRecommended(name string, opts map[string]any) error
+}
+
+// handleModelRecommended lists a model's recommended sampling settings:
+// GET ?name= -> {profiles: [{label, source, options}], current: {...}}.
+// It may ask Hugging Face for the model card, so Tune calls it after the
+// panel has drawn.
+func (s *Server) handleModelRecommended(w http.ResponseWriter, r *http.Request) {
+	rc, ok := s.ollama.(recommender)
+	name := r.URL.Query().Get("name")
+	if !ok || name == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"profiles": []any{}})
+		return
+	}
+	ps, err := rc.Recommended(r.Context(), name)
+	if err != nil {
+		writeError(w, ollamaStatus(err), err.Error())
+		return
+	}
+	cur := map[string]any{}
+	if show, err := s.ollama.Show(r.Context(), name); err == nil {
+		for k, v := range ollama.ParseParameters(show.Parameters) {
+			if slices.Contains(hf.SamplingKeys, k) {
+				cur[k] = v
+			}
+		}
+	}
+	if ps == nil {
+		ps = []engine.RecProfile{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"profiles": ps, "current": cur})
+}
+
+// handleModelUseRecommended makes a set of settings the model's
+// recommended defaults (for every download of the same repo):
+// POST {name, options}.
+func (s *Server) handleModelUseRecommended(w http.ResponseWriter, r *http.Request) {
+	rc, ok := s.ollama.(recommender)
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "this backend has no per-model defaults")
+		return
+	}
+	var req struct {
+		Name    string         `json:"name"`
+		Options map[string]any `json:"options"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil || req.Name == "" {
+		writeError(w, http.StatusBadRequest, "name and options are required")
+		return
+	}
+	opts := map[string]any{}
+	for k, v := range req.Options {
+		if !slices.Contains(hf.SamplingKeys, k) {
+			continue
+		}
+		if clean, err := presets.CleanOptions(map[string]any{k: v}); err == nil {
+			maps.Copy(opts, clean)
+		}
+	}
+	if err := rc.UseRecommended(req.Name, opts); err != nil {
+		writeError(w, ollamaStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"options": opts})
 }

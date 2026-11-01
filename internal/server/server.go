@@ -319,6 +319,8 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("GET /api/gpu", s.handleGPU)
 	mux.HandleFunc("GET /api/models/defaults", s.handleModelDefaults)
 	mux.HandleFunc("PUT /api/models/settings", s.handleModelSettings)
+	mux.HandleFunc("GET /api/models/recommended", s.handleModelRecommended)
+	mux.HandleFunc("POST /api/models/recommended", s.handleModelUseRecommended)
 	mux.HandleFunc("GET /api/models/mtp", s.handleModelMTP)
 	mux.HandleFunc("GET /api/pick", s.handlePickInfo)
 	mux.HandleFunc("POST /api/pick", s.handlePick)

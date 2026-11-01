@@ -245,6 +245,89 @@
   // ---- rows ----
   const rows = [];
 
+  // ---- recommended settings (model file, model card, params file) ----
+  // A row on top of Sampling: what the uploader recommends, a choice when
+  // the card has several (thinking / coding / non-thinking), and Use, which
+  // makes them the model's defaults for every chat.
+  const REC_SOURCE = { file: 'from the model file', card: 'from the model card', params: "from the uploader's params file" };
+  const REC_NAMES = { temperature: 'temp', top_p: 'top_p', top_k: 'top_k', min_p: 'min_p', presence_penalty: 'presence', frequency_penalty: 'frequency', repeat_penalty: 'repeat' };
+  const recState = { profiles: [], current: {}, pick: 0, model: '' };
+  function buildRecommended(parent) {
+    const row = el('div', 'row tune-rec wide-ctrl');
+    row.hidden = true;
+    const text = el('div', 'row-text');
+    const head = el('div', 'row-head');
+    head.append(el('span', 'row-title', 'Recommended'));
+    const sub = el('div', 'row-sub');
+    text.append(head, sub);
+    const ctrl = el('div', 'row-ctrl');
+    const sel = el('select', 'combo');
+    sel.setAttribute('aria-label', 'Which recommendation');
+    sel.addEventListener('change', () => { recState.pick = +sel.value; paintRecommended(); });
+    const use = el('button', 'btn', 'Use');
+    use.type = 'button';
+    use.addEventListener('click', useRecommended);
+    ctrl.append(sel, use);
+    row.append(text, ctrl);
+    parent.append(row);
+    return { row, sub, sel, use };
+  }
+  const recMatches = (opts) => Object.entries(opts).every(([k, v]) => recState.current[k] != null && Math.abs(+recState.current[k] - +v) < 1e-6);
+  function paintRecommended() {
+    const { row, sub, sel, use } = recBox;
+    const ps = recState.profiles;
+    row.hidden = !ps.length || !perModel() || other();
+    if (row.hidden) return;
+    sel.innerHTML = '';
+    ps.forEach((p, i) => { const o = el('option', null, p.label); o.value = i; sel.append(o); });
+    sel.value = String(recState.pick);
+    sel.hidden = ps.length < 2;
+    const p = ps[recState.pick] || ps[0];
+    const order = Object.keys(REC_NAMES);
+    const vals = Object.entries(p.options).sort(([a], [b]) => order.indexOf(a) - order.indexOf(b)).map(([k, v]) => `${REC_NAMES[k] || k} ${v}`).join(' · ');
+    sub.textContent = `${vals} · ${REC_SOURCE[p.source] || ''}`;
+    sub.title = p.label;
+    const on = recMatches(p.options);
+    use.textContent = on ? 'In use' : 'Use';
+    use.disabled = on;
+    use.title = on ? "These are the model's defaults now" : "Make these the model's defaults: every chat with it uses them unless it changes them";
+  }
+  async function loadRecommended(base) {
+    recState.profiles = [];
+    recState.model = base;
+    paintRecommended();
+    if (!base || !perModel()) return;
+    try {
+      const res = await fetch('/api/models/recommended?name=' + encodeURIComponent(base));
+      if (!res.ok || recState.model !== base) return;
+      const j = await res.json();
+      if (recState.model !== base) return;
+      recState.profiles = j.profiles || [];
+      recState.current = j.current || {};
+      const inUse = recState.profiles.findIndex((p) => recMatches(p.options));
+      recState.pick = inUse >= 0 ? inUse : 0;
+      paintRecommended();
+    } catch {}
+  }
+  async function useRecommended() {
+    const p = recState.profiles[recState.pick];
+    const base = recState.model;
+    if (!p || !base) return;
+    recBox.use.disabled = true;
+    try {
+      const res = await fetch('/api/models/recommended', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: base, options: p.options }) });
+      if (!res.ok) throw new Error(await errorText(res));
+      const own = Object.keys(p.options).filter((k) => k in state.options);
+      await loadDefaults();
+      modelStatus.textContent = '';
+      errorEl.textContent = '';
+      recBox.sub.textContent += own.length ? ` · saved; this chat's own ${own.map((k) => REC_NAMES[k] || k).join(', ')} still win here (reset them to use these)` : ' · saved as the defaults for every chat with this model';
+    } catch (e) {
+      errorEl.textContent = e.message || String(e);
+      recBox.use.disabled = false;
+    }
+  }
+
   function rowShell(def) {
     const row = el('div', 'row');
     const text = el('div', 'row-text');
@@ -395,6 +478,7 @@
   buildRow(byKey('tools'), $('tune-reply'));
   buildFormat($('tune-reply'));
   buildRow(byKey('num_predict'), $('tune-reply'));
+  const recBox = buildRecommended($('tune-sampling-box'));
   buildRow(byKey('temperature'), $('tune-sampling-box'));
   const sampling = buildExpander('tune-sampling', 'More sampling', SAMPLING, $('tune-sampling-box'));
   MODEL.forEach((d) => buildRow(d, $(d.key === 'num_ctx' ? 'tune-context' : 'tune-perf')));
@@ -992,6 +1076,7 @@
     modelStatus.textContent = '';
     render();
     checkMTP();
+    loadRecommended(base);
   }
 
   // ---- open / close ----

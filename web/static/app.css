@@ -2378,3 +2378,10 @@ button.bm-th:hover { color: var(--text); }
 .bm-dialog.bm-browser { overflow: hidden; }
 .bm-tasks, .bm-task, .bm-tk { min-width: 0; }
 @media (max-width: 760px) { .bm-browse { grid-template-columns: minmax(0, 1fr); } }
+
+/* Tune: the recommended-settings row stacks, so long profile names fit. */
+.tune-rec { flex-wrap: wrap; row-gap: 8px; }
+.tune-rec .row-text { flex: 1 1 100%; }
+.tune .tune-rec .row-sub { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.4; }
+.tune .tune-rec > .row-ctrl { flex: 1 1 100%; display: flex; gap: 8px; max-width: none; }
+.tune-rec .row-ctrl select { flex: 1; min-width: 0; max-width: none; }
