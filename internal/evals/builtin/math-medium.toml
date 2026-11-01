@@ -1,5 +1,5 @@
-name = "Hard math"
-short = "Hard math"
+name = "Medium math"
+short = "Medium math"
 description = "Competition-style counting and number theory, the kind that needs careful reasoning. Graded on the final number."
 check = "number"
 
