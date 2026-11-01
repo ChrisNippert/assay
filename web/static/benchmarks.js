@@ -40,8 +40,8 @@
   const METRICS = {
     score: { name: 'Score' },
     tps: { name: 'Tokens/s', val: (c) => (c.ms ? c.tokens / (c.ms / 1000) : null) },
-    tpt: { name: 'Tokens/task', val: (c) => (c.answered ? c.tokens / c.answered : null) },
-    tpm: { name: 'Tasks/min', val: (c) => (c.ms ? c.answered / (c.ms / 60000) : null) },
+    tpt: { name: 'Tokens/answer', val: (c) => (c.answered ? c.tokens / c.answered : null) },
+    tpm: { name: 'Answers/min', val: (c) => (c.ms ? c.answered / (c.ms / 60000) : null) },
     tpr: { name: 'Tokens/right', val: (c) => (c.correct ? c.tokens / c.correct : null) },
   };
   let metric = METRICS[store.get('bm-metric')] ? store.get('bm-metric') : 'score';
@@ -55,8 +55,8 @@
   };
   const cellStats = (c) => {
     const parts = [];
-    if (c.ms) parts.push(`${num(METRICS.tps.val(c))} tokens/s`, `${num(METRICS.tpm.val(c))} tasks/min`, `${dur(c.ms)} in all`);
-    if (c.answered) parts.push(`${Math.round(METRICS.tpt.val(c)).toLocaleString()} tokens/task`);
+    if (c.ms) parts.push(`${num(METRICS.tps.val(c))} tokens/s`, `${num(METRICS.tpm.val(c))} answers/min`, `${dur(c.ms)} in all`);
+    if (c.answered) parts.push(`${Math.round(METRICS.tpt.val(c)).toLocaleString()} tokens/answer`);
     if (c.correct) parts.push(`${Math.round(METRICS.tpr.val(c)).toLocaleString()} tokens per right answer`);
     return parts.join(' · ');
   };
@@ -82,7 +82,7 @@
   function render() {
     renderStats();
     renderModel();
-    renderCompare();
+    renderBoard();
     renderTable();
     renderFit();
     renderSets();
@@ -130,7 +130,7 @@
         const ms = Date.now() - new Date(item.since).getTime();
         const per = ms / done;
         text += ` · ${dur(per * (item.total - item.answered))} left`;
-        box.title = `${num(60000 / per)} tasks/min this run, ${dur(per)} per task`;
+        box.title = `${num(60000 / per)} answers/min this run, ${dur(per)} per answer`;
       }
       box.append(el('span', 'lib-spin'), el('span', 'bm-sub', text));
       return box;
@@ -338,7 +338,9 @@
     picked = name;
     store.set('bm-model', name);
     renderModel();
-    renderCompare();
+    renderBoard();
+    const bar = root.querySelector('.bm-vbar.sel');
+    if (bar) bar.scrollIntoView({ block: 'nearest', inline: 'center' });
   }
   const itemFor = (row, setId) => run.running && run.think === think && run.items.find((it) => it.model === row.name && it.set === setId && (it.state === 'running' || it.state === 'pending'));
   const finished = (c) => c && c.done && !c.stale;
@@ -361,6 +363,7 @@
     const rows = $('bm-setrows');
     rows.innerHTML = '';
     $('bm-runbar').hidden = !r;
+    $('bm-model-h').textContent = r ? `Sets for ${r.title}` : 'Sets';
     if (!r) return;
     const bits = [];
     if (r.overall != null) bits.push(['Overall', `${pct(r.overall)}%`]);
@@ -496,85 +499,215 @@
     else if (e.key === 'Escape') { comboIn.blur(); }
   });
 
-  // ---- compare: bars over a chosen group of sets ----
-  let subset = (() => { try { return JSON.parse(store.get('bm-subset') || 'null'); } catch { return null; } })(); // null: the overall sets
+  // ---- leaderboard: rank the models on a category of sets ----
+  // Categories group the built-in sets; Custom ranks on any sets you tick.
+  const CATS = [
+    ['Math', ['math', 'math-medium', 'math-hard', 'calculus']],
+    ['Science', ['physics']],
+    ['Code', ['code', 'coding', 'formulas']],
+    ['Reasoning', ['logic']],
+    ['Knowledge', ['knowledge']],
+    ['Instructions', ['instructions']],
+    ['Proofs', ['lean']],
+  ];
+  const METRIC_NOTE = {
+    score: 'Share of questions right, averaged over the sets',
+    tpm: 'Questions finished a minute, thinking included',
+    tps: 'Tokens written per second on this computer',
+    tpt: 'Tokens written per question, thinking included',
+    tpr: 'Tokens written for each right answer',
+  };
   const LOWER_BETTER = { tpt: true, tpr: true };
-  function renderCompare() {
-    if (subset) subset = subset.filter((id) => data.sets.some((s) => s.id === id));
-    if (subset && !subset.length) subset = null;
-    const ids = subset || data.suite;
-    const chips = $('bm-subset');
-    chips.innerHTML = '';
-    const ov = el('button', 'lib-sortchip' + (subset ? '' : ' on'), 'Overall');
-    ov.type = 'button';
-    ov.title = `The sets that make up the overall score: ${data.suite.map(setName).join(', ')}`;
-    ov.onclick = () => { subset = null; store.set('bm-subset', 'null'); renderCompare(); };
-    chips.append(ov, el('span', 'bm-chipgap'));
-    for (const s of data.sets) {
-      const on = ids.includes(s.id);
-      const b = el('button', 'lib-sortchip' + (on ? (subset ? ' on' : ' soft') : ''), shortName(s));
-      b.type = 'button';
-      b.setAttribute('aria-pressed', on && subset ? 'true' : 'false');
-      b.title = subset ? (on ? 'Click to leave it out' : 'Click to add it') : 'Click to compare on this set alone; click more to add them';
-      b.onclick = () => {
-        if (!subset) subset = [s.id];
-        else if (subset.includes(s.id)) subset = subset.filter((x) => x !== s.id);
-        else subset = [...subset, s.id];
-        if (!subset.length) subset = null;
-        store.set('bm-subset', JSON.stringify(subset));
-        renderCompare();
-      };
-      chips.append(b);
+  let cat = store.get('bm-cat') || 'overall';
+  let subset = (() => { try { return JSON.parse(store.get('bm-subset') || 'null'); } catch { return null; } })();
+  const catSets = (name) => {
+    const c = CATS.find(([n]) => n === name);
+    return c ? c[1].filter((id) => data.sets.some((s) => s.id === id)) : [];
+  };
+  // boardIds is the sets the board ranks on, and its name.
+  function boardIds() {
+    if (cat === 'custom') return [subset && subset.length ? subset : data.suite, 'your sets'];
+    const ids = catSets(cat);
+    if (cat === 'overall' || !ids.length) return [data.suite, 'Overall'];
+    return [ids, cat];
+  }
+  const metricVal = (key, cs) => (METRICS[key].val ? METRICS[key].val(sumCells(cs)) : cs.reduce((n, c) => n + c.score, 0) / cs.length);
+  const fmtMetric = (key, v) => (v == null ? '–' : key === 'score' ? `${pct(v)}` : key === 'tpt' || key === 'tpr' ? Math.round(v).toLocaleString() : num(v));
+  // standings ranks the models that finished every set in ids, by key;
+  // the rest that finished some are listed as unranked.
+  function standings(ids, key) {
+    const ranked = [], unranked = [];
+    for (const r of data.rows) {
+      const cs = ids.map((id) => r.cells[id]);
+      const left = ids.filter((id, i) => !finished(cs[i]));
+      if (!left.length) {
+        const vals = {};
+        for (const k of Object.keys(METRICS)) vals[k] = metricVal(k, cs);
+        ranked.push({ r, vals });
+      } else if (left.length < ids.length) unranked.push({ r, left });
     }
-    if (subset && (subset.length !== data.suite.length || subset.some((id) => !data.suite.includes(id)))) {
-      const use = el('button', 'bm-linkbtn', 'Make these the overall');
-      use.type = 'button';
-      use.title = 'The overall score and the index estimate will use these sets';
-      use.onclick = () => { suite = [...subset]; store.set('bm-suite', JSON.stringify(suite)); subset = null; store.set('bm-subset', 'null'); reload(); };
-      chips.append(use);
+    const v = (x) => x.vals[key] ?? (LOWER_BETTER[key] ? Infinity : -Infinity);
+    ranked.sort((a, b) => (LOWER_BETTER[key] ? v(a) - v(b) : v(b) - v(a)));
+    return { ranked, unranked };
+  }
+  function setMetric(k) { metric = k; store.set('bm-metric', k); render(); }
+  // runRest picks a model and ticks the sets it's missing.
+  function runRest(r, left) {
+    pick(r.name);
+    ticked = new Set(left);
+    renderModel();
+    $('bm-model').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  function renderBoard() {
+    if (subset) subset = subset.filter((id) => data.sets.some((s) => s.id === id));
+    const [all, label] = boardIds();
+    // Rank on the sets at least half the models that tried this category
+    // have finished, so one new set doesn't empty the board; Custom ranks on
+    // exactly what was picked.
+    let ids = all, dropped = [];
+    if (cat !== 'custom') {
+      const tried = data.rows.filter((r) => all.some((id) => finished(r.cells[id])));
+      const need = Math.max(1, Math.ceil(tried.length / 2));
+      const kept = all.filter((id) => tried.filter((r) => finished(r.cells[id])).length >= need);
+      if (kept.length) { ids = kept; dropped = all.filter((id) => !kept.includes(id)); }
+    }
+    // Categories.
+    const cats = $('bm-cats');
+    cats.innerHTML = '';
+    const catBtn = (key, text, title) => {
+      const b = el('button', 'lib-sortchip' + (cat === key ? ' on' : ''), text);
+      b.type = 'button';
+      b.setAttribute('aria-pressed', cat === key ? 'true' : 'false');
+      if (title) b.title = title;
+      b.onclick = () => { cat = key; store.set('bm-cat', key); renderBoard(); };
+      cats.append(b);
+    };
+    catBtn('overall', 'Overall', `The sets that make up the overall score: ${data.suite.map(setName).join(', ')}`);
+    for (const [n] of CATS) if (catSets(n).length) catBtn(n, n, catSets(n).map(setName).join(', '));
+    catBtn('custom', 'Custom…', 'Rank on any sets you pick');
+    // Custom: pick the sets.
+    const chips = $('bm-subset');
+    chips.hidden = cat !== 'custom';
+    chips.innerHTML = '';
+    if (cat === 'custom') {
+      for (const s of data.sets) {
+        const on = !!subset && subset.includes(s.id);
+        const b = el('button', 'lib-sortchip' + (on ? ' on' : ''), shortName(s));
+        b.type = 'button';
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        b.onclick = () => {
+          subset = on ? (subset || []).filter((x) => x !== s.id) : [...(subset || []), s.id];
+          store.set('bm-subset', JSON.stringify(subset));
+          renderBoard();
+        };
+        chips.append(b);
+      }
+      if (subset && subset.length && (subset.length !== data.suite.length || subset.some((id) => !data.suite.includes(id)))) {
+        const use = el('button', 'bm-linkbtn', 'Make these the overall');
+        use.type = 'button';
+        use.title = 'The overall score and the index estimate will use these sets';
+        use.onclick = () => { suite = [...subset]; store.set('bm-suite', JSON.stringify(suite)); cat = 'overall'; store.set('bm-cat', cat); reload(); };
+        chips.append(use);
+      }
     }
     const m = METRICS[metric];
-    const value = (r) => {
-      const cs = ids.map((id) => r.cells[id]);
-      if (!cs.every(finished)) return null;
-      return m.val ? m.val(sumCells(cs)) : cs.reduce((n, c) => n + c.score, 0) / cs.length;
-    };
-    const have = [], missing = [];
-    for (const r of data.rows) {
-      const v = value(r);
-      if (v == null) missing.push(r); else have.push({ r, v });
-    }
-    have.sort((a, b) => (LOWER_BETTER[metric] ? a.v - b.v : b.v - a.v));
-    const max = Math.max(...have.map((x) => x.v), m.val ? 0 : 1);
+    const { ranked, unranked } = standings(ids, metric);
+    $('bm-chart-title').textContent = `${metric === 'score' ? 'Score' : m.name} · ${label}`;
+    $('bm-chart-note').textContent = `${METRIC_NOTE[metric]}. ${LOWER_BETTER[metric] ? 'Lower' : 'Higher'} is better. ${ids.length === 1 ? setName(ids[0]) : `${ids.length} sets: ${ids.map(setName).join(', ')}`}.` +
+      (dropped.length ? ` Leaving out ${dropped.map(setName).join(', ')} until more models have run ${dropped.length === 1 ? 'it' : 'them'}.` : '');
+    // Bars.
     const bars = $('bm-bars');
     bars.innerHTML = '';
-    have.forEach(({ r, v }, i) => {
-      const b = el('button', 'bm-bar' + (r.name === picked ? ' sel' : ''));
+    const vals = ranked.map((x) => x.vals[metric]).filter((v) => v != null && isFinite(v));
+    const max = Math.max(...vals, metric === 'score' ? 1 : 0);
+    if (!ranked.length) bars.append(el('p', 'muted small bm-vbars-empty', `No model has finished ${ids.length === 1 ? setName(ids[0]) : 'all of these sets'} yet.`));
+    for (const { r, vals: v } of ranked) {
+      const b = el('button', 'bm-vbar' + (r.name === picked ? ' sel' : ''));
       b.type = 'button';
-      b.title = `${r.title}${r.quant ? ' · ' + r.quant : ''}: ${m.val ? `${num(v)} ${m.name.toLowerCase()}` : `${pct(v)}%`} over ${ids.length} set${ids.length === 1 ? '' : 's'}. Click to pick it.`;
-      const name = el('span', 'bm-bar-name');
-      name.append(el('span', 'bm-bar-rank', String(i + 1)), el('span', 'bm-bar-title', r.title));
-      if (r.quant) name.append(el('span', 'bm-bar-quant', r.quant));
-      const track = el('span', 'bm-bar-track');
-      const fill = el('span', 'bm-bar-fill');
-      fill.style.width = (max ? (v / max) * 100 : 0) + '%';
-      track.append(fill);
-      b.append(name, track, el('span', 'bm-bar-val', m.val ? num(v) : `${pct(v)}%`));
-      b.onclick = () => { pick(r.name); $('bm-model').scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+      b.title = `${r.title}${r.quant ? ' · ' + r.quant : ''}: ${fmtMetric(metric, v[metric])}${metric === 'score' ? '%' : ' ' + m.name.toLowerCase()}. Click to pick it.`;
+      const col = el('span', 'bm-vbar-col');
+      const fill = el('span', 'bm-vbar-fill');
+      fill.style.height = (max && v[metric] != null ? Math.max(1, (v[metric] / max) * 100) : 0) + '%';
+      col.append(el('span', 'bm-vbar-val', fmtMetric(metric, v[metric])), fill);
+      b.append(col, el('span', 'bm-vbar-name', r.title));
+      b.onclick = () => pick(r.name);
       bars.append(b);
-    });
-    const note = $('bm-bars-note');
-    const parts = [];
-    if (!have.length) parts.push(`No model has finished ${ids.length === 1 ? setName(ids[0]) : `all of ${ids.map(setName).join(', ')}`} yet.`);
-    else parts.push(`${m.val ? m.name : 'Average score'} over ${ids.length === 1 ? setName(ids[0]) : `${ids.length} sets (${ids.map(setName).join(', ')})`}${LOWER_BETTER[metric] ? '; fewer is better' : ''}.`);
-    const me = data.rows.find((r) => r.name === picked);
-    if (me && missing.includes(me)) {
-      const left = ids.filter((id) => !finished(me.cells[id]));
-      parts.push(`${me.title} isn't on the chart: it hasn't finished ${left.map(setName).join(', ')}.`);
     }
-    const others = missing.filter((r) => r !== me).length;
-    if (others) parts.push(`${others} other model${others === 1 ? '' : 's'} left out for the same reason.`);
-    note.textContent = parts.join(' ');
+    // Table: every metric, sorted like the bars; a header sorts by its metric.
+    const t = $('bm-rank');
+    t.innerHTML = '';
+    const head = el('tr');
+    head.append(el('th', 'bm-rank-n', '#'), el('th', 'bm-rank-model', 'Model'));
+    for (const k of ['score', 'tpm', 'tps', 'tpt', 'tpr']) {
+      const th = el('th', 'bm-rank-num');
+      const hb = el('button', 'bm-rank-sort' + (k === metric ? ' on' : ''), k === 'score' ? 'Score' : METRICS[k].name);
+      hb.type = 'button';
+      hb.title = `Rank by ${METRIC_NOTE[k].toLowerCase()}`;
+      hb.onclick = () => setMetric(k);
+      th.setAttribute('aria-sort', k === metric ? (LOWER_BETTER[k] ? 'ascending' : 'descending') : 'none');
+      th.append(hb);
+      head.append(th);
+    }
+    const thead = el('thead');
+    thead.append(head);
+    const tbody = el('tbody');
+    ranked.forEach(({ r, vals: v }, i) => {
+      const tr = el('tr', r.name === picked ? 'sel' : '');
+      const nameCell = el('td', 'bm-rank-model');
+      const nb = el('button', 'bm-rank-pick');
+      nb.type = 'button';
+      nb.append(el('span', 'bm-rank-title', r.title));
+      if (r.quant) nb.append(el('span', 'bm-rank-quant', r.quant));
+      nb.onclick = () => pick(r.name);
+      nameCell.append(nb);
+      tr.append(el('td', 'bm-rank-n', String(i + 1)), nameCell);
+      for (const k of ['score', 'tpm', 'tps', 'tpt', 'tpr']) tr.append(el('td', 'bm-rank-num' + (k === metric ? ' on' : ''), fmtMetric(k, v[k])));
+      tbody.append(tr);
+    });
+    t.append(thead, tbody);
+    t.parentElement.hidden = !ranked.length;
+    // Models that haven't finished every set here.
+    const un = $('bm-unranked');
+    un.innerHTML = '';
+    if (unranked.length) {
+      un.append(el('span', 'muted small', 'Not ranked yet:'));
+      for (const { r, left } of unranked) {
+        const b = el('button', 'bm-linkbtn', `${r.title} (${ids.length - left.length} of ${ids.length})`);
+        b.type = 'button';
+        b.title = `Hasn't finished ${left.map(setName).join(', ')}. Click to run them.`;
+        b.onclick = () => runRest(r, left);
+        un.append(b);
+      }
+    }
+    renderRanks(ids, label, ranked, unranked);
+  }
+  // renderRanks says where the picked model stands on each metric.
+  function renderRanks(ids, label, ranked, unranked) {
+    const box = $('bm-ranks');
+    box.innerHTML = '';
+    const r = data.rows.find((x) => x.name === picked);
+    if (!r) return;
+    const un = unranked.find((x) => x.r === r);
+    if (!ranked.some((x) => x.r === r)) {
+      if (!un) { box.append(el('span', 'muted small', `${r.title} hasn't run any ${label === 'Overall' ? 'overall' : label} sets yet.`)); return; }
+      box.append(el('span', 'muted small', `Not ranked on ${label}: hasn't finished ${un.left.map(setName).join(', ')}.`));
+      const b = el('button', 'bm-linkbtn', 'Run them');
+      b.type = 'button';
+      b.onclick = () => runRest(r, un.left);
+      box.append(b);
+      return;
+    }
+    for (const k of ['score', 'tpm', 'tps', 'tpt', 'tpr']) {
+      const order = standings(ids, k).ranked;
+      const i = order.findIndex((x) => x.r === r);
+      const b = el('button', 'bm-rankchip' + (k === metric ? ' on' : '') + (i === 0 ? ' top' : ''));
+      b.type = 'button';
+      b.title = `${r.title} is #${i + 1} of ${order.length} on ${METRIC_NOTE[k].toLowerCase()} (${label}). Click to show it.`;
+      b.append(el('span', 'bm-rankchip-n', `#${i + 1}`), el('span', 'bm-rankchip-k', `${k === 'score' ? 'Score' : METRICS[k].name} · ${fmtMetric(k, order[i].vals[k])}${k === 'score' ? '%' : ''}`));
+      b.onclick = () => setMetric(k);
+      box.append(b);
+    }
+    box.append(el('span', 'muted small', `of ${ranked.length} on ${label}`));
   }
 
   // ---- run progress ----

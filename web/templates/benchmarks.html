@@ -30,14 +30,38 @@
   </div>
   <div class="lib-progress" id="bm-status" role="status" aria-live="polite" hidden></div>
 
-  <section id="bm-model" class="bm-section">
-    <div class="bm-pickrow">
-      <div class="bm-combo" id="bm-combo">
-        <input type="search" id="bm-combo-input" class="bm-combo-input" placeholder="Search your models…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="bm-combo-list" aria-label="Model">
-        <div class="bm-combo-list" id="bm-combo-list" role="listbox" hidden></div>
-      </div>
-      <div class="bm-model-sum" id="bm-model-sum"></div>
+  <div class="bm-pickrow">
+    <div class="bm-combo" id="bm-combo">
+      <input type="search" id="bm-combo-input" class="bm-combo-input" placeholder="Search your models…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="bm-combo-list" aria-label="Model">
+      <div class="bm-combo-list" id="bm-combo-list" role="listbox" hidden></div>
     </div>
+    <div class="bm-model-sum" id="bm-model-sum"></div>
+  </div>
+  <div class="bm-ranks" id="bm-ranks"></div>
+
+  <section id="bm-board" class="bm-section">
+    <h2 class="bm-h">Leaderboard</h2>
+    <div class="bm-cats" id="bm-cats" role="group" aria-label="Category"></div>
+    <div class="bm-subset" id="bm-subset" role="group" aria-label="Sets to rank on" hidden></div>
+    <div class="bm-chart">
+      <div class="bm-chart-head">
+        <div><div class="bm-chart-title" id="bm-chart-title"></div><div class="muted small" id="bm-chart-note"></div></div>
+        <div class="bm-seg bm-metrics" role="radiogroup" aria-label="Show">
+          <button type="button" class="lib-sortchip" role="radio" data-metric="score">Score</button>
+          <button type="button" class="lib-sortchip" role="radio" data-metric="tpm" title="Questions answered per minute, thinking included">Answers/min</button>
+          <button type="button" class="lib-sortchip" role="radio" data-metric="tps" title="Tokens written per second, including reading each question">Tokens/s</button>
+          <button type="button" class="lib-sortchip" role="radio" data-metric="tpt" title="Tokens written per question, thinking included">Tokens/answer</button>
+          <button type="button" class="lib-sortchip" role="radio" data-metric="tpr" title="All tokens written divided by the right answers: what one right answer costs">Tokens/right</button>
+        </div>
+      </div>
+      <div class="bm-vbars-scroll"><div class="bm-vbars" id="bm-bars"></div></div>
+    </div>
+    <div class="bm-scroll bm-rank-wrap"><table class="bm-rank" id="bm-rank"></table></div>
+    <div class="bm-unranked" id="bm-unranked"></div>
+  </section>
+
+  <section id="bm-model" class="bm-section">
+    <h2 class="bm-h" id="bm-model-h">Sets</h2>
     <div class="boxed-list bm-setrows" id="bm-setrows"></div>
     <div class="bm-runbar" id="bm-runbar">
       <div class="bm-pickers"><span class="muted small">Tick</span>
@@ -49,22 +73,6 @@
       <span class="grow"></span>
       <button type="button" class="btn primary" id="bm-one-run">Run</button>
     </div>
-  </section>
-
-  <section id="bm-compare" class="bm-section">
-    <div class="bm-h-row"><h2 class="bm-h">Compare</h2>
-      <div class="bm-seg" role="radiogroup" aria-label="Show">
-      <span class="muted small">Show</span>
-      <button type="button" class="lib-sortchip" role="radio" data-metric="score">Score</button>
-      <button type="button" class="lib-sortchip" role="radio" data-metric="tps" title="Tokens written per second, including reading each question">Tokens/s</button>
-      <button type="button" class="lib-sortchip" role="radio" data-metric="tpt" title="Tokens written per question, thinking included">Tokens/task</button>
-      <button type="button" class="lib-sortchip" role="radio" data-metric="tpm" title="Questions answered per minute">Tasks/min</button>
-      <button type="button" class="lib-sortchip" role="radio" data-metric="tpr" title="All tokens written divided by the right answers: what one right answer costs">Tokens/right</button>
-    </div>
-    </div>
-    <div class="bm-subset" id="bm-subset" role="group" aria-label="Sets to compare on"></div>
-    <div class="bm-bars" id="bm-bars"></div>
-    <p class="muted small" id="bm-bars-note"></p>
   </section>
 
   <details class="bm-section bm-all" id="bm-results">
