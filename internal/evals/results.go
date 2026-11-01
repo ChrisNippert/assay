@@ -27,8 +27,11 @@ type Answer struct {
 	Correct bool   `json:"correct"`
 	// Tokens is how many the model wrote, thinking included; Cut says it
 	// hit the token limit.
-	Tokens int    `json:"tokens"`
-	Cut    bool   `json:"cut,omitempty"`
+	Tokens int  `json:"tokens"`
+	Cut    bool `json:"cut,omitempty"`
+	// Looped means the reply was stopped early because the model kept
+	// writing the same text over and over.
+	Looped bool   `json:"looped,omitempty"`
 	Ms     int64  `json:"ms"`
 	Error  string `json:"error,omitempty"`
 	// Output is what the tests printed (code check).
@@ -42,19 +45,38 @@ type Answer struct {
 
 // Result is one model's run of one set.
 type Result struct {
-	Model   string    `json:"model"`
-	Digest  string    `json:"digest"`
-	Set     string    `json:"set"`
-	SetHash string    `json:"setHash"`
-	Think   string    `json:"think"`
-	At      time.Time `json:"at"`
-	Ctx     int       `json:"ctx,omitempty"`
+	Model   string `json:"model"`
+	Digest  string `json:"digest"`
+	Set     string `json:"set"`
+	SetHash string `json:"setHash"`
+	// Sampling is how the answers were sampled (see Sampling); results
+	// made another way are stale.
+	Sampling string    `json:"sampling,omitempty"`
+	Think    string    `json:"think"`
+	At       time.Time `json:"at"`
+	Ctx      int       `json:"ctx,omitempty"`
 	// MaxTokens is the reply limit per question.
 	MaxTokens int `json:"maxTokens"`
 	Correct   int `json:"correct"`
 	// Total is the set's size; len(Answers) < Total while a run is unfinished.
 	Total   int      `json:"total"`
 	Answers []Answer `json:"answers"`
+}
+
+// Sampling names how runs sample: temperature 1, top_p 0.95, min_p 0.05,
+// seed 1. Until 2026-11-01 runs were at temperature 0 (no name), which made
+// thinking models repeat themselves until the token limit on long problems.
+const Sampling = "t1"
+
+// SamplingOptions are the sampler settings for a run.
+func SamplingOptions() map[string]any {
+	return map[string]any{"temperature": 1.0, "top_p": 0.95, "min_p": 0.05, "seed": 1}
+}
+
+// Current says the result was made from this version of the set with the
+// current sampling, so it can be resumed and counts in the overall.
+func (r *Result) Current(setHash string) bool {
+	return r.SetHash == setHash && r.Sampling == Sampling
 }
 
 // Done says every question has an answer and none waits for a judge.

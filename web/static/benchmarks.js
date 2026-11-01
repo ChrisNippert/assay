@@ -108,7 +108,7 @@
     }
     const b = el('button', 'bm-score');
     b.type = 'button';
-    b.title = `${c.correct} of ${c.answered} right${c.pending ? ` (${c.pending} waiting for a judge)` : ''}${c.answered < c.total ? ` (${c.total - c.answered} not asked yet)` : ''}${c.stale ? '. The set has changed since.' : ''}${c.cut ? `. ${c.cut} hit the token limit.` : ''}${c.errors ? `. ${c.errors} failed.` : ''} Click to read the answers.`;
+    b.title = `${c.correct} of ${c.answered} right${c.pending ? ` (${c.pending} waiting for a judge)` : ''}${c.answered < c.total ? ` (${c.total - c.answered} not asked yet)` : ''}${c.stale ? '. Out of date: the set or the way runs sample has changed since.' : ''}${c.cut ? `. ${c.cut} hit the token limit or looped.` : ''}${c.errors ? `. ${c.errors} failed.` : ''} Click to read the answers.`;
     const n = el('span', 'bm-num' + (c.done && !c.stale ? '' : ' partial'), c.done ? `${pct(c.score)}%` : c.pending && c.answered >= c.total ? 'judge' : `${c.answered}/${c.total}`);
     if (c.stale) n.append(el('span', 'bm-mark', '*'));
     const track = el('span', 'lib-track thin');
@@ -409,7 +409,7 @@
     const byId = Object.fromEntries((set.questions || []).map((qq) => [qq.id, qq]));
     const secs = res.answers.reduce((n, a) => n + a.ms, 0) / 1000;
     const toks = res.answers.reduce((n, a) => n + a.tokens, 0);
-    $('bm-ans-sub').textContent = `${res.correct} of ${res.answers.length} right${res.answers.length < res.total ? ` · ${res.total - res.answers.length} not asked yet` : ''} · ${think === 'off' ? 'thinking off' : "model's default thinking"} · up to ${res.maxTokens} tokens each · ${Math.round(secs)} s, ${toks.toLocaleString()} tokens · ${new Date(res.at).toLocaleString()}${set.hash && set.hash !== res.setHash ? ' · the set has changed since this run' : ''}`;
+    $('bm-ans-sub').textContent = `${res.correct} of ${res.answers.length} right${res.answers.length < res.total ? ` · ${res.total - res.answers.length} not asked yet` : ''} · ${think === 'off' ? 'thinking off' : "model's default thinking"} · up to ${res.maxTokens} tokens each · ${Math.round(secs)} s, ${toks.toLocaleString()} tokens · ${new Date(res.at).toLocaleString()}${j.stale ? ' · ' + j.stale : ''}`;
     const list = $('bm-ans-list');
     for (const a of res.answers) {
       const qq = byId[a.id] || {};
@@ -424,6 +424,7 @@
       if (a.got) parts.push(`got ${a.got}`);
       parts.push(`${a.tokens} tokens`, `${(a.ms / 1000).toFixed(1)} s`);
       if (a.cut) parts.push('hit the token limit');
+      if (a.looped) parts.push('stopped: it kept repeating itself');
       if (a.error) parts.push('error: ' + a.error);
       facts.textContent = parts.join(' · ');
       head.append(facts);

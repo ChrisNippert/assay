@@ -202,3 +202,33 @@ func normalize(s string) string {
 	s = strings.Trim(s, ".!?\"'“”‘’`*_ ")
 	return strings.Join(strings.Fields(s), " ")
 }
+
+// Looping says a reply being written has fallen into a loop, so it can be
+// stopped instead of running to the token limit: its last 200 characters
+// already appear 4 more times in the 12,000 before, or one line of 20+
+// characters fills 10 of the last 120 lines.
+func Looping(s string) bool {
+	const tail, window = 200, 12000
+	if len(s) >= tail*5 {
+		t := s[len(s)-tail:]
+		if strings.Count(s[max(0, len(s)-window):len(s)-tail], t) >= 4 {
+			return true
+		}
+	}
+	lines := strings.Split(s[max(0, len(s)-20000):], "\n")
+	seen := map[string]int{}
+	kept := 0
+	for i := len(lines) - 1; i >= 0 && kept < 120; i-- {
+		l := strings.TrimSpace(lines[i])
+		if l == "" {
+			continue
+		}
+		kept++
+		if len(l) >= 20 {
+			if seen[l]++; seen[l] >= 10 {
+				return true
+			}
+		}
+	}
+	return false
+}

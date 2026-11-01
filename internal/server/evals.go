@@ -202,7 +202,7 @@ func (s *Server) startEvals(ctx context.Context, req evalRunRequest) (evalState,
 			it := evalItem{Model: g.Primary.Name, Title: title, Set: set.ID, SetName: set.Name, State: itemPending, Total: len(set.Questions)}
 			if isEmbeddingName(g.Primary.Name) {
 				it.State, it.Reason = itemSkipped, "It's an embedding model; it doesn't write text."
-			} else if old, ok := s.evalRes.Get(g.Primary.Digest, set.ID, req.Think); ok && old.SetHash == set.Hash {
+			} else if old, ok := s.evalRes.Get(g.Primary.Digest, set.ID, req.Think); ok && old.Current(set.Hash) {
 				if old.Done() && !req.Redo {
 					it.State, it.Reason = itemSkipped, "Already done."
 					it.Answered, it.Correct = len(old.Answers), old.Correct
@@ -312,8 +312,8 @@ func (s *Server) runEvalItem(ctx context.Context, i int, redo bool) error {
 		return errors.New("the model is gone")
 	}
 	maxTok = min(max(maxTok, set.MaxTokens), 65536) // hard sets ask for room to reason
-	res := &evals.Result{Model: models[mi].Name, Digest: models[mi].Digest, Set: set.ID, SetHash: set.Hash, Think: think, MaxTokens: maxTok, Total: len(set.Questions)}
-	if old, ok := s.evalRes.Get(res.Digest, set.ID, think); ok && old.SetHash == set.Hash && !redo {
+	res := &evals.Result{Model: models[mi].Name, Digest: models[mi].Digest, Set: set.ID, SetHash: set.Hash, Sampling: evals.Sampling, Think: think, MaxTokens: maxTok, Total: len(set.Questions)}
+	if old, ok := s.evalRes.Get(res.Digest, set.ID, think); ok && old.Current(set.Hash) && !redo {
 		res.Answers = old.Answers
 		if old.MaxTokens > 0 {
 			res.MaxTokens = old.MaxTokens
@@ -479,7 +479,8 @@ func (s *Server) askEval(ctx context.Context, model string, set *evals.Set, q ev
 	return a, nil
 }
 
-// askModel sends one prompt at temperature 0 and collects the reply.
+// askModel sends one prompt with the eval sampling (evals.SamplingOptions)
+// and collects the reply, stopping it early if the model loops.
 func (s *Server) askModel(ctx context.Context, model, system, user, think string, maxTok, numCtx int) (evals.Answer, error) {
 	var a evals.Answer
 	var msgs []ollama.Message
@@ -487,7 +488,8 @@ func (s *Server) askModel(ctx context.Context, model, system, user, think string
 		msgs = append(msgs, ollama.Message{Role: "system", Content: system})
 	}
 	msgs = append(msgs, ollama.Message{Role: "user", Content: user})
-	opts := map[string]any{"temperature": 0, "seed": 1, "num_predict": maxTok}
+	opts := evals.SamplingOptions()
+	opts["num_predict"] = maxTok
 	if numCtx > 0 {
 		opts["num_ctx"] = numCtx
 	}
@@ -499,26 +501,39 @@ func (s *Server) askModel(ctx context.Context, model, system, user, think string
 	var content, thinking strings.Builder
 	var final ollama.ChatResponse
 	t := time.Now()
+	errLooped := errors.New("looped")
+	chunks := 0
 	run := func() error {
 		content.Reset()
 		thinking.Reset()
+		chunks = 0
 		return s.ollama.Chat(ctx, req, func(c ollama.ChatResponse) error {
 			content.WriteString(c.Message.Content)
 			thinking.WriteString(c.Message.Thinking)
 			if c.Done {
 				final = c
 			}
+			if chunks++; chunks%64 == 0 && (evals.Looping(thinking.String()) || evals.Looping(content.String())) {
+				return errLooped
+			}
 			return nil
 		})
 	}
 	err := run()
+	looped := errors.Is(err, errLooped)
+	if looped {
+		err = nil
+	}
 	if err != nil && req.Think != nil && strings.Contains(err.Error(), "think") {
 		req.Think = nil // models that can't turn thinking off say so
 		err = run()
 	}
 	a.Ms = time.Since(t).Milliseconds()
 	a.Reply, a.Thinking = content.String(), thinking.String()
-	a.Tokens, a.Cut = final.EvalCount, final.DoneReason == "length"
+	a.Tokens, a.Cut, a.Looped = final.EvalCount, final.DoneReason == "length", looped
+	if looped {
+		a.Tokens = chunks // about one token per streamed chunk
+	}
 	a.Clip()
 	return a, err
 }
@@ -613,7 +628,7 @@ type evalCell struct {
 	Total    int       `json:"total"`
 	Done     bool      `json:"done"`
 	Stale    bool      `json:"stale,omitempty"` // the set changed since
-	Cut      int       `json:"cut,omitempty"`   // answers that hit the token limit
+	Cut      int       `json:"cut,omitempty"`   // answers that hit the token limit or looped
 	Errors   int       `json:"errors,omitempty"`
 	Pending  int       `json:"pending,omitempty"` // waiting for a judge
 	At       time.Time `json:"at"`
@@ -697,9 +712,9 @@ func (s *Server) evalResultsFor(ctx context.Context, think string, suite []strin
 		row := evalRow{Name: g.Primary.Name, Title: groupTitle(g), Quant: quantOf(g), Digest: g.Primary.Digest, Params: float64(parseParams(g.Primary.Details.ParameterSize)) / 1e9, Cells: map[string]evalCell{}}
 		for _, r := range byDigest[g.Primary.Digest] {
 			c := evalCell{Score: r.Score(), Correct: r.Correct, Answered: len(r.Answers), Total: r.Total, Done: r.Done(), At: r.At, Pending: r.Pending()}
-			c.Stale = hashes[r.Set] != "" && hashes[r.Set] != r.SetHash
+			c.Stale = hashes[r.Set] != "" && !r.Current(hashes[r.Set])
 			for _, a := range r.Answers {
-				if a.Cut {
+				if a.Cut || a.Looped {
 					c.Cut++
 				}
 				if a.Error != "" {
@@ -832,6 +847,12 @@ func (s *Server) handleEvalResult(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{"result": res}
 	if set, err := s.evalLib.Get(setID); err == nil {
 		out["set"] = set
+		switch {
+		case res.SetHash != set.Hash:
+			out["stale"] = "the set has changed since this run"
+		case res.Sampling != evals.Sampling:
+			out["stale"] = "run at temperature 0, before runs used temperature 1"
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }

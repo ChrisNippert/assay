@@ -67,11 +67,11 @@ func TestEvalRun(t *testing.T) {
 	if !ok || !r.Done() || r.Correct != 1 || r.Answers[0].Got != "391" || r.Answers[0].Thinking == "" || r.Answers[1].Correct || r.Answers[0].Tokens != 12 {
 		t.Fatalf("result %+v", r)
 	}
-	// Temperature 0, the limit for thinking runs, and no think field.
+	// The eval sampling, the limit for thinking runs, and no think field.
 	fake.mu.Lock()
 	req := fake.chatReqs[len(fake.chatReqs)-1]
 	fake.mu.Unlock()
-	if req.Options["temperature"] != float64(0) || req.Options["num_predict"] != float64(evalTokensThink) || req.Think != nil {
+	if req.Options["temperature"] != float64(1) || req.Options["seed"] != float64(1) || req.Options["num_predict"] != float64(evalTokensThink) || req.Think != nil {
 		t.Errorf("request %+v think %v", req.Options, req.Think)
 	}
 	// Done already: nothing to run unless asked to redo.
@@ -130,7 +130,7 @@ func TestEvalResumes(t *testing.T) {
 	lib, _ := evals.OpenLibrary(t.TempDir())
 	s.evalLib, s.evalRes = lib, evals.OpenResults(t.TempDir())
 	set, _ := lib.Save("two", []byte(twoQuestions))
-	s.evalRes.Put(&evals.Result{Model: "small:q4", Digest: "d1", Set: "two", SetHash: set.Hash, Total: 2, MaxTokens: 100, Answers: []evals.Answer{{ID: "a", Correct: true}}, Correct: 1})
+	s.evalRes.Put(&evals.Result{Model: "small:q4", Digest: "d1", Set: "two", SetHash: set.Hash, Sampling: evals.Sampling, Total: 2, MaxTokens: 100, Answers: []evals.Answer{{ID: "a", Correct: true}}, Correct: 1})
 	fake.reply = `{"message":{"role":"assistant","content":"Answer: 7.5"}}
 {"done":true,"done_reason":"length","eval_count":100}
 `
@@ -309,5 +309,21 @@ func TestEvalLean(t *testing.T) {
 	fake.mu.Unlock()
 	if !strings.Contains(msg, "def double") || !strings.Contains(msg, "theorem goal : ∀ n : Nat, double n = 2 * n") {
 		t.Errorf("prompt: %s", msg)
+	}
+}
+
+// A model that repeats itself is stopped before the token limit.
+func TestEvalStopsLoops(t *testing.T) {
+	s, fake, _ := newTestServer(t)
+	fake.tags = threeModels
+	var b strings.Builder
+	for range 400 {
+		b.WriteString(`{"message":{"role":"assistant","content":"","thinking":"Let me recheck: 8 = 20.5 + 10.348t - 4.905t^2\n"}}` + "\n")
+	}
+	b.WriteString(`{"message":{"role":"assistant","content":"Answer: 7.5"}}` + "\n" + `{"done":true,"done_reason":"stop","eval_count":401}` + "\n")
+	fake.reply = b.String()
+	a, err := s.askModel(context.Background(), "small:q4", "", "q", "", 8192, 0)
+	if err != nil || !a.Looped || a.Reply != "" || a.Tokens == 0 || a.Tokens >= 400 {
+		t.Fatalf("err %v looped %v reply %q tokens %d", err, a.Looped, a.Reply, a.Tokens)
 	}
 }

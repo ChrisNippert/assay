@@ -429,3 +429,24 @@ func TestGenBuild(t *testing.T) {
 		}
 	}
 }
+
+func TestLooping(t *testing.T) {
+	step := "*   $v_{0x} = 19 \\cos(33^\\circ) = 15.93473$\n*   $t = 2.96826$\n*   Rounding to 3 significant figures: 47.3\n\n"
+	normal := ""
+	for i := range 300 {
+		normal += "Step " + strconv.Itoa(i) + ": now we compute the next quantity carefully.\n"
+	}
+	if Looping(normal) || Looping("short") {
+		t.Error("normal text flagged as a loop")
+	}
+	if !Looping(normal + strings.Repeat(step, 12)) {
+		t.Error("repeated block not flagged")
+	}
+	varied := normal
+	for i := range 12 { // same line again and again among changing ones
+		varied += "Let me double-check the quadratic formula once more.\nvalue " + strconv.Itoa(i) + "\n"
+	}
+	if !Looping(varied) {
+		t.Error("repeated line not flagged")
+	}
+}
