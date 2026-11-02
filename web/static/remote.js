@@ -24,6 +24,7 @@
     if (!res.ok) throw new Error((out && out.error) || res.statusText);
     return out;
   }
+  const money = (v) => (v >= 1 ? `$${v.toFixed(2)}` : v >= 0.01 ? `$${v.toFixed(3)}` : v > 0 ? `$${v.toFixed(4)}` : '$0');
   const REASON = { off: 'reasoning off', low: 'low effort', medium: 'medium effort', high: 'high effort' };
   let st = { endpoints: [], models: [], defaultUrl: 'https://openrouter.ai/api/v1' };
   const lists = {}; // endpoint id → its model list (a promise)
@@ -39,6 +40,21 @@
     const list = $('api-list');
     list.innerHTML = '';
     $('api-count').textContent = st.models.length ? `${st.models.length} set up` : '';
+    // Spending: every API call, from chats, benchmarks, teams and speed tests.
+    const sp = st.spend || { total: {}, models: {} };
+    const box = $('api-spend');
+    box.innerHTML = '';
+    box.hidden = !(sp.total.all && sp.total.all.calls);
+    if (!box.hidden) {
+      for (const [k, label] of [['today', 'today'], ['week', 'last 7 days'], ['month', 'last 30 days'], ['all', 'in all']]) {
+        const t = sp.total[k];
+        const tile = el('div', 'api-spend-tile');
+        tile.title = `${t.calls.toLocaleString()} call${t.calls === 1 ? '' : 's'}, ${t.tokens.toLocaleString()} tokens written`;
+        tile.append(el('span', 'api-spend-n', money(t.cost)), el('span', 'muted small', label));
+        box.append(tile);
+      }
+      if (sp.since) box.append(el('span', 'muted small api-spend-since', `Spent on API models since ${new Date(sp.since + 'T00:00').toLocaleDateString()}, as each API reported it.`));
+    }
     for (const m of st.models) {
       const ep = st.endpoints.find((e) => e.id === m.endpoint);
       const row = el('div', 'row bm-api-row');
@@ -46,6 +62,8 @@
       t.append(el('div', 'row-title', m.title));
       const bits = [m.model, ep ? ep.name : 'no endpoint'];
       if (m.reasoning) bits.push(REASON[m.reasoning]);
+      const ms = (st.spend && st.spend.models[m.name]) || null;
+      if (ms && ms.all.calls) bits.push(`${money(ms.month.cost)} last 30 days`);
       t.append(el('div', 'row-sub', bits.join(' · ')));
       if (m.system) t.append(el('div', 'row-sub bm-api-prompt', `Prompt: ${m.system}`));
       const chat = el('a', 'btn subtle', 'Chat');

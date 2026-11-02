@@ -36,6 +36,8 @@ type Stats struct {
 	// AutoContext means Assay picked it to fit the GPU.
 	Context     int  `json:"context,omitempty"`
 	AutoContext bool `json:"autoContext,omitempty"`
+	// Cost is what an API model charged for the reply, in US dollars.
+	Cost float64 `json:"cost,omitempty"`
 }
 
 // Message is one turn in a chat.

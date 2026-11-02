@@ -67,7 +67,7 @@
               {{with .Spoken}}<div class="spoken">{{.}}</div>{{end}}
               <div class="md">{{.Content}}</div>
               {{with .Sources}}{{template "sources" .}}{{end}}
-              {{with .Stats}}<div class="stats" data-used="{{.PromptTokens}}+{{.OutputTokens}}" data-ctx="{{.Context}}" data-tps="{{printf "%.1f" .TokensPerSec}}" data-at="{{$msg.Created.Unix}}" role="button" tabindex="0" title="Open Tune"><span class="st"><b>{{printf "%.0f" .TokensPerSec}}</b> tok/s</span>{{if .PromptPerSec}}<span class="st"><b>{{printf "%.0f" .PromptPerSec}}</b> tok/s reading</span>{{end}}<span class="st"><b>{{.OutputTokens}}</b> tokens</span>{{if .TotalMS}}<span class="st"><b>{{secs .TotalMS}}</b> s</span>{{end}}</div>
+              {{with .Stats}}<div class="stats" data-used="{{.PromptTokens}}+{{.OutputTokens}}" data-ctx="{{.Context}}" data-tps="{{printf "%.1f" .TokensPerSec}}" data-at="{{$msg.Created.Unix}}"{{if .Cost}} data-cost="{{.Cost}}"{{end}} role="button" tabindex="0" title="Open Tune"><span class="st"><b>{{printf "%.0f" .TokensPerSec}}</b> tok/s</span>{{if .PromptPerSec}}<span class="st"><b>{{printf "%.0f" .PromptPerSec}}</b> tok/s reading</span>{{end}}<span class="st"><b>{{.OutputTokens}}</b> tokens</span>{{if .TotalMS}}<span class="st"><b>{{secs .TotalMS}}</b> s</span>{{end}}{{if .Cost}}<span class="st" title="What the API charged for this reply"><b>{{money .Cost}}</b></span>{{end}}</div>
               {{if eq .DoneReason "length"}}<div class="msg-warn">Cut off: the conversation filled the context ({{.PromptTokens}} prompt + {{.OutputTokens}} reply tokens). Raise “Context length” in Tune for longer replies.</div>{{end}}{{end}}
             </div>
             {{end}}
@@ -130,6 +130,7 @@
           <button type="button" class="num num-ctx" id="ctx-open" title="How much of the model's context this chat fills. Open Tune to change the context length."><span class="lab">Context</span><span class="ctx-bar"><span id="ctx-fill"></span></span><span class="ctx-used-part"><b id="ctx-used" class="n">0</b> <span class="lab">of</span></span> <b id="ctx-max" class="n">–</b></button>
           <button type="button" class="num-link" id="ctx-compress" hidden title="Summarize the oldest messages to free up context">Compress</button>
         </span>
+        <a class="num num-cost" id="num-cost" href="/library#api-models" title="What the API models charged for this chat's replies. Click for all spending" hidden><b id="cost-n" class="n"></b> <span class="lab">this chat</span></a>
         <button type="button" class="num num-gpu" id="num-gpu" title="GPU memory used by the loaded model. Click to see what is using it"><span class="gpu-on"><span class="lab">GPU</span> <b id="gpu-used" class="n">–</b> <span class="lab">of</span> <b id="gpu-total" class="n">–</b> <span class="lab">GB</span></span><span class="gpu-off lab">GPU not loaded</span></button>
       </div>
       <div class="voice-bar column" id="voice-bar" hidden>

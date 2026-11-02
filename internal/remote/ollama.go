@@ -17,8 +17,8 @@ import (
 // speaks) against an API model: messages with images and tool calls, tools,
 // sampling options, thinking and the reply format. It streams pieces to fn
 // and ends with a Done chunk carrying the tool calls and token counts, like
-// the local engine. The cost, when the API reports it, goes to cost.
-func ChatOllama(ctx context.Context, ep Endpoint, m Model, req ollama.ChatRequest, fn func(ollama.ChatResponse) error, cost *float64) error {
+// the local engine, plus the cost when the API reports it.
+func ChatOllama(ctx context.Context, ep Endpoint, m Model, req ollama.ChatRequest, fn func(ollama.ChatResponse) error) error {
 	start := time.Now()
 	msgs := make([]map[string]any, 0, len(req.Messages)+1)
 	if m.System != "" {
@@ -144,10 +144,7 @@ func ChatOllama(ctx context.Context, ep Endpoint, m Model, req ollama.ChatReques
 			return errors.New(c.Error.Message)
 		}
 		if c.Usage != nil {
-			final.PromptEvalCount, final.EvalCount = c.Usage.PromptTokens, c.Usage.CompletionTokens
-			if cost != nil {
-				*cost += c.Usage.Cost
-			}
+			final.PromptEvalCount, final.EvalCount, final.Cost = c.Usage.PromptTokens, c.Usage.CompletionTokens, c.Usage.Cost
 		}
 		for _, ch := range c.Choices {
 			if ch.FinishReason != "" {

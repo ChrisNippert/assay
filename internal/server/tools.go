@@ -237,6 +237,7 @@ func mergeStats(acc, st *chats.Stats) *chats.Stats {
 	st.OutputTokens += acc.OutputTokens
 	st.TotalMS += acc.TotalMS
 	st.LoadMS += acc.LoadMS
+	st.Cost += acc.Cost
 	return st
 }
 

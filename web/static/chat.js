@@ -566,6 +566,7 @@
       ctxUsed = used;
       ctxMax = +lastStats.dataset.ctx || 0;
       lastTps = +lastStats.dataset.tps || 0;
+      showCost();
     } else {
       // No reply yet (a new chat, or one from before stats were kept): guess from the text.
       let chars = 0;
@@ -621,7 +622,17 @@
     return part(Math.round(st.tokensPerSec), 'tok/s')
       + (st.promptPerSec ? part(Math.round(st.promptPerSec), 'tok/s reading') : '')
       + part(st.outputTokens, 'tokens')
-      + (st.totalMs ? part((st.totalMs / 1000).toFixed(1), 's') : '');
+      + (st.totalMs ? part((st.totalMs / 1000).toFixed(1), 's') : '')
+      + (st.cost ? part(money(st.cost), '') : '');
+  }
+  function money(v) { return v >= 1 ? `$${v.toFixed(2)}` : v >= 0.01 ? `$${v.toFixed(3)}` : v >= 0.0001 ? `$${v.toFixed(4)}` : '<$0.0001'; }
+  // The chat's API spending: the replies' costs added up.
+  function showCost() {
+    const total = [...list.querySelectorAll('.stats[data-cost]')].reduce((n, s) => n + +s.dataset.cost, 0);
+    const box = document.getElementById('num-cost');
+    if (!box) return;
+    box.hidden = !total;
+    document.getElementById('cost-n').textContent = money(total);
   }
 
   function lengthNote(onlyThinking, stats) {
@@ -1019,6 +1030,7 @@
           case 'done':
             if (ev.stats) {
               stats.innerHTML = statsHTML(ev.stats);
+              if (ev.stats.cost) { stats.dataset.cost = ev.stats.cost; showCost(); }
               lastTps = ev.stats.tokensPerSec || lastTps;
               numLive = false;
               showContext(ev.stats.promptTokens + ev.stats.outputTokens, ev.stats.context);

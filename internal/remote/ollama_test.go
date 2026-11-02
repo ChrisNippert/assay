@@ -47,7 +47,6 @@ func TestChatOllama(t *testing.T) {
 	}
 	var text, think strings.Builder
 	var final ollama.ChatResponse
-	var cost float64
 	err := ChatOllama(context.Background(), ep, m, req, func(r ollama.ChatResponse) error {
 		text.WriteString(r.Message.Content)
 		think.WriteString(r.Message.Thinking)
@@ -55,12 +54,12 @@ func TestChatOllama(t *testing.T) {
 			final = r
 		}
 		return nil
-	}, &cost)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if text.String() != "Let me look." || think.String() != "hmm" || cost != 0.01 || final.EvalCount != 12 || final.PromptEvalCount != 30 || final.DoneReason != "stop" {
-		t.Errorf("reply %q %q cost %v final %+v", text.String(), think.String(), cost, final)
+	if text.String() != "Let me look." || think.String() != "hmm" || final.Cost != 0.01 || final.EvalCount != 12 || final.PromptEvalCount != 30 || final.DoneReason != "stop" {
+		t.Errorf("reply %q %q final %+v", text.String(), think.String(), final)
 	}
 	if c := final.Message.ToolCalls; len(c) != 1 || c[0].ID != "c1" || string(c[0].Function.Arguments) != `{"q":"go"}` {
 		t.Errorf("tool calls %+v", c)

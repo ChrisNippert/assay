@@ -103,8 +103,9 @@ type Options struct {
 	// Limits holds the resource limits; nil keeps them in memory.
 	Limits *limits.Store
 	// Remote holds the API models the benchmarks can run; nil keeps them
-	// in memory.
+	// in memory. Spend is what they cost; nil keeps it in memory.
 	Remote *remote.Store
+	Spend  *remote.Spend
 	// Voice is the speech service for voice mode; nil turns it off.
 	Voice *voice.Client
 	// VoiceSettings are voice mode's preferences. Required.
@@ -147,6 +148,7 @@ type Server struct {
 	toolSt  *tools.Store
 	limitSt *limits.Store
 	remote  *remote.Store
+	spend   *remote.Spend
 	version string
 	updates *update.Checker
 	service service.Service
@@ -201,7 +203,7 @@ type Server struct {
 func New(opts Options) (*Server, error) {
 	s := &Server{
 		ollama: opts.Ollama, chats: opts.Chats, chatSt: opts.ChatSettings, presets: opts.Presets,
-		hf: opts.HF, pulls: opts.Pulls, llama: opts.LlamaCpp, scores: opts.Scores, bench: opts.Bench, projects: opts.Projects, ragSt: opts.RAGSettings, toolSt: opts.Tools, limitSt: opts.Limits, remote: opts.Remote, version: opts.Version, updates: opts.Updates, service: opts.Service, serviceArgs: opts.ServiceArgs, indexQueue: make(chan indexJob, 256), voice: opts.Voice, voiceSt: opts.VoiceSettings, speech: opts.VoiceLauncher, memory: opts.Memory, log: opts.Logger, setup: openSetupState(opts.SetupFile),
+		hf: opts.HF, pulls: opts.Pulls, llama: opts.LlamaCpp, scores: opts.Scores, bench: opts.Bench, projects: opts.Projects, ragSt: opts.RAGSettings, toolSt: opts.Tools, limitSt: opts.Limits, remote: opts.Remote, spend: opts.Spend, version: opts.Version, updates: opts.Updates, service: opts.Service, serviceArgs: opts.ServiceArgs, indexQueue: make(chan indexJob, 256), voice: opts.Voice, voiceSt: opts.VoiceSettings, speech: opts.VoiceLauncher, memory: opts.Memory, log: opts.Logger, setup: openSetupState(opts.SetupFile),
 		vramUsed: hw.VRAMUsed,
 	}
 	if s.bench == nil {
@@ -234,6 +236,9 @@ func New(opts Options) (*Server, error) {
 	}
 	if s.remote == nil {
 		s.remote, _ = remote.Open("")
+	}
+	if s.spend == nil {
+		s.spend, _ = remote.OpenSpend("")
 	}
 	if s.limitSt == nil {
 		s.limitSt, _ = limits.Open("")
@@ -639,6 +644,8 @@ var templateFuncs = template.FuncMap{
 	},
 	"join": strings.Join,
 	"kib":  func(n int) int { return (n + 512) / 1024 },
+	// money is a cost in US dollars, with as many places as small sums need.
+	"money": money,
 	// price is US dollars per million tokens, as short as it reads.
 	"price": func(v float64) string {
 		switch {

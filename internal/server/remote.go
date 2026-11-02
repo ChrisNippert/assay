@@ -33,7 +33,7 @@ func (s *Server) runAPIEvalItem(ctx context.Context, i int, set *evals.Set, redo
 	}
 	return s.runEvalItemWith(ctx, i, set, redo, m.Digest(ep), apiEvalWorkers, func(ctx context.Context, q evals.Question, maxTok int) (evals.Answer, error) {
 		system, user := set.Messages(q)
-		return askAPIMsgs(ctx, ep, m, chatMsgs(system, user), maxTok)
+		return s.askAPIMsgs(ctx, ep, m, chatMsgs(system, user), maxTok)
 	})
 }
 
@@ -135,13 +135,13 @@ feed:
 
 // askAPI sends one prompt to an API model with the eval sampling, the
 // model's own system prompt first.
-func askAPI(ctx context.Context, ep remote.Endpoint, m remote.Model, system, user string, maxTok int) (evals.Answer, error) {
-	return askAPIMsgs(ctx, ep, m, chatMsgs(system, user), maxTok)
+func (s *Server) askAPI(ctx context.Context, ep remote.Endpoint, m remote.Model, system, user string, maxTok int) (evals.Answer, error) {
+	return s.askAPIMsgs(ctx, ep, m, chatMsgs(system, user), maxTok)
 }
 
 // askAPIMsgs is askAPI with a whole conversation; the model's own system
-// prompt goes first.
-func askAPIMsgs(ctx context.Context, ep remote.Endpoint, m remote.Model, msgs []remote.Message, maxTok int) (evals.Answer, error) {
+// prompt goes first. What it cost goes in the spending ledger.
+func (s *Server) askAPIMsgs(ctx context.Context, ep remote.Endpoint, m remote.Model, msgs []remote.Message, maxTok int) (evals.Answer, error) {
 	var a evals.Answer
 	if m.System != "" {
 		if len(msgs) > 0 && msgs[0].Role == "system" {
@@ -171,6 +171,7 @@ func askAPIMsgs(ctx context.Context, ep remote.Endpoint, m remote.Model, msgs []
 	a.Ms = time.Since(t).Milliseconds()
 	a.Reply, a.Thinking = content.String(), thinking.String()
 	a.Tokens, a.Cut, a.Cost = u.Tokens, u.Length, u.Cost
+	s.spend.Add(m.Name(), u.Cost, u.Tokens)
 	if a.Tokens == 0 {
 		a.Tokens = chunks // about one token per streamed chunk
 	}
@@ -201,7 +202,8 @@ func (s *Server) handleRemote(w http.ResponseWriter, r *http.Request) {
 		Endpoints []endpointJSON    `json:"endpoints"`
 		Models    []remoteModelJSON `json:"models"`
 		Default   string            `json:"defaultUrl"`
-	}{Endpoints: []endpointJSON{}, Models: []remoteModelJSON{}, Default: remote.OpenRouterURL}
+		Spend     remote.Summary    `json:"spend"`
+	}{Endpoints: []endpointJSON{}, Models: []remoteModelJSON{}, Default: remote.OpenRouterURL, Spend: s.spend.Summary(time.Now())}
 	for _, e := range s.remote.Endpoints() {
 		ej := endpointJSON{ID: e.ID, Name: e.Name, URL: e.URL, HasKey: e.Key != "", OpenRouter: e.OpenRouter()}
 		if len(e.Key) > 8 {

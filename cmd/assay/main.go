@@ -144,6 +144,10 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("API models: %w", err)
 	}
+	spend, err := remote.OpenSpend(filepath.Join(*dataDir, "api-spend.json"))
+	if err != nil {
+		return fmt.Errorf("API spending: %w", err)
+	}
 	limitStore, err := limits.Open(filepath.Join(*configDir, "limits.json"))
 	if err != nil {
 		return fmt.Errorf("resource limits: %w", err)
@@ -199,6 +203,7 @@ func run() error {
 		Tools:         toolSettings,
 		Limits:        limitStore,
 		Remote:        remoteStore,
+		Spend:         spend,
 		HF:            hfClient,
 		Pulls:         pulls.New(enginePuller{eng}, log),
 		LlamaCpp:      llama,

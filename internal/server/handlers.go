@@ -721,6 +721,7 @@ func statsFrom(r ollama.ChatResponse) *chats.Stats {
 		TotalMS:      r.TotalDuration / 1e6,
 		LoadMS:       r.LoadDuration / 1e6,
 		DoneReason:   r.DoneReason,
+		Cost:         r.Cost,
 	}
 	if r.EvalDuration > 0 {
 		st.TokensPerSec = float64(r.EvalCount) / (float64(r.EvalDuration) / 1e9)

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"assay/internal/evals"
 	"assay/internal/remote"
@@ -129,6 +130,9 @@ func TestAPIModelEval(t *testing.T) {
 	if c := b.Cells["two"]; !c.Done || c.Score != 0.5 || c.Tokens != 18 || c.Cost != 0.005 {
 		t.Errorf("cell %+v", c)
 	}
+	if sp := s.spend.Summary(time.Now()).Models["api:b"]; sp.Today.Calls != 2 || math.Abs(sp.Today.Cost-0.005) > 1e-9 || sp.Today.Tokens != 18 {
+		t.Errorf("spending not recorded: %+v", sp)
+	}
 	r, _ := s.evalRes.Get(b.Digest, "two", "")
 	if r.Answers[0].Thinking != "17*23 = 391" {
 		t.Errorf("thinking %q", r.Answers[0].Thinking)
@@ -149,7 +153,7 @@ func TestAPIRetriesWithoutSampling(t *testing.T) {
 	ts := httptest.NewServer(api)
 	defer ts.Close()
 	ep := remote.Endpoint{ID: "x", Name: "X", URL: ts.URL + "/v1"}
-	a, err := askAPI(context.Background(), ep, remote.Model{ID: "m", Model: "o"}, "", "17×23?", 100)
+	a, err := (&Server{}).askAPI(context.Background(), ep, remote.Model{ID: "m", Model: "o"}, "", "17×23?", 100)
 	if err != nil || a.Reply != "Answer: 391" || a.Tokens != 9 {
 		t.Fatalf("%+v %v", a, err)
 	}

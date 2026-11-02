@@ -112,7 +112,7 @@ func (tr *teamRun) call(ctx context.Context, mb member, msgs []remote.Message) (
 		if tr.think == evals.ThinkOff {
 			m.Reasoning = "off"
 		}
-		a, err = askAPIMsgs(ctx, mb.ep, m, msgs, tr.maxTok)
+		a, err = tr.s.askAPIMsgs(ctx, mb.ep, m, msgs, tr.maxTok)
 	} else {
 		tr.gpu.Lock()
 		if err = tr.s.evalWait(ctx); err == nil && *tr.loaded != mb.name {

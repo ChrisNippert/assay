@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -20,8 +21,12 @@ func isAPIModel(name string) bool { return strings.HasPrefix(name, remote.Prefix
 // model, llama-server otherwise.
 func (s *Server) chat(ctx context.Context, req ollama.ChatRequest, fn func(ollama.ChatResponse) error) error {
 	if m, ep, ok := s.remote.Lookup(req.Model); ok {
-		var cost float64
-		return remote.ChatOllama(ctx, ep, m, req, fn, &cost)
+		return remote.ChatOllama(ctx, ep, m, req, func(r ollama.ChatResponse) error {
+			if r.Done {
+				s.spend.Add(req.Model, r.Cost, r.EvalCount)
+			}
+			return fn(r)
+		})
 	}
 	return s.ollama.Chat(ctx, req, fn)
 }
@@ -104,4 +109,17 @@ func (s *Server) apiOptions() []apiOption {
 		out = append(out, apiOption{Name: m.Name(), Title: m.Title, Model: m.Model, Endpoint: ep.Name, Meta: meta})
 	}
 	return out
+}
+
+// money formats US dollars: cents above a dollar, more places below.
+func money(v float64) string {
+	switch {
+	case v >= 1:
+		return fmt.Sprintf("$%.2f", v)
+	case v >= 0.01:
+		return fmt.Sprintf("$%.3f", v)
+	case v >= 0.0001:
+		return fmt.Sprintf("$%.4f", v)
+	}
+	return "<$0.0001"
 }

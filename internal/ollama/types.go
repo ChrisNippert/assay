@@ -110,6 +110,9 @@ type ChatResponse struct {
 	PromptEvalDuration int64     `json:"prompt_eval_duration"`
 	EvalCount          int       `json:"eval_count"`
 	EvalDuration       int64     `json:"eval_duration"`
+	// Cost is what an API model charged for the reply, in US dollars (not
+	// part of Ollama's API).
+	Cost float64 `json:"cost,omitempty"`
 }
 
 // PullProgress is one streamed update from /api/pull.

@@ -2464,3 +2464,9 @@ button.bm-api-row:hover { background: var(--soft, var(--raised)); }
 .bm-field-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s3, 12px); }
 .bm-field-row > [hidden] { display: none; }
 @media (max-width: 640px) { .bm-field-row { grid-template-columns: minmax(0, 1fr); } }
+.api-spend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2, 8px) var(--s3, 12px); margin: 0 0 var(--s3, 12px); }
+.api-spend[hidden] { display: none; }
+.api-spend-tile { display: flex; flex-direction: column; gap: 2px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 10px; min-width: 96px; }
+.api-spend-n { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.api-spend-since { flex: 1 1 100%; }
+.num-cost[hidden] { display: none; }
