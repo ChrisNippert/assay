@@ -916,6 +916,18 @@ drops its saved key so it can't be redirected elsewhere. API models are
 named `api:<id>` and keyed for results by a hash of URL, model, prompt and
 reasoning, so editing any of them starts fresh results while the old ones
 stay on disk ("Copy with another prompt" is the way to compare prompts).
+Beyond the benchmarks (also 2026-11-01) they're models across the app:
+set up in the Library, offered in the chat switcher and Compare.
+`s.chat` and `s.show` route `api:` names: chat goes through
+`remote.ChatOllama`, which translates Assay's Ollama-shaped request
+(images, tool calls and results, tools, sampling, think, reply format) to
+chat completions and streams back pieces and a final chunk with tool calls
+and token counts; Show is made up from the endpoint's model list (cached an
+hour), which gives the context length and, on OpenRouter, whether the model
+takes images and tools. Chats skip auto context and tokenizing for them
+(the list's context drives compression and attachment sizing). Compare
+shows price, context and capabilities, and its speed test skips loading
+and measures over the network (never highlighted as best).
 `runAPIEvalItem` skips loading and the GPU wait and answers 4 questions at
 once over streamed chat completions (reasoning read from `reasoning` or
 `reasoning_content`); tokens and, on OpenRouter, cost come from the usage

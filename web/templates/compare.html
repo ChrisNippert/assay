@@ -4,15 +4,16 @@
 <div class="page cmp">
   <div class="cmp-pick">
     {{range $d.Columns}}<span class="chip on cmp-chip" title="{{.Group.Primary.Name}}">{{.TitleText}}<button type="button" class="cmp-x" data-remove="{{.Group.Primary.Name}}" aria-label="Remove {{.TitleText}}" title="Remove from the comparison">×</button></span>{{end}}
-    {{if lt (len $d.Picked) 4}}{{if .Models}}
+    {{if lt (len $d.Picked) 4}}{{if or .Models .APIModels}}
     <select id="cmp-add" data-dd aria-label="Add a model">
       <option value="">{{if $d.Picked}}Add a model…{{else}}Choose a model…{{end}}</option>
       {{range .ModelGroups}}{{if not (hasChoice $d.Picked .Primary.Name)}}<option value="{{.Primary.Name}}">{{.Primary.Name}}{{with .Primary.Details.ParameterSize}} · {{.}}{{end}} · {{bytes .Primary.Size}}</option>{{end}}{{end}}
+      {{range .APIModels}}{{if not (hasChoice $d.Picked .Name)}}<option value="{{.Name}}">{{.Title}} · {{.Endpoint}} (API)</option>{{end}}{{end}}
     </select>
     {{end}}{{end}}
   </div>
 
-  {{if not .Models}}
+  {{if and (not .Models) (not .APIModels)}}
   <div class="empty">No models installed yet. Find some on <a href="/discover">Discover</a>.</div>
   {{else if not $d.Columns}}
   <div class="empty cmp-empty">
@@ -40,7 +41,9 @@
     <div class="cmp-label">Quantization</div>
     {{range $d.Columns}}<div class="cmp-cell">{{with .Group.Primary.Details.QuantizationLevel}}<span class="mono">{{.}}</span>{{else}}<span class="muted">–</span>{{end}}{{with .Quality}}<span class="muted"> · {{.}}</span>{{end}}</div>{{end}}
     <div class="cmp-label">On disk</div>
-    {{range $d.Columns}}<div class="cmp-cell"><a class="cmp-val cmp-link" href="/library" title="See it in the Library">{{bytes .Group.Primary.Size}}</a></div>{{end}}
+    {{range $d.Columns}}<div class="cmp-cell">{{if .API}}<a class="cmp-val cmp-link" href="/library#api-models" title="Set up in the Library">runs on {{.API}}</a>{{else}}<a class="cmp-val cmp-link" href="/library" title="See it in the Library">{{bytes .Group.Primary.Size}}</a>{{end}}</div>{{end}}
+    <div class="cmp-label">Price</div>
+    {{range $d.Columns}}<div class="cmp-cell">{{if .API}}{{if or .PriceIn .PriceOut}}<span class="cmp-val">${{price .PriceIn}}</span> <span class="cmp-unit">in,</span> <span class="cmp-val">${{price .PriceOut}}</span> <span class="cmp-unit">out per million tokens</span>{{else}}<span class="muted">not listed</span>{{end}}{{else}}<span class="muted">free, runs here</span>{{end}}</div>{{end}}
     <div class="cmp-label">Architecture</div>
     {{range $d.Columns}}{{$c := .}}<div class="cmp-cell">{{with $c.Group.Primary.Details.Family}}{{if $c.Group.PrimaryOwner}}<a class="cmp-val cmp-link" href="/discover?author={{$c.Group.PrimaryOwner}}&arch={{.}}" title="More {{.}} models on Discover">{{.}}</a>{{else}}<span class="cmp-val">{{.}}</span>{{end}}{{else}}<span class="muted">–</span>{{end}}</div>{{end}}
     <div class="cmp-label">Longest context</div>
@@ -50,7 +53,7 @@
 
     <div class="cmp-section">On your GPU <span class="cmp-src">Assay's estimate</span></div>
     <div class="cmp-label">Context that fits</div>
-    {{range $d.Columns}}<div class="cmp-cell{{if and $d.BestCtx (eq .Auto.Ctx $d.BestCtx)}} best{{end}}">{{if .Auto.Ctx}}<a class="cmp-val cmp-link" href="/chat?model={{.Group.Primary.Name}}" title="Chat with this model at this context">{{kib .Auto.Ctx}}k</a> <span class="cmp-unit">all on the GPU</span>{{else}}<span class="muted">{{or .Auto.Reason "unknown"}}</span>{{end}}</div>{{end}}
+    {{range $d.Columns}}<div class="cmp-cell{{if and $d.BestCtx (eq .Auto.Ctx $d.BestCtx)}} best{{end}}">{{if .API}}<span class="muted">not on this computer</span>{{else if .Auto.Ctx}}<a class="cmp-val cmp-link" href="/chat?model={{.Group.Primary.Name}}" title="Chat with this model at this context">{{kib .Auto.Ctx}}k</a> <span class="cmp-unit">all on the GPU</span>{{else}}<span class="muted">{{or .Auto.Reason "unknown"}}</span>{{end}}</div>{{end}}
 
     <div class="cmp-section">Intelligence <span class="cmp-src"><a href="{{$d.ScoreURL}}" target="_blank" rel="noopener">Artificial Analysis ↗</a></span></div>
     <div class="cmp-label">Score</div>
@@ -62,16 +65,16 @@
 
     <div class="cmp-section">Speed <span class="cmp-src">measured on this machine</span></div>
     <div class="cmp-label">Writing</div>
-    {{range $d.Columns}}<div class="cmp-cell{{if and .Bench (eq .Bench.GenTPS $d.BestGen)}} best{{end}}">{{with .Bench}}<span class="cmp-val">{{printf "%.1f" .GenTPS}}</span> <span class="cmp-unit">tokens/s</span>{{else}}<span class="muted">–</span>{{end}}</div>{{end}}
+    {{range $d.Columns}}<div class="cmp-cell{{if and .Bench (not .API) (eq .Bench.GenTPS $d.BestGen)}} best{{end}}">{{with .Bench}}<span class="cmp-val">{{printf "%.1f" .GenTPS}}</span> <span class="cmp-unit">tokens/s</span>{{else}}<span class="muted">–</span>{{end}}</div>{{end}}
     <div class="cmp-label">Reading the prompt</div>
-    {{range $d.Columns}}<div class="cmp-cell{{if and .Bench (eq .Bench.PromptTPS $d.BestPrompt)}} best{{end}}">{{with .Bench}}<span class="cmp-val">{{printf "%.0f" .PromptTPS}}</span> <span class="cmp-unit">tokens/s</span>{{else}}<span class="muted">–</span>{{end}}</div>{{end}}
+    {{range $d.Columns}}<div class="cmp-cell{{if and .Bench (not .API) (eq .Bench.PromptTPS $d.BestPrompt)}} best{{end}}">{{with .Bench}}{{if not .PromptTPS}}<span class="muted">–</span>{{else}}<span class="cmp-val">{{printf "%.0f" .PromptTPS}}</span> <span class="cmp-unit">tokens/s</span>{{end}}{{else}}<span class="muted">–</span>{{end}}</div>{{end}}
     <div class="cmp-label">First word after</div>
-    {{range $d.Columns}}{{$c := .}}<div class="cmp-cell{{if and .Bench (eq .Bench.TTFTMs $d.BestTTFT)}} best{{end}}">{{with .Bench}}<span class="cmp-val">{{$c.SecsNum .TTFTMs}}</span> <span class="cmp-unit">{{$c.SecsUnit .TTFTMs}}</span>{{else}}<span class="muted">–</span>{{end}}</div>{{end}}
+    {{range $d.Columns}}{{$c := .}}<div class="cmp-cell{{if and .Bench (not .API) (eq .Bench.TTFTMs $d.BestTTFT)}} best{{end}}">{{with .Bench}}<span class="cmp-val">{{$c.SecsNum .TTFTMs}}</span> <span class="cmp-unit">{{$c.SecsUnit .TTFTMs}}</span>{{else}}<span class="muted">–</span>{{end}}</div>{{end}}
     <div class="cmp-label">Loading</div>
-    {{range $d.Columns}}{{$c := .}}<div class="cmp-cell{{if and .Bench (eq .Bench.LoadMs $d.BestLoad)}} best{{end}}">{{with .Bench}}<span class="cmp-val">{{$c.SecsNum .LoadMs}}</span> <span class="cmp-unit">{{$c.SecsUnit .LoadMs}}</span>{{else}}<span class="muted">–</span>{{end}}</div>{{end}}
+    {{range $d.Columns}}{{$c := .}}<div class="cmp-cell{{if and .Bench (not .API) (eq .Bench.LoadMs $d.BestLoad)}} best{{end}}">{{if .API}}<span class="muted">nothing to load</span>{{else}}{{with .Bench}}<span class="cmp-val">{{$c.SecsNum .LoadMs}}</span> <span class="cmp-unit">{{$c.SecsUnit .LoadMs}}</span>{{else}}<span class="muted">–</span>{{end}}{{end}}</div>{{end}}
     <div class="cmp-label"></div>
     {{range $d.Columns}}<div class="cmp-cell cmp-run">
-      {{with .Bench}}<span class="muted small">{{ago .At}} · {{kib .Ctx}}k context{{if lt .GPUPct 100}} · {{.GPUPct}}% on GPU{{end}}</span>{{end}}
+      {{if .API}}{{with .Bench}}<span class="muted small">{{ago .At}} · over the network</span>{{end}}{{else}}{{with .Bench}}<span class="muted small">{{ago .At}} · {{kib .Ctx}}k context{{if lt .GPUPct 100}} · {{.GPUPct}}% on GPU{{end}}</span>{{end}}{{end}}
       <button type="button" class="btn{{if not .Bench}} primary{{end}}" data-bench="{{.Group.Primary.Name}}">{{if .Bench}}Run again{{else}}Run speed test{{end}}</button>
     </div>{{end}}
   </div>

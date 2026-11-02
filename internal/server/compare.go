@@ -43,6 +43,12 @@ type compareColumn struct {
 	ScoreOf  string
 	ScorePct int
 	Bench    *bench.Result
+	// API is set for an API model: its endpoint's name, its title and its
+	// price in US dollars per million tokens (0 when the list doesn't say).
+	API      string
+	APITitle string
+	PriceIn  float64
+	PriceOut float64
 }
 
 // Caps lists the model's capabilities worth showing.
@@ -74,6 +80,14 @@ func (s *Server) handleComparePage(w http.ResponseWriter, r *http.Request) {
 		return modelGroup{}, false
 	}
 	for _, name := range r.URL.Query()["m"] {
+		if m, ep, ok := s.remote.Lookup(name); ok {
+			if len(data.Columns) < maxCompare && !slices.Contains(data.Picked, name) {
+				g := modelGroup{Primary: ollama.Model{Name: name, Digest: m.Digest(ep), Details: ollama.Details{Family: m.Model}}, Names: []string{name}}
+				data.Columns = append(data.Columns, compareColumn{Group: g, API: ep.Name, APITitle: m.Title})
+				data.Picked = append(data.Picked, name)
+			}
+			continue
+		}
 		g, ok := find(name)
 		if !ok || len(data.Columns) == maxCompare || slices.ContainsFunc(data.Columns, func(c compareColumn) bool { return c.Group.Primary.Digest == g.Primary.Digest }) {
 			continue
@@ -97,6 +111,15 @@ func (s *Server) handleComparePage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) fillColumn(ctx context.Context, c *compareColumn) {
 	m := c.Group.Primary
+	if c.API != "" {
+		c.Show, _ = s.show(ctx, m.Name)
+		info := s.apiInfo(ctx, m.Name)
+		c.MaxCtx, c.PriceIn, c.PriceOut = info.Context, info.In, info.Out
+		if r, ok := s.bench.Get(m.Digest); ok {
+			c.Bench = &r
+		}
+		return
+	}
 	show, err := s.ollama.Show(ctx, m.Name)
 	if err != nil {
 		c.Err = err.Error()
@@ -157,6 +180,9 @@ func (c compareColumn) TitleText() string   { t, _ := c.title(); return t }
 func (c compareColumn) TitleTags() []string { _, t := c.title(); return t }
 
 func (c compareColumn) title() (string, []string) {
+	if c.API != "" {
+		return c.APITitle, []string{"API"}
+	}
 	if c.Group.HFRepo != "" {
 		return prettyModel(c.Group.ShortName())
 	}
@@ -175,6 +201,9 @@ func (d *compareData) best() {
 		}
 		d.BestCtx = max(d.BestCtx, c.Auto.Ctx)
 		if b := c.Bench; b != nil {
+			if c.API != "" { // network speed: shown, but not a winner on this machine
+				continue
+			}
 			d.BestGen = max(d.BestGen, b.GenTPS)
 			d.BestPrompt = max(d.BestPrompt, b.PromptTPS)
 			if d.BestTTFT == 0 || b.TTFTMs < d.BestTTFT {
@@ -222,6 +251,10 @@ func (s *Server) handleBench(w http.ResponseWriter, r *http.Request) {
 // fresh at the context Assay would pick, then a fixed prompt of about a thousand
 // tokens and a reply capped at bench.GenTokens.
 func (s *Server) runBench(ctx context.Context, name string, keepPinned bool) (bench.Result, error) {
+	if m, ep, ok := s.remote.Lookup(name); ok {
+		// Nothing to load or unload: the same prompt over the network.
+		return s.speedTest(ctx, bench.Result{Model: name, Digest: m.Digest(ep), At: time.Now()}, name, map[string]any{})
+	}
 	models, err := s.ollama.List(ctx)
 	if err != nil {
 		return bench.Result{}, err
@@ -268,6 +301,11 @@ func (s *Server) runBench(ctx context.Context, name string, keepPinned bool) (be
 		}
 	}
 
+	return s.speedTest(ctx, res, name, opts)
+}
+
+// speedTest sends the speed-test prompt and fills in the timings.
+func (s *Server) speedTest(ctx context.Context, res bench.Result, name string, opts map[string]any) (bench.Result, error) {
 	opts["num_predict"] = bench.GenTokens
 	opts["temperature"] = 0
 	opts["seed"] = 1
@@ -281,7 +319,7 @@ func (s *Server) runBench(ctx context.Context, name string, keepPinned bool) (be
 		KeepAlive: "5m",
 	}
 	var final ollama.ChatResponse
-	t = time.Now()
+	t := time.Now()
 	first := time.Duration(0)
 	run := func() error {
 		return s.chat(ctx, chat, func(c ollama.ChatResponse) error {
@@ -294,7 +332,7 @@ func (s *Server) runBench(ctx context.Context, name string, keepPinned bool) (be
 			return nil
 		})
 	}
-	err = run()
+	err := run()
 	if err != nil && strings.Contains(err.Error(), "think") {
 		chat.Think = nil // models that can't turn thinking off say so
 		t, first = time.Now(), 0

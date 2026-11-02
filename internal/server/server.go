@@ -639,6 +639,16 @@ var templateFuncs = template.FuncMap{
 	},
 	"join": strings.Join,
 	"kib":  func(n int) int { return (n + 512) / 1024 },
+	// price is US dollars per million tokens, as short as it reads.
+	"price": func(v float64) string {
+		switch {
+		case v >= 10:
+			return strconv.FormatFloat(v, 'f', 0, 64)
+		case v >= 1:
+			return strings.TrimRight(strings.TrimRight(strconv.FormatFloat(v, 'f', 2, 64), "0"), ".")
+		}
+		return strings.TrimRight(strings.TrimRight(strconv.FormatFloat(v, 'f', 3, 64), "0"), ".")
+	},
 	// secs formats milliseconds as seconds with one decimal: 11.2.
 	"secs": func(ms int64) string { return strconv.FormatFloat(float64(ms)/1000, 'f', 1, 64) },
 	// compact formats counts like 1329922 as "1.3M".
