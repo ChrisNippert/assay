@@ -56,8 +56,12 @@
           <button type="button" class="lib-sortchip" role="radio" data-metric="tpm" title="Questions answered per minute, thinking included">Answers/min</button>
           <button type="button" class="lib-sortchip" role="radio" data-metric="tps" title="Tokens written per second, including reading each question">Tokens/s</button>
           <button type="button" class="lib-sortchip" role="radio" data-metric="tpt" title="Tokens written per question, thinking included">Tokens/answer</button>
-          <button type="button" class="lib-sortchip" role="radio" data-metric="tpr" title="All tokens written divided by the right answers: what one right answer costs">Tokens/right</button>
+          <button type="button" class="lib-sortchip" role="radio" data-metric="tpr" title="All tokens written divided by the right answers: what one right answer costs, each wrong answer counting extra">Tokens/right</button>
+          <button type="button" class="lib-sortchip" role="radio" data-metric="spr" title="All the time taken divided by the right answers, each wrong answer counting extra: tokens/s and accuracy in one number">Seconds/right</button>
         </div>
+      </div>
+      <div class="bm-penalty muted small" id="bm-penalty" hidden>
+        Each wrong answer also costs <label><input type="number" id="bm-pen-tokens" min="0" step="500" inputmode="numeric" aria-label="Tokens a wrong answer costs"> tokens</label> and <label><input type="number" id="bm-pen-secs" min="0" step="10" inputmode="numeric" aria-label="Seconds a wrong answer costs"> seconds</label>, for reading it and asking again. Set 0 to count only what was written.
       </div>
       <div class="bm-vbars-scroll"><div class="bm-vbars" id="bm-bars"></div></div>
       <div class="bm-trade" id="bm-trade" hidden></div>

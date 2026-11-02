@@ -43,8 +43,14 @@
     tpt: { name: 'Tokens/answer', val: (c) => (c.answered ? c.tokens / c.answered : null) },
     tpm: { name: 'Answers/min', val: (c) => (c.ms ? c.answered / (c.ms / 60000) : null) },
     rpm: { name: 'Right/min', val: (c) => (c.ms ? c.correct / (c.ms / 60000) : null) },
-    tpr: { name: 'Tokens/right', val: (c) => (c.correct ? c.tokens / c.correct : null) },
+    // The per-right costs charge each wrong answer a penalty on top, so a
+    // model can't win them by being cheap and wrong.
+    tpr: { name: 'Tokens/right', val: (c) => (c.correct ? (c.tokens + (c.answered - c.correct) * penalty.tokens) / c.correct : null) },
+    spr: { name: 'Seconds/right', val: (c) => (c.correct && c.ms ? (c.ms / 1000 + (c.answered - c.correct) * penalty.secs) / c.correct : null) },
   };
+  const penalty = (() => {
+    try { return { tokens: 2000, secs: 30, ...JSON.parse(store.get('bm-penalty') || '{}') }; } catch { return { tokens: 2000, secs: 30 }; }
+  })();
   let metric = METRICS[store.get('bm-metric')] ? store.get('bm-metric') : 'score';
   // sumCells adds cells up, so speed stats can be had over several sets.
   const sumCells = (cs) => cs.reduce((a, c) => ({ tokens: a.tokens + (c.tokens || 0), ms: a.ms + (c.ms || 0), answered: a.answered + c.answered, correct: a.correct + c.correct }), { tokens: 0, ms: 0, answered: 0, correct: 0 });
@@ -58,7 +64,7 @@
     const parts = [];
     if (c.ms) parts.push(`${num(METRICS.tps.val(c))} tokens/s`, `${num(METRICS.tpm.val(c))} answers/min`, `${num(METRICS.rpm.val(c))} right/min`, `${dur(c.ms)} in all`);
     if (c.answered) parts.push(`${Math.round(METRICS.tpt.val(c)).toLocaleString()} tokens/answer`);
-    if (c.correct) parts.push(`${Math.round(METRICS.tpr.val(c)).toLocaleString()} tokens per right answer`);
+    if (c.correct) parts.push(`${Math.round(c.tokens / c.correct).toLocaleString()} tokens per right answer`);
     return parts.join(' · ');
   };
   const setName = (id) => (data.sets.find((s) => s.id === id) || { name: id }).name;
@@ -519,10 +525,11 @@
     rpm: 'Right answers a minute: answers a minute times the share right',
     tps: 'Tokens written per second on this computer',
     tpt: 'Tokens written per question, thinking included',
-    tpr: 'Tokens written for each right answer',
+    tpr: 'Tokens written for each right answer, each wrong one counting extra',
+    spr: 'Seconds taken for each right answer, each wrong one counting extra',
   };
-  const LOWER_BETTER = { tpt: true, tpr: true };
-  const BOARD_COLS = ['score', 'rpm', 'tpm', 'tps', 'tpt', 'tpr'];
+  const LOWER_BETTER = { tpt: true, tpr: true, spr: true };
+  const BOARD_COLS = ['score', 'rpm', 'tpm', 'tps', 'tpt', 'tpr', 'spr'];
   let cat = store.get('bm-cat') || 'overall';
   let view = store.get('bm-view') === 'trade' ? 'trade' : 'bars';
   let subset = (() => { try { return JSON.parse(store.get('bm-subset') || 'null'); } catch { return null; } })();
@@ -626,11 +633,12 @@
       b.setAttribute('aria-checked', on ? 'true' : 'false');
     });
     $('bm-trade').hidden = view !== 'trade';
+    $('bm-penalty').hidden = metric !== 'tpr' && metric !== 'spr';
     $('bm-bars').parentElement.hidden = view === 'trade';
     if (view === 'trade') {
       const xk = metric === 'score' ? 'tpm' : metric;
       $('bm-chart-title').textContent = `Score against ${METRICS[xk].name} · ${label}`;
-      $('bm-chart-note').textContent = `Up and to the right is better${LOWER_BETTER[xk] ? ' (fewer tokens to the right)' : ''}. The line joins the best tradeoffs: no other model is both better and ${LOWER_BETTER[xk] ? 'cheaper' : 'faster'}. ${setsText}`;
+      $('bm-chart-note').textContent = `Up and to the right is better${LOWER_BETTER[xk] ? ' (lower to the right)' : ''}. The line joins the best tradeoffs: no other model is both better and ${LOWER_BETTER[xk] ? 'cheaper' : 'faster'}. ${setsText}`;
       renderTradeoff(ranked, xk, ids);
     } else {
       $('bm-chart-title').textContent = `${metric === 'score' ? 'Score' : m.name} · ${label}`;
@@ -1357,6 +1365,17 @@ answer = "7.5"
   root.querySelectorAll('[data-view]').forEach((b) => {
     b.onclick = () => { view = b.dataset.view; store.set('bm-view', view); render(); };
   });
+  for (const [id, k] of [['bm-pen-tokens', 'tokens'], ['bm-pen-secs', 'secs']]) {
+    const inp = $(id);
+    inp.value = penalty[k];
+    inp.onchange = () => {
+      const v = Number(inp.value);
+      if (!(v >= 0)) { inp.value = penalty[k]; return; }
+      penalty[k] = v;
+      store.set('bm-penalty', JSON.stringify(penalty));
+      render();
+    };
+  }
   root.querySelectorAll('[data-metric]').forEach((b) => {
     b.onclick = () => {
       metric = b.dataset.metric;
