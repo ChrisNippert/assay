@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"assay/internal/chats"
 	"assay/internal/evals"
 	"assay/internal/ollama"
 	"assay/internal/remote"
@@ -101,6 +102,62 @@ type teamRun struct {
 	tokens int
 	cost   float64
 	log    strings.Builder
+	// steps is every call so far, for the progress a chat shows; sent is
+	// when each was last sent, to send at most a few updates a second.
+	steps []chats.TeamStep
+	sent  map[int]time.Time
+}
+
+// begin records a call starting and returns its id.
+func (tr *teamRun) begin(lead bool, step, task string, mb member) int {
+	tr.mu.Lock()
+	id := len(tr.steps)
+	tr.steps = append(tr.steps, chats.TeamStep{ID: id, Lead: lead, Step: step, Task: task, Model: mb.title, State: "running"})
+	tr.mu.Unlock()
+	tr.progress(id, nil)
+	return id
+}
+
+// progress changes a step and sends it on in a chat: at once when f is
+// nil (it started) or the step ended, otherwise at most every 250 ms.
+func (tr *teamRun) progress(id int, f func(*chats.TeamStep)) {
+	tr.mu.Lock()
+	st := &tr.steps[id]
+	if f != nil {
+		f(st)
+	}
+	now := time.Now()
+	if tr.emit == nil || f != nil && st.State == "running" && now.Sub(tr.sent[id]) < 250*time.Millisecond {
+		tr.mu.Unlock()
+		return
+	}
+	if tr.sent == nil {
+		tr.sent = map[int]time.Time{}
+	}
+	tr.sent[id] = now
+	cp := *st
+	tr.mu.Unlock()
+	tr.emit(ollama.ChatResponse{Model: tr.chat.Model, CreatedAt: now, Progress: &cp})
+}
+
+// finalSteps are the steps as saved with the reply: no tails.
+func (tr *teamRun) finalSteps() []chats.TeamStep {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	out := slices.Clone(tr.steps)
+	for i := range out {
+		out[i].Tail = ""
+	}
+	return out
+}
+
+// stepTail is the end of a reply so far, on one line.
+func stepTail(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > 140 {
+		return "…" + string(r[len(r)-140:])
+	}
+	return s
 }
 
 func (tr *teamRun) note(format string, args ...any) {
@@ -115,7 +172,7 @@ func (tr *teamRun) note(format string, args ...any) {
 
 // call asks one member and counts what it cost. In a chat, stream sends
 // its reply on as it's written.
-func (tr *teamRun) call(ctx context.Context, mb member, msgs []remote.Message, stream bool) (evals.Answer, error) {
+func (tr *teamRun) call(ctx context.Context, mb member, msgs []remote.Message, stream bool, id int) (evals.Answer, error) {
 	var a evals.Answer
 	var err error
 	if tr.chat != nil {
@@ -123,7 +180,7 @@ func (tr *teamRun) call(ctx context.Context, mb member, msgs []remote.Message, s
 			tr.gpu.Lock()
 			defer tr.gpu.Unlock()
 		}
-		a, err = tr.chatCall(ctx, mb, msgs, stream)
+		a, err = tr.chatCall(ctx, mb, msgs, stream, id)
 	} else if mb.api {
 		m := mb.m
 		if tr.think == evals.ThinkOff {
@@ -147,19 +204,29 @@ func (tr *teamRun) call(ctx context.Context, mb member, msgs []remote.Message, s
 	tr.tokens += a.Tokens
 	tr.cost += a.Cost
 	tr.mu.Unlock()
+	tr.progress(id, func(st *chats.TeamStep) {
+		st.State, st.Tokens, st.Ms, st.Tail = "done", a.Tokens, a.Ms, ""
+		if err != nil {
+			st.State = "failed"
+		}
+	})
 	return a, err
 }
 
 // work runs tasks on the worker side by side (local ones take turns) and
 // returns their replies in order.
-func (tr *teamRun) work(ctx context.Context, tasks []string, msgs func(task string) []remote.Message) []string {
+func (tr *teamRun) work(ctx context.Context, tasks []string, label func(k int) string, msgs func(task string) []remote.Message) []string {
 	out := make([]string, len(tasks))
+	ids := make([]int, len(tasks))
+	for k, task := range tasks {
+		ids[k] = tr.begin(false, label(k), task, tr.worker)
+	}
 	var wg sync.WaitGroup
 	for k, task := range tasks {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			a, err := tr.call(ctx, tr.worker, msgs(task), false)
+			a, err := tr.call(ctx, tr.worker, msgs(task), false, ids[k])
 			reply := strings.TrimSpace(a.Reply)
 			if err != nil {
 				reply = "(this helper failed: " + err.Error() + ")"
@@ -175,7 +242,7 @@ func (tr *teamRun) work(ctx context.Context, tasks []string, msgs func(task stri
 
 // chatCall is call in a chat: through s.chat (the engine loads local
 // models itself), with the chat's think setting and reply limit.
-func (tr *teamRun) chatCall(ctx context.Context, mb member, msgs []remote.Message, stream bool) (evals.Answer, error) {
+func (tr *teamRun) chatCall(ctx context.Context, mb member, msgs []remote.Message, stream bool, id int) (evals.Answer, error) {
 	var a evals.Answer
 	om := make([]ollama.Message, len(msgs))
 	for i, m := range msgs {
@@ -193,9 +260,21 @@ func (tr *teamRun) chatCall(ctx context.Context, mb member, msgs []remote.Messag
 	req := ollama.ChatRequest{Model: mb.name, Messages: om, Options: opts, Think: tr.chat.Think}
 	var content, thinking strings.Builder
 	t0 := time.Now()
+	pieces := 0
 	err := tr.s.chat(ctx, req, func(r ollama.ChatResponse) error {
 		content.WriteString(r.Message.Content)
 		thinking.WriteString(r.Message.Thinking)
+		if !r.Done && (r.Message.Content != "" || r.Message.Thinking != "") {
+			pieces++
+			tr.progress(id, func(st *chats.TeamStep) {
+				st.Tokens, st.Ms = pieces, time.Since(t0).Milliseconds()
+				if content.Len() > 0 {
+					st.Tail = stepTail(content.String())
+				} else {
+					st.Tail = stepTail(thinking.String())
+				}
+			})
+		}
 		if r.Done {
 			a.Tokens, a.Cost, a.Cut = r.EvalCount, r.Cost, r.DoneReason == "length"
 			return nil
@@ -328,7 +407,7 @@ func (tr *teamRun) leadSystem(base, setSystem string) string {
 
 func (tr *teamRun) pipeline(ctx context.Context, system string, hist []remote.Message) (evals.Answer, error) {
 	user := hist[len(hist)-1].Content
-	plan, err := tr.call(ctx, tr.lead, withSystem(tr.leadSystem(fmt.Sprintf(pipelinePlan, tr.t.Size), system), hist), false)
+	plan, err := tr.call(ctx, tr.lead, withSystem(tr.leadSystem(fmt.Sprintf(pipelinePlan, tr.t.Size), system), hist), false, tr.begin(true, "Planning", "", tr.lead))
 	if err != nil {
 		return plan, err
 	}
@@ -337,7 +416,7 @@ func (tr *teamRun) pipeline(ctx context.Context, system string, hist []remote.Me
 		ps = []string{"Do the whole task."}
 	}
 	tr.note("## Plan (%s)\n\n%s\n\n", tr.lead.title, strings.TrimSpace(plan.Reply))
-	results := tr.work(ctx, ps, func(p string) []remote.Message {
+	results := tr.work(ctx, ps, func(k int) string { return fmt.Sprintf("Part %d", k+1) }, func(p string) []remote.Message {
 		return chatMsgs(pipelineWorker, workerContext(hist)+"\n\n---\n\nYour part:\n\n"+p)
 	})
 	var b strings.Builder
@@ -352,7 +431,7 @@ func (tr *teamRun) pipeline(ctx context.Context, system string, hist []remote.Me
 	if tr.chat != nil {
 		tr.note("## Answer (%s)\n\n", tr.lead.title)
 	}
-	final, err := tr.call(ctx, tr.lead, withSystem(system, turns), true)
+	final, err := tr.call(ctx, tr.lead, withSystem(system, turns), true, tr.begin(true, "Answer", "", tr.lead))
 	if final.Thinking != "" && tr.chat == nil {
 		tr.note("## Final answer, thinking (%s)\n\n%s\n\n", tr.lead.title, strings.TrimSpace(final.Thinking))
 	}
@@ -362,7 +441,11 @@ func (tr *teamRun) pipeline(ctx context.Context, system string, hist []remote.Me
 func (tr *teamRun) loop(ctx context.Context, system string, hist []remote.Message) (evals.Answer, error) {
 	msgs := withSystem(tr.leadSystem(fmt.Sprintf(loopLead, tr.t.Size, tr.t.Rounds, plural(tr.t.Rounds)), system), slices.Clone(hist))
 	for round := 1; ; round++ {
-		a, err := tr.call(ctx, tr.lead, msgs, false)
+		id := tr.begin(true, fmt.Sprintf("Round %d", round), "", tr.lead)
+		if round > tr.t.Rounds {
+			tr.progress(id, func(st *chats.TeamStep) { st.Step = "Answer" })
+		}
+		a, err := tr.call(ctx, tr.lead, msgs, false, id)
 		if err != nil {
 			return a, err
 		}
@@ -373,6 +456,7 @@ func (tr *teamRun) loop(ctx context.Context, system string, hist []remote.Messag
 			}
 		}
 		if len(tasks) == 0 {
+			tr.progress(id, func(st *chats.TeamStep) { st.Step = "Answer" })
 			return a, nil
 		}
 		msgs = append(msgs, remote.Message{Role: "assistant", Content: a.Reply})
@@ -384,7 +468,7 @@ func (tr *teamRun) loop(ctx context.Context, system string, hist []remote.Messag
 		}
 		tasks = tasks[:min(len(tasks), tr.t.Size)]
 		tr.note("## Round %d (%s)\n\n%s\n\n", round, tr.lead.title, strings.TrimSpace(a.Reply))
-		results := tr.work(ctx, tasks, func(task string) []remote.Message { return chatMsgs(loopWorker, task) })
+		results := tr.work(ctx, tasks, func(k int) string { return fmt.Sprintf("Round %d, task %d", round, k+1) }, func(task string) []remote.Message { return chatMsgs(loopWorker, task) })
 		if ctx.Err() != nil {
 			return evals.Answer{}, ctx.Err()
 		}
@@ -457,7 +541,7 @@ func (s *Server) chatTeam(ctx context.Context, t remote.Team, req ollama.ChatReq
 	if a.Cut {
 		reason = "length"
 	}
-	return fn(ollama.ChatResponse{Model: req.Model, CreatedAt: time.Now(), Done: true, DoneReason: reason, EvalCount: tr.tokens, EvalDuration: int64(d), TotalDuration: int64(d), Cost: tr.cost})
+	return fn(ollama.ChatResponse{Model: req.Model, CreatedAt: time.Now(), Done: true, DoneReason: reason, EvalCount: tr.tokens, EvalDuration: int64(d), TotalDuration: int64(d), Cost: tr.cost, Progress: tr.finalSteps()})
 }
 
 // runTeamEvalItem runs a team on every question of one set: four

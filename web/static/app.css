@@ -2472,3 +2472,27 @@ button.bm-api-row:hover { background: var(--soft, var(--raised)); }
 .num-cost[hidden] { display: none; }
 .switcher-foot .linkish { border: 0; background: none; padding: 0; font: inherit; color: var(--accent-text); cursor: pointer; }
 .switcher-foot .linkish:hover { text-decoration: underline; }
+
+/* Chat: a team's calls for one reply (live, then folded up). */
+.team-box { margin: 0 0 var(--s3, 12px); border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.team-head { display: flex; align-items: baseline; gap: 10px; padding: 10px 14px; cursor: pointer; list-style: none; }
+.team-head::-webkit-details-marker { display: none; }
+.team-title { font-weight: 600; }
+.team-sum { color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.team-rows { display: flex; flex-direction: column; border-top: 1px solid var(--border); }
+.team-row { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; }
+.team-row + .team-row { border-top: 1px solid var(--border); }
+.team-dot { flex: none; width: 8px; height: 8px; margin-top: 7px; border-radius: 50%; background: var(--muted); }
+.team-row.running .team-dot { background: var(--accent); animation: team-pulse 1.2s ease-in-out infinite; }
+.team-row.done .team-dot { background: var(--good); }
+.team-row.failed .team-dot { background: var(--bad); }
+@keyframes team-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .team-row.running .team-dot { animation: none; } }
+.team-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.team-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.team-who { font-weight: 500; }
+.team-model { color: var(--muted); font-size: var(--fs-sm); }
+.team-num { margin-left: auto; color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.team-task { color: var(--text-2, var(--text)); font-size: var(--fs-sm); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.team-tail { color: var(--muted); font-size: var(--fs-xs); font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.team-task[hidden], .team-tail[hidden] { display: none; }

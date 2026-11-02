@@ -643,6 +643,31 @@
     }
   }
 
+  // A team's calls for one reply: a row per call (the lead's steps and each
+  // worker), live while it works. partials.html renders saved ones the same.
+  function teamRow(st) {
+    const row = el('div', 'team-row');
+    const main = el('div', 'team-main');
+    const line = el('div', 'team-line');
+    line.append(el('span', 'team-who'), el('span', 'team-model'), el('span', 'team-num'));
+    main.append(line, el('div', 'team-task'), el('div', 'team-tail'));
+    row.append(el('span', 'team-dot'), main);
+    fillTeamRow(row, st);
+    return row;
+  }
+  function fillTeamRow(row, st, ms = st.ms) {
+    row.className = `team-row ${st.state}`;
+    row.querySelector('.team-who').textContent = `${st.lead ? 'Lead' : 'Worker'} · ${st.step}`;
+    row.querySelector('.team-model').textContent = st.model;
+    row.querySelector('.team-num').textContent = `${(st.tokens || 0).toLocaleString()} tok · ${(ms / 1000).toFixed(st.state === 'running' ? 0 : 1)} s`;
+    const task = row.querySelector('.team-task');
+    task.textContent = st.task || '';
+    task.hidden = !st.task;
+    const tl = row.querySelector('.team-tail');
+    tl.textContent = st.state === 'running' ? (st.tail || (st.tokens ? '' : 'Waiting to start…')) : '';
+    tl.hidden = !tl.textContent;
+  }
+
   // The stats line under a reply; the server renders the same markup.
   function statsHTML(st) {
     const part = (v, label) => `<span class="st"><b>${v}</b> ${label}</span>`;
@@ -947,6 +972,51 @@
     let content = '';
     let thinking = '';
     const running = new Map(); // tool call id -> its row, until the result is in
+    // A team's live panel: its rows by step id, when each started (for the
+    // seconds ticking while a call waits or thinks), and the last update.
+    let teamBox = null, teamTimer = 0;
+    const teamRows = new Map(), teamAt = new Map(), teamSteps = new Map();
+    const teamHead = () => {
+      const all = [...teamSteps.values()];
+      const busy = all.filter((x) => x.state === 'running').length;
+      const tok = all.reduce((n, x) => n + (x.tokens || 0), 0);
+      teamBox.querySelector('.team-sum').textContent = busy
+        ? `${busy} working · ${tok.toLocaleString()} tokens so far`
+        : `${all.length} calls · ${tok.toLocaleString()} tokens`;
+    };
+    const teamStep = (st) => {
+      if (!teamBox) {
+        teamBox = el('details', 'team-box');
+        teamBox.open = true;
+        const sum = el('summary', 'team-head');
+        sum.append(el('span', 'team-title', 'Team'), el('span', 'team-sum'));
+        teamBox.append(sum, el('div', 'team-rows'));
+        reply.prepend(teamBox);
+        teamTimer = setInterval(() => {
+          for (const [id, row] of teamRows) {
+            const x = teamSteps.get(id);
+            if (x.state === 'running') fillTeamRow(row, x, performance.now() - teamAt.get(id));
+          }
+        }, 1000);
+      }
+      teamSteps.set(st.id, st);
+      if (!teamAt.has(st.id)) teamAt.set(st.id, performance.now() - (st.ms || 0));
+      let row = teamRows.get(st.id);
+      if (!row) {
+        row = teamRow(st);
+        teamRows.set(st.id, row);
+        teamBox.querySelector('.team-rows').append(row);
+      }
+      fillTeamRow(row, st, st.state === 'running' ? performance.now() - teamAt.get(st.id) : st.ms);
+      teamHead();
+      if (!numLive) stats.textContent = 'The team is working…';
+    };
+    const teamDone = (steps) => {
+      clearInterval(teamTimer);
+      if (!teamBox) return;
+      for (const st of steps || []) teamStep(st);
+      teamBox.open = false;
+    };
     // Text is drawn at most once a frame. A resumed reply arrives as one
     // burst of thousands of tokens; redrawing the markdown for each one
     // froze the page for seconds.
@@ -1014,6 +1084,9 @@
           case 'uncompressed':
             placeCompression(null);
             break;
+          case 'team':
+            teamStep(ev.team);
+            break;
           case 'tool': {
             // End this segment: keep what was written as part of the transcript.
             if (thinking) thinkBox.querySelector('summary').textContent = thoughtFor();
@@ -1055,6 +1128,7 @@
             drawSoon();
             break;
           case 'done':
+            teamDone(ev.stats?.team);
             if (ev.stats) {
               stats.innerHTML = statsHTML(ev.stats);
               if (ev.stats.cost) { stats.dataset.cost = ev.stats.cost; showCost(); }
@@ -1065,10 +1139,12 @@
             if (ev.stats?.doneReason === 'length') reply.append(el('div', 'msg-warn', lengthNote(!content && !!thinking, ev.stats)));
             break;
           case 'stopped':
+            clearInterval(teamTimer);
             outcome = 'stopped';
             stats.textContent = 'Stopped';
             break;
           case 'error':
+            clearInterval(teamTimer);
             throw new Error(ev.message);
         }
         if (follow && !frame) scrollDown(); // text scrolls when drawn

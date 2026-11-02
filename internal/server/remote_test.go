@@ -314,6 +314,7 @@ func TestTeamChat(t *testing.T) {
 		rec := do(s, "POST", "/api/chat", `{"model":"`+team+`","content":"What is 17 × 23?"}`)
 		var thinking, content string
 		var done map[string]any
+		started := map[float64]bool{}
 		for _, line := range strings.Split(strings.TrimSpace(rec.Body.String()), "\n") {
 			var ev map[string]any
 			json.Unmarshal([]byte(line), &ev)
@@ -324,12 +325,22 @@ func TestTeamChat(t *testing.T) {
 				content += ev["text"].(string)
 			case "done":
 				done = ev["stats"].(map[string]any)
+			case "team":
+				st := ev["team"].(map[string]any)
+				if st["state"] == "running" {
+					started[st["id"].(float64)] = true
+				}
 			case "error":
 				t.Fatalf("%s: %v", team, ev["message"])
 			}
 		}
 		if content != "Adding the parts: Answer: 391" || done == nil || done["outputTokens"] != float64(20) || math.Abs(done["cost"].(float64)-0.004) > 1e-9 {
 			t.Errorf("%s: content %q done %v", team, content, done)
+		}
+		// Pipeline: planning, 2 parts, answer. Loop: round 1, 2 tasks, answer.
+		steps, _ := done["team"].([]any)
+		if len(started) != 4 || len(steps) != 4 || steps[3].(map[string]any)["step"] != "Answer" || steps[1].(map[string]any)["state"] != "done" {
+			t.Errorf("%s: started %v, steps %v", team, started, steps)
 		}
 		want := "## Plan (M)"
 		if team == "team:loop" {

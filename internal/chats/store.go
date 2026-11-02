@@ -38,6 +38,25 @@ type Stats struct {
 	AutoContext bool `json:"autoContext,omitempty"`
 	// Cost is what an API model charged for the reply, in US dollars.
 	Cost float64 `json:"cost,omitempty"`
+	// Team is each call a team made for the reply: the lead's steps and
+	// every worker's.
+	Team []TeamStep `json:"team,omitempty"`
+}
+
+// TeamStep is one call a team made: who, for what, and how it went.
+type TeamStep struct {
+	ID    int    `json:"id"`
+	Lead  bool   `json:"lead,omitempty"`
+	Step  string `json:"step"`           // "Planning", "Part 2", "Round 1, task 3", "Answer"…
+	Task  string `json:"task,omitempty"` // the part or task a worker was given
+	Model string `json:"model"`
+	State string `json:"state"` // running, done, failed
+	// Tokens written so far (while running, about one per streamed piece)
+	// and time taken.
+	Tokens int   `json:"tokens"`
+	Ms     int64 `json:"ms"`
+	// Tail is the end of what it has written so far; only while running.
+	Tail string `json:"tail,omitempty"`
 }
 
 // Message is one turn in a chat.

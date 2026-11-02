@@ -144,6 +144,9 @@ func (s *Server) chatLoop(ctx context.Context, t *turn, emit func(event) error) 
 		loop := newLoopCheck()
 		held := false
 		err = s.chat(ctx, req, func(resp ollama.ChatResponse) error {
+			if p, ok := resp.Progress.(*chats.TeamStep); ok {
+				return emit(event{Type: "team", Team: p})
+			}
 			if x := resp.Message.Thinking; x != "" {
 				th.WriteString(x)
 				if loop.add(x) {
@@ -173,6 +176,9 @@ func (s *Server) chatLoop(ctx context.Context, t *turn, emit func(event) error) 
 		})
 		if err == nil {
 			stats = mergeStats(stats, t.stats(final))
+			if steps, ok := final.Progress.([]chats.TeamStep); ok {
+				stats.Team = steps
+			}
 		}
 		calls := final.Message.ToolCalls
 		if len(calls) == 0 && len(req.Tools) > 0 && held {

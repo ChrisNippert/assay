@@ -290,6 +290,8 @@ type event struct {
 	Call *chats.ToolCall `json:"call,omitempty"`
 	// Attachments: the new message's files, with Cut set on those shortened.
 	Attachments []chats.Attachment `json:"attachments,omitempty"`
+	// Team is a team's step that started or moved on ("team").
+	Team *chats.TeamStep `json:"team,omitempty"`
 }
 
 func (s *Server) handleChatSend(w http.ResponseWriter, r *http.Request) {

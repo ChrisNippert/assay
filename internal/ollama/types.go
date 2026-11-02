@@ -113,6 +113,9 @@ type ChatResponse struct {
 	// Cost is what an API model charged for the reply, in US dollars (not
 	// part of Ollama's API).
 	Cost float64 `json:"cost,omitempty"`
+	// Progress is a team's progress, not text (Assay's own): one step's
+	// update while running, every step on the Done chunk.
+	Progress any `json:"-"`
 }
 
 // PullProgress is one streamed update from /api/pull.

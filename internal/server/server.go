@@ -648,6 +648,14 @@ var templateFuncs = template.FuncMap{
 	},
 	"join": strings.Join,
 	"kib":  func(n int) int { return (n + 512) / 1024 },
+	// teamTokens adds up a team's tokens for one reply.
+	"teamTokens": func(steps []chats.TeamStep) int {
+		n := 0
+		for _, s := range steps {
+			n += s.Tokens
+		}
+		return n
+	},
 	// money is a cost in US dollars, with as many places as small sums need.
 	"money": money,
 	// price is US dollars per million tokens, as short as it reads.

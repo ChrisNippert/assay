@@ -24,3 +24,6 @@
     </form>
   </dialog>
 {{end}}
+
+{{/* A team's calls for one reply, as chat.js draws them live (teamRow). */}}
+{{define "team"}}<details class="team-box"><summary class="team-head"><span class="team-title">Team</span><span class="team-sum">{{len .}} calls · {{teamTokens .}} tokens</span></summary><div class="team-rows">{{range .}}<div class="team-row {{.State}}"><span class="team-dot" aria-hidden="true"></span><div class="team-main"><div class="team-line"><span class="team-who">{{if .Lead}}Lead{{else}}Worker{{end}} · {{.Step}}</span><span class="team-model">{{.Model}}</span><span class="team-num">{{.Tokens}} tok · {{secs .Ms}} s</span></div>{{with .Task}}<div class="team-task">{{.}}</div>{{end}}</div></div>{{end}}</div></details>{{end}}
