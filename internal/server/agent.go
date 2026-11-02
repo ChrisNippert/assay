@@ -62,6 +62,23 @@ var spawnTool = func() ollama.Tool {
 	return t
 }()
 
+// spawnTasks reads a spawn_agents call's tasks, or says what's wrong with
+// its arguments.
+func spawnTasks(c ollama.ToolCall) (tasks []string, bad string) {
+	var args struct {
+		Tasks []string `json:"tasks"`
+	}
+	if json.Unmarshal(c.Function.Arguments, &args) != nil {
+		return nil, `The arguments should be {"tasks": ["…", "…"]}.`
+	}
+	for _, t := range args.Tasks {
+		if t = strings.TrimSpace(t); t != "" {
+			tasks = append(tasks, t)
+		}
+	}
+	return tasks, ""
+}
+
 // kTokens writes a token count briefly: 150k, 1.2M.
 func kTokens(n int) string {
 	switch {
@@ -151,19 +168,10 @@ func (tr *teamRun) agent(ctx context.Context, system string, hist []remote.Messa
 				m.ToolCalls[i].ID = c.ID
 			}
 			k := ask{call: c}
-			var args struct {
-				Tasks []string `json:"tasks"`
-			}
-			switch {
-			case c.Function.Name != "spawn_agents":
+			if c.Function.Name != "spawn_agents" {
 				k.bad = "There's no tool called " + c.Function.Name + "; the only one is spawn_agents."
-			case json.Unmarshal(c.Function.Arguments, &args) != nil:
-				k.bad = `The arguments should be {"tasks": ["…", "…"]}.`
-			}
-			for _, t := range args.Tasks {
-				if t = strings.TrimSpace(t); t != "" {
-					k.tasks = append(k.tasks, t)
-				}
+			} else {
+				k.tasks, k.bad = spawnTasks(c)
 			}
 			asks = append(asks, k)
 		}
@@ -295,6 +303,12 @@ func (tr *teamRun) leadCall(ctx context.Context, msgs []ollama.Message, tools []
 		}
 		content.WriteString(r.Message.Content)
 		thinking.WriteString(r.Message.Thinking)
+		if tr.live && (r.Message.Content != "" || r.Message.Thinking != "") {
+			tr.said.WriteString(r.Message.Content)
+			if err := tr.emit(ollama.ChatResponse{Model: tr.chat.Model, CreatedAt: time.Now(), Message: ollama.Message{Role: "assistant", Content: r.Message.Content, Thinking: r.Message.Thinking}}); err != nil {
+				return err
+			}
+		}
 		if r.Message.Content != "" || r.Message.Thinking != "" {
 			pieces++
 			tr.progress(id, func(st *chats.TeamStep) {

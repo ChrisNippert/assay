@@ -98,6 +98,10 @@ type teamRun struct {
 	// as thinking, and the answer is streamed, all through emit.
 	chat *ollama.ChatRequest
 	emit func(ollama.ChatResponse) error
+	// live streams the lead's every reply as it's written (in an editor);
+	// said is what it has written.
+	live bool
+	said strings.Builder
 	// gpu makes local calls take turns; loaded is the local model last
 	// loaded for this run and numCtx its context.
 	gpu    *sync.Mutex
@@ -500,6 +504,9 @@ func (tr *teamRun) loop(ctx context.Context, system string, hist []remote.Messag
 // stream as thinking, the answer as the reply, and the last chunk carries
 // the tokens and cost of every call.
 func (s *Server) chatTeam(ctx context.Context, t remote.Team, req ollama.ChatRequest, fn func(ollama.ChatResponse) error) error {
+	if len(req.Tools) > 0 {
+		return s.chatTeamEditor(ctx, t, req, fn)
+	}
 	lead, err := s.member(ctx, t.Lead)
 	if err != nil {
 		return fmt.Errorf("the team's lead: %w", err)
