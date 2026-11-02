@@ -101,6 +101,45 @@
   </div>
   {{end}}
 
+  <section class="found" id="api-models">
+    <div class="found-top">
+      <h2 class="found-title">API models</h2>
+      <span class="muted small" id="api-count"></span>
+      <button type="button" class="btn subtle" id="api-add-model">Add API model</button>
+    </div>
+    <p class="muted small found-intro">Models from OpenRouter or any OpenAI-compatible API, for chat, Compare and the benchmarks. The same model with a different system prompt or reasoning effort is a separate entry, so prompts can be compared.</p>
+    <div class="boxed-list" id="api-list"></div>
+    <div class="bm-api-eps" id="api-eps"></div>
+  </section>
+
+  <dialog class="bm-dialog" id="api-ep-dlg" aria-labelledby="api-ep-title">
+    <form method="dialog" class="bm-dlg-body" id="api-ep-form">
+      <div class="bm-dlg-head"><h2 class="bm-dlg-title" id="api-ep-title">API endpoint</h2><button type="button" class="icon-btn" data-close aria-label="Close">×</button></div>
+      <label class="bm-field"><span>Name</span><input type="text" id="api-ep-name" required autocomplete="off" placeholder="OpenRouter"></label>
+      <label class="bm-field"><span>Base URL <span class="muted small">(OpenAI-compatible, ending before /chat/completions)</span></span><input type="url" id="api-ep-url" required autocomplete="off" spellcheck="false"></label>
+      <label class="bm-field"><span>API key <span class="muted small" id="api-ep-keynote"></span></span><input type="password" id="api-ep-key" autocomplete="off" spellcheck="false"></label>
+      <p class="muted small">The key is saved in Assay's settings folder, readable only by your user, and never shown again here. Changing the URL needs the key typed again.</p>
+      <p class="bm-edit-err" id="api-ep-err" role="alert" hidden></p>
+      <div class="bm-dlg-actions"><button type="button" class="btn danger" id="api-ep-delete" hidden>Remove</button><span class="grow"></span><button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" class="btn primary">Save</button></div>
+    </form>
+  </dialog>
+
+  <dialog class="bm-dialog" id="api-m-dlg" aria-labelledby="api-m-title">
+    <form method="dialog" class="bm-dlg-body" id="api-m-form">
+      <div class="bm-dlg-head"><h2 class="bm-dlg-title" id="api-m-title">API model</h2><button type="button" class="icon-btn" data-close aria-label="Close">×</button></div>
+      <label class="bm-field"><span>Endpoint</span><select id="api-m-ep" required></select></label>
+      <label class="bm-field"><span>Model <span class="muted small" id="api-m-price"></span></span><input type="text" id="api-m-model" list="api-m-list" required autocomplete="off" spellcheck="false" placeholder="Search, e.g. gpt or claude"><datalist id="api-m-list"></datalist></label>
+      <label class="bm-field"><span>Name on the leaderboard</span><input type="text" id="api-m-titleinp" autocomplete="off"></label>
+      <label class="bm-field"><span>System prompt <span class="muted small">(optional; goes before each set's own instructions)</span></span><textarea id="api-m-system" rows="5" spellcheck="false"></textarea></label>
+      <label class="bm-field"><span>Reasoning</span><select id="api-m-reason"><option value="">The API's default</option><option value="off">Off</option><option value="low">Low effort</option><option value="medium">Medium effort</option><option value="high">High effort</option></select></label>
+      <p class="muted small">Changing the model, prompt or reasoning starts fresh results; to compare prompts, use Copy with another prompt instead.</p>
+      <p class="bm-edit-err" id="api-m-err" role="alert" hidden></p>
+      <div class="bm-dlg-actions"><button type="button" class="btn danger" id="api-m-delete" hidden>Remove</button><button type="button" class="btn" id="api-m-copy" hidden>Copy with another prompt</button><span class="grow"></span><button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" class="btn primary">Save</button></div>
+    </form>
+  </dialog>
+
+  <script src="/static/remote.js" defer></script>
+
   <section class="found" id="adapters">
     <div class="found-top">
       <h2 class="found-title">LoRA adapters</h2>

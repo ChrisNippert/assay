@@ -2455,8 +2455,9 @@ button.bm-th:hover { color: var(--text); }
 .bm-penalty input { width: 6em; margin: 0 4px; }
 
 /* Benchmarks › API models. */
-.bm-api-row { width: 100%; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.bm-api-row:hover { background: var(--soft, var(--raised)); }
+.bm-api-row { width: 100%; border: 0; background: none; color: inherit; font: inherit; text-align: left; }
+button.bm-api-row { cursor: pointer; }
+button.bm-api-row:hover { background: var(--soft, var(--raised)); }
 .bm-api-prompt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; }
 .bm-api-eps { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-top: var(--s2, 8px); }
 #bm-api > p { margin: 0 0 var(--s3, 12px); }

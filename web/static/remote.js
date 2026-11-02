@@ -1,10 +1,11 @@
-// Benchmarks › API models and teams: endpoints (OpenRouter or any
-// OpenAI-compatible API), the ways of running their models, and teams of a
-// lead and workers. After a change it fires
-// "assay:remote" so the leaderboard reloads.
+// API models (Library) and teams (Benchmarks): endpoints (OpenRouter or
+// any OpenAI-compatible API), the ways of running their models, and teams
+// of a lead and workers. After a change it fires "assay:remote" so the
+// leaderboard reloads.
 (() => {
-  const box = document.getElementById('bm-api');
-  if (!box) return;
+  const onAPI = !!document.getElementById('api-list');
+  const onTeams = !!document.getElementById('team-list');
+  if (!onAPI && !onTeams) return;
   const $ = (id) => document.getElementById(id);
   function el(tag, cls, text) {
     const e = document.createElement(tag);
@@ -28,6 +29,7 @@
   const lists = {}; // endpoint id → its model list (a promise)
   const changed = () => { document.dispatchEvent(new CustomEvent('assay:remote')); document.dispatchEvent(new CustomEvent('assay:remote-done')); };
 
+  if (onAPI) {
   async function load() {
     try { st = await api('GET', '/api/remote'); } catch { return; }
     render();
@@ -36,18 +38,22 @@
   function render() {
     const list = $('api-list');
     list.innerHTML = '';
+    $('api-count').textContent = st.models.length ? `${st.models.length} set up` : '';
     for (const m of st.models) {
       const ep = st.endpoints.find((e) => e.id === m.endpoint);
-      const row = el('button', 'row bm-api-row');
-      row.type = 'button';
+      const row = el('div', 'row bm-api-row');
       const t = el('div', 'row-text');
       t.append(el('div', 'row-title', m.title));
       const bits = [m.model, ep ? ep.name : 'no endpoint'];
       if (m.reasoning) bits.push(REASON[m.reasoning]);
       t.append(el('div', 'row-sub', bits.join(' · ')));
       if (m.system) t.append(el('div', 'row-sub bm-api-prompt', `Prompt: ${m.system}`));
-      row.append(t, el('span', 'muted small', 'Edit'));
-      row.onclick = () => openModel(m);
+      const chat = el('a', 'btn subtle', 'Chat');
+      chat.href = `/chat?model=${encodeURIComponent(m.name)}`;
+      const edit = el('button', 'btn subtle', 'Edit');
+      edit.type = 'button';
+      edit.onclick = () => openModel(m);
+      row.append(t, chat, edit);
       list.append(row);
     }
     const eps = $('api-eps');
@@ -176,8 +182,13 @@
     changed();
   };
   $('api-add-model').onclick = () => openModel(null);
+  for (const d of [$('api-ep-dlg'), $('api-m-dlg')]) d.querySelectorAll('[data-close]').forEach((b) => { b.onclick = () => d.close(); });
+  if (location.hash === '#api-models') setTimeout(() => $('api-models').scrollIntoView(), 50);
+  load();
+  }
 
   // Teams.
+  if (onTeams) {
   let teams = [];
   let editingT = null;
   async function loadTeams() {
@@ -259,6 +270,5 @@
   $('team-dlg').querySelectorAll('[data-close]').forEach((b) => { b.onclick = () => $('team-dlg').close(); });
   document.addEventListener('assay:remote-done', loadTeams);
   loadTeams();
-  for (const d of [$('api-ep-dlg'), $('api-m-dlg')]) d.querySelectorAll('[data-close]').forEach((b) => { b.onclick = () => d.close(); });
-  load();
+  }
 })();

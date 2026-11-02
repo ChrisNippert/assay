@@ -300,7 +300,7 @@
         if (o.value.startsWith('preset:')) title.prepend(el('span', 'switcher-star', '★ '));
         text.append(title, el('span', 'row-sub', metaOf(o)));
         row.append(dot, text);
-        if (!o.value.startsWith('preset:')) {
+        if (!o.value.startsWith('preset:') && !o.value.startsWith('api:')) {
           // A span, since the row is a button itself; app.js handles the click.
           const star = el('span', 'icon-btn star-btn switcher-fav');
           star.setAttribute('role', 'button');
