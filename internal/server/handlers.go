@@ -578,7 +578,15 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 	} else {
 		s.manualGPU.Delete(strings.ToLower(c.Model))
 	}
-	if _, set := options["num_ctx"]; !set && !manualGPU {
+	if isAPIModel(c.Model) {
+		// Nothing to fit on the GPU: the context is the model's own, which
+		// compression and attachment sizing go by (it isn't sent).
+		if _, set := options["num_ctx"]; !set {
+			if n := s.apiInfo(r.Context(), c.Model).Context; n > 0 {
+				options = presets.Merge(options, map[string]any{"num_ctx": n})
+			}
+		}
+	} else if _, set := options["num_ctx"]; !set && !manualGPU {
 		if t.auto = s.pickContext(r.Context(), c.Model, true); t.auto.Ctx > 0 {
 			options = presets.Merge(options, map[string]any{"num_ctx": t.auto.Ctx})
 		}

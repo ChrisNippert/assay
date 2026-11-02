@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -198,6 +199,10 @@ type Listed struct {
 	// In and Out are US dollars per million tokens, when the API says.
 	In  float64 `json:"in,omitempty"`
 	Out float64 `json:"out,omitempty"`
+	// NoVision and NoTools are set only when the API says the model can't
+	// take images or tools (OpenRouter does); otherwise both are assumed.
+	NoVision bool `json:"noVision,omitempty"`
+	NoTools  bool `json:"noTools,omitempty"`
 }
 
 // List asks an endpoint for its models.
@@ -224,6 +229,10 @@ func List(ctx context.Context, ep Endpoint) ([]Listed, error) {
 				Prompt     string `json:"prompt"`
 				Completion string `json:"completion"`
 			} `json:"pricing"`
+			Architecture *struct {
+				InputModalities []string `json:"input_modalities"`
+			} `json:"architecture"`
+			SupportedParameters []string `json:"supported_parameters"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 32<<20)).Decode(&r); err != nil {
@@ -232,6 +241,12 @@ func List(ctx context.Context, ep Endpoint) ([]Listed, error) {
 	out := make([]Listed, 0, len(r.Data))
 	for _, d := range r.Data {
 		l := Listed{ID: d.ID, Name: d.Name, Context: d.ContextLength}
+		if d.Architecture != nil && len(d.Architecture.InputModalities) > 0 {
+			l.NoVision = !slices.Contains(d.Architecture.InputModalities, "image")
+		}
+		if d.SupportedParameters != nil {
+			l.NoTools = !slices.Contains(d.SupportedParameters, "tools")
+		}
 		var p, c float64
 		if _, err := fmt.Sscan(d.Pricing.Prompt, &p); err == nil {
 			l.In = p * 1e6

@@ -456,6 +456,8 @@ type page struct {
 	running   []string
 	Models    []ollama.Model
 	Loaded    []loadedModel
+	// APIModels are the API models, offered next to the local ones.
+	APIModels []apiOption
 	Presets   []*presets.Preset
 	ModelsErr string // couldn't list the models
 	// Starred is the default model (see chats.Settings.DefaultModel).
@@ -511,6 +513,7 @@ func (s *Server) basePage(ctx context.Context, active, title string) *page {
 	} else {
 		s.log.Error("list presets", "err", err)
 	}
+	p.APIModels = s.apiOptions()
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	models, err := s.ollama.List(ctx)

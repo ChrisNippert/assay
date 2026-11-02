@@ -219,10 +219,11 @@
     const opt = selectedOption();
     const base = baseOf(opt);
     const as = (opt?.dataset.names || base).split(' ').find((n) => loadedNames.has(n)) || '';
-    const loaded = !!as;
+    const api = base.startsWith('api:'); // nothing to load: it runs on the API
+    const loaded = !!as || api;
     switcherDot.classList.toggle('on', loaded);
     const shown = prettyOf(opt);
-    switcherBtn.title = !base ? 'Choose a model or preset' : `${shown} is ${loaded ? 'loaded' : 'not loaded yet'}. Choose another model or preset`;
+    switcherBtn.title = !base ? 'Choose a model or preset' : api ? `${shown} runs on ${modelOption(base)?.dataset.quant || 'its API'}. Choose another model or preset` : `${shown} is ${loaded ? 'loaded' : 'not loaded yet'}. Choose another model or preset`;
     loadBtn.hidden = loaded || !base;
     if (!loadBtn.hidden) {
       setLoadButton(loadBtn, base, false);
@@ -230,12 +231,12 @@
     }
     stateRow.hidden = !base;
     stateRow.querySelector('.switcher-dot').classList.toggle('on', loaded);
-    document.getElementById('switcher-state-text').textContent = loaded ? 'Loaded in memory' : 'Not loaded. It loads on your first message';
-    ejectBtn.hidden = !loaded;
+    document.getElementById('switcher-state-text').textContent = api ? `Runs on ${modelOption(base)?.dataset.quant || 'its API'}, not this computer` : loaded ? 'Loaded in memory' : 'Not loaded. It loads on your first message';
+    ejectBtn.hidden = !loaded || api;
     if (loaded) { ejectBtn.dataset.eject = as; ejectBtn.disabled = false; ejectBtn.textContent = 'Eject'; }
   }
 
-  const isLoaded = (opt) => (opt?.dataset.names || baseOf(opt)).split(' ').some((n) => loadedNames.has(n));
+  const isLoaded = (opt) => baseOf(opt).startsWith('api:') || (opt?.dataset.names || baseOf(opt)).split(' ').some((n) => loadedNames.has(n));
   // The model option a name (any of its aliases) belongs to.
   const modelOption = (name) => [...select.querySelectorAll('option[data-names]')]
     .find((o) => o.dataset.names.split(' ').includes(name));
@@ -256,7 +257,9 @@
     const hint = document.getElementById('welcome-hint');
     const opt = selectedOption();
     if (!hint || !opt?.value) return;
-    hint.textContent = isLoaded(opt)
+    hint.textContent = baseOf(opt).startsWith('api:')
+      ? `${prettyOf(opt)} answers through ${modelOption(baseOf(opt))?.dataset.quant || 'its API'}.`
+      : isLoaded(opt)
       ? `${prettyOf(opt)} is loaded and ready.`
       : `${prettyOf(opt)} will load when you send your first message.`;
   }

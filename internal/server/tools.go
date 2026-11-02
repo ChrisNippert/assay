@@ -75,7 +75,7 @@ func (s *Server) turnTools(ctx context.Context, c *chats.Chat, want *bool, model
 	}
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	if show, err := s.ollama.Show(cctx, model); err != nil || !show.HasCapability("tools") {
+	if show, err := s.show(cctx, model); err != nil || !show.HasCapability("tools") {
 		return nil
 	}
 	d := tools.Deps{Settings: s.toolSt.Get(), Chats: s.chats, ExceptChat: c.ID, Fetcher: s.fetcher, Searcher: s.searcher}
@@ -143,7 +143,7 @@ func (s *Server) chatLoop(ctx context.Context, t *turn, emit func(event) error) 
 		var final ollama.ChatResponse
 		loop := newLoopCheck()
 		held := false
-		err = s.ollama.Chat(ctx, req, func(resp ollama.ChatResponse) error {
+		err = s.chat(ctx, req, func(resp ollama.ChatResponse) error {
 			if x := resp.Message.Thinking; x != "" {
 				th.WriteString(x)
 				if loop.add(x) {

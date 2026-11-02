@@ -135,7 +135,7 @@ func (s *Server) promptSize(ctx context.Context, model string, options map[strin
 	}
 	ctxLen := intOf(options["num_ctx"])
 	t, ok := s.ollama.(tokenizer)
-	if !ok {
+	if !ok || isAPIModel(model) {
 		return approxTokens(b.String()) + overhead, ctxLen, nil
 	}
 	n, engineCtx, err := t.Tokenize(ctx, model, options, b.String())
@@ -344,7 +344,7 @@ func (s *Server) complete(ctx context.Context, model string, opts map[string]any
 		Options:  opts,
 		Think:    false,
 	}
-	err := s.ollama.Chat(ctx, req, func(r ollama.ChatResponse) error {
+	err := s.chat(ctx, req, func(r ollama.ChatResponse) error {
 		b.WriteString(r.Message.Content)
 		return nil
 	})

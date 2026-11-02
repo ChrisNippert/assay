@@ -139,7 +139,7 @@ func (s *Server) hasVision(ctx context.Context, model string) bool {
 	}
 	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	show, err := s.ollama.Show(cctx, model)
+	show, err := s.show(cctx, model)
 	return err == nil && show.HasCapability("vision")
 }
 

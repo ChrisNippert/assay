@@ -63,7 +63,7 @@ func (s *Server) handlePresetSave(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	if _, err := s.ollama.Show(ctx, p.Base); err != nil {
+	if _, err := s.show(ctx, p.Base); err != nil {
 		if ollama.IsNotFound(err) {
 			writeError(w, http.StatusBadRequest, "base model "+p.Base+" isn't installed")
 		} else {

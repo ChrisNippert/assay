@@ -284,7 +284,7 @@ func (s *Server) runBench(ctx context.Context, name string, keepPinned bool) (be
 	t = time.Now()
 	first := time.Duration(0)
 	run := func() error {
-		return s.ollama.Chat(ctx, chat, func(c ollama.ChatResponse) error {
+		return s.chat(ctx, chat, func(c ollama.ChatResponse) error {
 			if first == 0 && (c.Message.Content != "" || c.Message.Thinking != "") {
 				first = time.Since(t)
 			}

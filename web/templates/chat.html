@@ -6,7 +6,10 @@
       <optgroup label="Models">
         {{range .ModelGroups}}{{$g := .}}{{with .Primary}}<option value="{{.Name}}" data-base="{{.Name}}" data-names="{{$g.NamesJoined}}" data-pretty="{{$g.Pretty}}" data-quant="{{$g.Quant}}" data-meta="{{.Details.Family}}" data-size="{{bytes .Size}}" data-fit="{{$g.Fit.Level}}" data-fit-label="{{$g.Fit.Label}}" data-speed="{{$g.Speed}}"{{if $g.Has $.Starred}} data-starred{{end}}{{if and (not $.Data.Preset) ($g.Has $.Data.Model)}} selected{{end}}>{{.Name}}</option>{{end}}{{end}}
       </optgroup>
-      {{if not .Models}}<option value="">No models installed</option>{{end}}
+      {{if .APIModels}}<optgroup label="API models">
+        {{range .APIModels}}<option value="{{.Name}}" data-base="{{.Name}}" data-names="{{.Name}}" data-pretty="{{.Title}}" data-quant="{{.Endpoint}}" data-meta="{{.Meta}}"{{if and (not $.Data.Preset) (eq .Name $.Data.Model)}} selected{{end}}>{{.Name}}</option>{{end}}
+      </optgroup>{{end}}
+      {{if and (not .Models) (not .APIModels)}}<option value="">No models installed</option>{{end}}
     </select>
     <div class="switcher">
       <button type="button" class="switcher-btn" id="switcher-btn" aria-haspopup="listbox" aria-expanded="false" aria-controls="switcher-card" title="Choose a model or preset">

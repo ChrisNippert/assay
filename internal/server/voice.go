@@ -298,7 +298,7 @@ func (s *Server) voiceTurn(w http.ResponseWriter, r *http.Request, t *turn, talk
 
 	var err error
 	if mainCtx.Err() == nil {
-		err = s.ollama.Chat(mainCtx, t.req, s.voiceChunk(emit, &mu, &content, &thinking, notes, &stats, t, stopTalking, talkerDone))
+		err = s.chat(mainCtx, t.req, s.voiceChunk(emit, &mu, &content, &thinking, notes, &stats, t, stopTalking, talkerDone))
 	}
 	stopTalking()
 	<-talkerDone
@@ -385,7 +385,7 @@ func (s *Server) thinks(ctx context.Context, req ollama.ChatRequest) bool {
 	case string:
 		return v != ""
 	}
-	if show, err := s.ollama.Show(ctx, req.Model); err == nil && slices.Contains(show.Capabilities, "thinking") {
+	if show, err := s.show(ctx, req.Model); err == nil && slices.Contains(show.Capabilities, "thinking") {
 		return true
 	}
 	if v, ok := s.thinkers.Load(strings.ToLower(req.Model)); ok {
@@ -536,7 +536,7 @@ func (tk *talker) line(ctx context.Context, notes string) bool {
 	req.Messages = []ollama.Message{{Role: "system", Content: prompt}, {Role: "user", Content: ask.String()}}
 	req.Options = presets.Merge(req.Options, map[string]any{"num_predict": 48})
 	var b strings.Builder
-	err := tk.s.ollama.Chat(ctx, req, func(resp ollama.ChatResponse) error {
+	err := tk.s.chat(ctx, req, func(resp ollama.ChatResponse) error {
 		b.WriteString(resp.Message.Content)
 		return nil
 	})
