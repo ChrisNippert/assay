@@ -24,6 +24,10 @@
       <span class="muted small">Thinking</span>
       <button type="button" class="lib-sortchip" role="radio" data-think="">Model's default</button>
       <button type="button" class="lib-sortchip" role="radio" data-think="off">Off</button>
+      <button type="button" class="lib-sortchip" role="radio" data-think="low">Low</button>
+      <button type="button" class="lib-sortchip" role="radio" data-think="medium">Medium</button>
+      <button type="button" class="lib-sortchip" role="radio" data-think="high">High</button>
+      <button type="button" class="lib-sortchip" role="radio" data-think="all" title="One row for each model and level that has results">All levels</button>
     </div>
 
     <div class="lib-measure"><button type="button" class="btn" id="bm-run-open">Run on several models…</button></div>
@@ -128,6 +132,16 @@
         <fieldset class="bm-pick"><legend>Models</legend><div id="bm-run-models" class="bm-checks"></div></fieldset>
         <fieldset class="bm-pick"><legend>Sets</legend><div id="bm-run-sets" class="bm-checks"></div></fieldset>
       </div>
+      <fieldset class="bm-pick" id="bm-run-thinks"><legend>Thinking <span class="muted small">several run one after another, each saved apart</span></legend>
+        <div class="bm-checks">
+          <label class="bm-check"><input type="checkbox" value=""> Default</label>
+          <label class="bm-check"><input type="checkbox" value="off"> Off</label>
+          <label class="bm-check" data-level><input type="checkbox" value="low"> Low</label>
+          <label class="bm-check" data-level><input type="checkbox" value="medium"> Medium</label>
+          <label class="bm-check" data-level><input type="checkbox" value="high"> High</label>
+        </div>
+        <p class="muted small" id="bm-level-note" hidden></p>
+      </fieldset>
       <label class="bm-field bm-judge" id="bm-judge-row" hidden><span>Judge for proofs <span class="muted small">grades each proof against a reference after the answers are in; pick your strongest model</span></span><select id="bm-run-judge"></select></label>
       <div class="bm-lean-need" id="bm-lean-need" hidden></div>
       <p class="muted small" id="bm-code-note" hidden>Code sets run the model's code on this computer with Python, in a temporary folder with time and memory limits, and without network access where Linux allows it. It isn't a full sandbox.</p>

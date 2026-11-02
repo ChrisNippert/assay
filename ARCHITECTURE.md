@@ -1014,7 +1014,11 @@ keyed by a hash of the strategy, sizes, notes, the members' own digests and
 a prompt version (`teamPrompts`), so changing any of them starts fresh.
 
 **Running.** `POST /api/evals/run` takes models × sets, a think mode
-(`""` = the model's default, `off`) and a token limit per reply (8192 with
+(`""` = the model's default, `off`, `low`, `medium`, `high`; `thinks`
+lists several, run one after another as separate runs; a local model gets a
+level as `reasoning_effort`, an API model has its configured Reasoning
+overridden, and a local model whose chat template lacks `reasoning_effort`
+is skipped at levels) and a token limit per reply (8192 with
 thinking, 2048 without; a set's `max_tokens` raises it). Sampling is
 temperature 1, top_p 0.95, min_p 0.05, seed 1 (`evals.Sampling`, "t1"):
 temperature 0 made thinking models repeat a check until the limit.
@@ -1023,8 +1027,11 @@ Results record their sampling; others are stale. A reply whose last
 line fills 10 of the last 120, is stopped and marked `looped`. One background job, one question at a time:
 `loadAuto` once per model × set, then each question at temperature 0,
 seed 1, saved after every answer to
-`<data>/evals/results/<digest>/<set>[@nothink].json` (every reply and
-thinking, clipped at 40k characters). A stopped run resumes where it
+`<data>/evals/results/<digest>/<set>[@nothink|@low|@medium|@high].json` (every reply and
+thinking, clipped at 40k characters). `think=all` on the results table gives
+a row per model and level that has results ("X · high", "X · no thinking");
+only default rows anchor the index fit. API results are saved under the
+model's configured digest whatever the level. A stopped run resumes where it
 left off; finished pairs are skipped unless `redo`. Between questions the
 job waits while a chat reply is being written or a speed test holds
 `benchMu`. Models aren't unloaded first: speed doesn't matter here.

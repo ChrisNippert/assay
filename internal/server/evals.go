@@ -272,6 +272,8 @@ func (s *Server) startEvals(ctx context.Context, req evalRunRequest, later []str
 			it := s.evalItemFor(g.Primary.Name, title, g.Primary.Digest, set, req)
 			if isEmbeddingName(g.Primary.Name) {
 				it.State, it.Reason = itemSkipped, "It's an embedding model; it doesn't write text."
+			} else if evals.IsLevel(req.Think) && it.State == itemPending && !s.takesEffort(ctx, g.Primary.Name) {
+				it.State, it.Reason = itemSkipped, "Its chat template has no reasoning levels; use Default or Off."
 			}
 			items = append(items, it)
 		}
@@ -287,6 +289,13 @@ func (s *Server) startEvals(ctx context.Context, req evalRunRequest, later []str
 	j.mu.Unlock()
 	go s.runEvals(jctx, req.Redo)
 	return j.state(), nil
+}
+
+// takesEffort reports whether a local model's chat template takes a
+// reasoning effort; a model that can't be read gets the benefit of the doubt.
+func (s *Server) takesEffort(ctx context.Context, name string) bool {
+	sh, err := s.ollama.Show(ctx, name)
+	return err != nil || slices.Contains(sh.Capabilities, "reasoning-effort")
 }
 
 // evalItemFor makes the queue entry for one model and set, picking up a

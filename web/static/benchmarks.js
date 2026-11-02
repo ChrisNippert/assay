@@ -4,7 +4,15 @@
   const root = document.getElementById('bm');
   if (!root) return;
   const init = window.assayBench || {};
-  let data = init.results || { sets: [], rows: [], suite: [], fit: {} };
+  // On the table of every level a model has a row per level: the row's name
+  // becomes unique (model@level) and mname gives the model's own name back.
+  function norm(d) {
+    if (d.think === 'all') for (const r of d.rows) if (r.think) { r.model = r.name; r.name = `${r.name}@${r.think}`; }
+    return d;
+  }
+  const mname = (r) => r.model || r.name;
+  let data = norm(init.results || { sets: [], rows: [], suite: [], fit: {} });
+  const rthink = (r) => (data.think === 'all' ? r.think || '' : think);
   window.assayBenchRows = data.rows; // remote.js offers them as team members
   let run = init.run || { running: false, items: [] };
   let leanSt = init.lean || {};
@@ -91,7 +99,7 @@
     if (think) q.set('think', think);
     (suite || []).forEach((s) => q.append('suite', s));
     try {
-      data = await api('GET', '/api/evals/results?' + q);
+      data = norm(await api('GET', '/api/evals/results?' + q));
       window.assayBenchRows = data.rows;
       render();
     } catch (e) {
@@ -147,7 +155,7 @@
 
   function cellFor(row, set) {
     const c = row.cells[set.id];
-    const item = run.running && run.think === think && run.items.find((it) => it.model === row.name && it.set === set.id && (it.state === 'running' || it.state === 'pending'));
+    const item = run.running && run.think === rthink(row) && run.items.find((it) => it.model === mname(row) && it.set === set.id && (it.state === 'running' || it.state === 'pending'));
     const box = el('div', 'bm-cell');
     if (item && item.state === 'running') {
       box.classList.add('busy');
@@ -170,7 +178,7 @@
       const b = el('button', 'bm-run1', 'Run');
       b.type = 'button';
       b.title = `Run ${set.name} on this model`;
-      b.onclick = () => openRun([row.name], [set.id]);
+      b.onclick = () => openRun([mname(row)], [set.id], rthink(row));
       box.append(b);
       return box;
     }
@@ -231,15 +239,15 @@
       const row = el('div', 'bm-row');
       const name = el('div', 'bm-model');
       const a = el('a', 'lr-name', r.title);
-      a.href = '/chat?model=' + encodeURIComponent(r.name);
-      a.title = r.name;
+      a.href = '/chat?model=' + encodeURIComponent(mname(r));
+      a.title = mname(r);
       name.append(a);
       const sub = el('div', 'lr-sub');
       if (r.quant) sub.append(el('span', 'lr-quant', r.quant));
       const more = el('button', 'bm-linkbtn', 'Run…');
       more.type = 'button';
       more.title = 'Run sets on this model';
-      more.onclick = () => openRun([r.name], data.suite);
+      more.onclick = () => openRun([mname(r)], data.suite, rthink(r));
       sub.append(r.quant ? ' · ' : '', more);
       name.append(sub);
       row.append(name);
@@ -369,7 +377,7 @@
     const bar = root.querySelector('.bm-vbar.sel');
     if (bar) bar.scrollIntoView({ block: 'nearest', inline: 'center' });
   }
-  const itemFor = (row, setId) => run.running && run.think === think && run.items.find((it) => it.model === row.name && it.set === setId && (it.state === 'running' || it.state === 'pending'));
+  const itemFor = (row, setId) => run.running && run.think === rthink(row) && run.items.find((it) => it.model === mname(row) && it.set === setId && (it.state === 'running' || it.state === 'pending'));
   const finished = (c) => c && c.done && !c.stale;
   function progressText(item) {
     let text = item.judging ? `judging, ${item.judging} left` : `${item.answered} of ${item.total}`;
@@ -466,11 +474,11 @@
     const r = pickedRow();
     const sets = data.sets.filter((s) => ticked.has(s.id));
     if (!r || !sets.length) return;
-    if (sets.some((s) => s.judge || (s.lean && !leanReady()))) { openRun([r.name], sets.map((s) => s.id)); return; } // needs the dialog's judge or Lean install
+    if (sets.some((s) => s.judge || (s.lean && !leanReady()))) { openRun([mname(r)], sets.map((s) => s.id), rthink(r)); return; } // needs the dialog's judge or Lean install
     const b = $('bm-one-run');
     b.disabled = true;
     try {
-      run = await api('POST', '/api/evals/run', { models: [r.name], sets: sets.map((s) => s.id), think, redo: $('bm-one-redo').checked });
+      run = await api('POST', '/api/evals/run', { models: [mname(r)], sets: sets.map((s) => s.id), think: rthink(r), redo: $('bm-one-redo').checked });
       ticked = new Set();
       renderRun();
       render();
@@ -1018,9 +1026,31 @@
     container.append(l);
     return i;
   }
+  const LEVEL_NAME = { '': 'default thinking', off: 'thinking off', low: 'low effort', medium: 'medium effort', high: 'high effort' };
+  const pickedThinks = () => [...$('bm-run-thinks').querySelectorAll('input:checked')].map((i) => i.value);
+  const thinkNote = () => {
+    const t = pickedThinks();
+    return t.length ? t.map((x) => LEVEL_NAME[x]).join(', then ') : LEVEL_NAME[''];
+  };
+  // Levels need a model that takes them: an API model, a team, or a local
+  // model whose chat template has reasoning_effort.
+  function updateLevels(ms) {
+    const rows = baseRows().filter((r) => ms.includes(r.name));
+    const lacking = rows.filter((r) => !r.api && !r.team && !r.levels);
+    const none = !rows.length || lacking.length === rows.length;
+    const box = $('bm-run-thinks');
+    box.querySelectorAll('[data-level] input').forEach((i) => { i.disabled = none; if (none) i.checked = false; });
+    const note = $('bm-level-note');
+    note.hidden = !lacking.length;
+    note.textContent = none
+      ? 'None of the picked models takes a reasoning level; many local models only have thinking on or off.'
+      : `Skipped at low, medium and high, which their chat templates lack: ${lacking.map((r) => r.title).join(', ')}.`;
+  }
+  const baseRows = () => data.rows.filter((r) => !r.think);
   function updateRunNote() {
     const ms = [...$('bm-run-models').querySelectorAll('input:checked')].map((i) => i.value);
     const ss = [...$('bm-run-sets').querySelectorAll('input:checked')].map((i) => i.value);
+    updateLevels(ms);
     const picked = data.sets.filter((s) => ss.includes(s.id));
     $('bm-judge-row').hidden = !picked.some((s) => s.judge);
     $('bm-code-note').hidden = !picked.some((s) => s.code);
@@ -1032,13 +1062,15 @@
     const q = ss.reduce((n, id) => n + (data.sets.find((s) => s.id === id) || { questions: 0 }).questions, 0);
     $('bm-run-go').disabled = !ms.length || !ss.length || needLean;
     $('bm-run-note').textContent = ms.length && ss.length
-      ? `Up to ${ms.length * q} questions, ${think === 'off' ? 'thinking off' : 'thinking as each model does by default'}. Sets already finished are skipped unless you tick the box above. It runs in the background; you can leave this page.`
+      ? `Up to ${ms.length * q * Math.max(1, pickedThinks().length)} questions, ${thinkNote()}. Sets already finished are skipped unless you tick the box above. It runs in the background; you can leave this page.`
       : 'Pick at least one model and one set.';
   }
-  function openRun(models, sets) {
+  function openRun(models, sets, thinkNow) {
     const mBox = $('bm-run-models'), sBox = $('bm-run-sets');
     mBox.innerHTML = sBox.innerHTML = '';
-    for (const r of data.rows) {
+    const tn = thinkNow ?? (data.think === 'all' ? '' : think);
+    $('bm-run-thinks').querySelectorAll('input').forEach((i) => { i.checked = i.value === tn; });
+    for (const r of baseRows()) {
       const n = Object.values(r.cells).filter((c) => c.done && !c.stale).length;
       check(mBox, r.name, r.title, [r.quant, n ? `${n} sets done` : ''].filter(Boolean).join(' · '), (models || []).includes(r.name));
     }
@@ -1048,7 +1080,7 @@
     const none = el('option', null, 'No judge: grade later');
     none.value = '';
     judge.append(none);
-    const byParams = [...data.rows].sort((a, b) => (b.params || 0) - (a.params || 0));
+    const byParams = [...baseRows()].sort((a, b) => (b.params || 0) - (a.params || 0));
     for (const r of byParams) {
       const o = el('option', null, `${r.title}${r.quant ? ' · ' + r.quant : ''}${r.params ? ` · ${r.params < 10 ? r.params.toFixed(1) : Math.round(r.params)}B` : ''}`);
       o.value = r.name;
@@ -1067,7 +1099,7 @@
     const body = {
       models: [...$('bm-run-models').querySelectorAll('input:checked')].map((i) => i.value),
       sets: [...$('bm-run-sets').querySelectorAll('input:checked')].map((i) => i.value),
-      think,
+      thinks: pickedThinks().length ? pickedThinks() : [''],
       redo: $('bm-run-redo').checked,
       judge: $('bm-judge-row').hidden ? '' : $('bm-run-judge').value,
     };
@@ -1152,7 +1184,7 @@
   async function openAnswers(row, setId) {
     ansFor = { row, setId };
     openBrowser(`${row.title} · ${setName(setId)}`, 'Loading…');
-    const q = new URLSearchParams({ digest: row.digest, set: setId, think });
+    const q = new URLSearchParams({ digest: row.digest, set: setId, think: rthink(row) });
     let j;
     try { j = await api('GET', '/api/evals/result?' + q); } catch (e) { $('bm-ans-sub').textContent = e.message; return; }
     const res = j.result, set = j.set || { questions: [] };
@@ -1343,7 +1375,7 @@
   $('bm-ans-toml').onclick = () => { const id = ans?.setId; if (!id) return; ansDlg.close(); openEditor(id, false); };
   $('bm-ans-delete').onclick = async () => {
     if (!ansFor || !confirm('Delete this result? The answers are gone for good.')) return;
-    const q = new URLSearchParams({ digest: ansFor.row.digest, set: ansFor.setId, think });
+    const q = new URLSearchParams({ digest: ansFor.row.digest, set: ansFor.setId, think: rthink(ansFor.row) });
     await api('DELETE', '/api/evals/result?' + q);
     ansDlg.close();
     reload();
@@ -1351,7 +1383,7 @@
   $('bm-ans-rerun').onclick = () => {
     if (!ansFor) return;
     ansDlg.close();
-    openRun([ansFor.row.name], [ansFor.setId]);
+    openRun([mname(ansFor.row)], [ansFor.setId], rthink(ansFor.row));
     $('bm-run-redo').checked = true;
     updateRunNote();
   };
