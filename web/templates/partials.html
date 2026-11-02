@@ -5,6 +5,7 @@
       <div class="bm-dlg-head"><h2 class="bm-dlg-title" id="team-title">Team</h2><button type="button" class="icon-btn" data-close aria-label="Close">×</button></div>
       <label class="bm-field"><span>Name</span><input type="text" id="team-name" required autocomplete="off" placeholder="Gemma 12B leads, E4B ×3"></label>
       <label class="bm-field"><span>How it works</span><select id="team-strategy">
+        <option value="agent">Agent: decides for itself</option>
         <option value="pipeline">Plan, work, combine</option>
         <option value="loop">Free loop</option>
       </select></label>
@@ -13,8 +14,13 @@
         <label class="bm-field"><span>Lead</span><select id="team-lead" required></select></label>
         <label class="bm-field"><span>Workers</span><select id="team-worker" required></select></label>
       </div>
-      <div class="bm-field-row">
-        <label class="bm-field"><span>Workers at once <span class="muted small">(1–8)</span></span><input type="number" id="team-size" min="1" max="8" value="3" required></label>
+      <div class="bm-field-row bm-field-row3" id="team-budget-row">
+        <label class="bm-field"><span>Token budget <span class="muted small">(all calls)</span></span><input type="number" id="team-budget" min="1000" max="5000000" step="1000" value="150000"></label>
+        <label class="bm-field"><span>Cost cap <span class="muted small">($, 0 = none)</span></span><input type="number" id="team-cost" min="0" max="1000" step="0.05" value="0.5"></label>
+        <label class="bm-field"><span>Time limit <span class="muted small">(minutes)</span></span><input type="number" id="team-minutes" min="1" max="240" value="10"></label>
+      </div>
+      <div class="bm-field-row" id="team-size-row">
+        <label class="bm-field"><span>Workers at once <span class="muted small">(1–8)</span></span><input type="number" id="team-size" min="1" max="8" value="3"></label>
         <label class="bm-field" id="team-rounds-row"><span>Rounds <span class="muted small">(1–5)</span></span><input type="number" id="team-rounds" min="1" max="5" value="2"></label>
       </div>
       <label class="bm-field"><span>Extra instructions for the lead <span class="muted small">(optional)</span></span><textarea id="team-notes" rows="3" spellcheck="false"></textarea></label>
@@ -26,4 +32,4 @@
 {{end}}
 
 {{/* A team's calls for one reply, as chat.js draws them live (teamRow). */}}
-{{define "team"}}<details class="team-box"><summary class="team-head"><span class="team-title">Team</span><span class="team-sum">{{len .}} calls · {{teamTokens .}} tokens</span></summary><div class="team-rows">{{range .}}<div class="team-row {{.State}}"><span class="team-dot" aria-hidden="true"></span><div class="team-main"><div class="team-line"><span class="team-who">{{if .Lead}}Lead{{else}}Worker{{end}} · {{.Step}}</span><span class="team-model">{{.Model}}</span><span class="team-num">{{.Tokens}} tok · {{secs .Ms}} s</span></div>{{with .Task}}<div class="team-task">{{.}}</div>{{end}}</div></div>{{end}}</div></details>{{end}}
+{{define "team"}}<details class="team-box"><summary class="team-head"><span class="team-title">Team</span><span class="team-sum">{{len .}} calls · {{teamTokens .}} tokens</span></summary><div class="team-rows">{{range .}}<div class="team-row {{.State}}"><span class="team-dot" aria-hidden="true"></span><div class="team-main"><div class="team-line"><span class="team-who">{{if .Lead}}Lead{{else}}Worker{{end}} · {{.Step}}</span><span class="team-model">{{.Model}}</span><span class="team-num">{{with .Ctx}}context {{kTok .}} · {{end}}{{.Tokens}} tok · {{secs .Ms}} s</span></div>{{with .Task}}<div class="team-task">{{.}}</div>{{end}}</div></div>{{end}}</div></details>{{end}}

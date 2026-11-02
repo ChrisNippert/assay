@@ -648,6 +648,13 @@ var templateFuncs = template.FuncMap{
 	},
 	"join": strings.Join,
 	"kib":  func(n int) int { return (n + 512) / 1024 },
+	// kTok writes a token count briefly: 8.2k.
+	"kTok": func(n int) string {
+		if n < 1000 {
+			return strconv.Itoa(n)
+		}
+		return strconv.FormatFloat(float64(n)/1000, 'f', 1, 64) + "k"
+	},
 	// teamTokens adds up a team's tokens for one reply.
 	"teamTokens": func(steps []chats.TeamStep) int {
 		n := 0

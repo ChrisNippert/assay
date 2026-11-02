@@ -928,6 +928,19 @@ takes images and tools. Chats skip auto context and tokenizing for them
 (the list's context drives compression and attachment sizing). Compare
 shows price, context and capabilities, and its speed test skips loading
 and measures over the network (never highlighted as best).
+A third strategy, *agent* (server/agent.go, 2026-11-02), lets the lead
+decide how much to delegate: a `spawn_agents` tool (or `<task>` blocks if
+the lead has no tool calling) it may call any number of times with any
+number of tasks, or never. Helpers get only their task and are told to
+send back just the result, without their working; neither their thinking
+nor the lead's own goes into the lead's context, which is what keeps it
+small (each lead step shows its context size in the chat's Team panel).
+The only limits are a token budget across all calls, an optional cost cap
+and a time limit, which the lead sees after every round (`[Budget: …]`);
+when one runs out it's told to answer without tools. Hard ceilings of 16
+tasks a round and 30 rounds stop a confused model inside a big budget.
+Its lead calls go through `s.chat` with the conversation as Ollama
+messages, so tool calls work for local and API leads alike.
 Teams chat too (`chatTeam`): the chat switcher lists them, `s.chat` routes
 `team:` names, and the team runs on the conversation (the lead sees the
 whole chat; pipeline workers see it as a transcript, capped at 24k

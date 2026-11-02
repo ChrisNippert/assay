@@ -253,9 +253,12 @@
     $('team-title').textContent = t ? 'Edit team' : 'New team';
     $('team-name').dataset.touched = t ? '1' : '';
     $('team-name').value = t ? t.title : '';
-    $('team-strategy').value = t ? t.strategy : 'pipeline';
+    $('team-strategy').value = t ? t.strategy : 'agent';
+    $('team-budget').value = t && t.budget ? t.budget : 150000;
+    $('team-cost').value = t && t.strategy === 'agent' ? t.maxCost || 0 : 0.5;
+    $('team-minutes').value = t && t.minutes ? t.minutes : 10;
     if (t) { $('team-lead').value = t.lead; $('team-worker').value = t.worker; }
-    $('team-size').value = t ? t.size : 3;
+    $('team-size').value = t && t.size ? t.size : 3;
     $('team-rounds').value = t && t.rounds ? t.rounds : 2;
     $('team-notes').value = t ? t.notes || '' : '';
     $('team-delete').hidden = !t;
@@ -264,9 +267,14 @@
     $('team-dlg').showModal();
   }
   function teamForm() {
-    const loop = $('team-strategy').value === 'loop';
+    const how = $('team-strategy').value;
+    const loop = how === 'loop', agent = how === 'agent';
     $('team-rounds-row').hidden = !loop;
-    $('team-how').textContent = loop
+    $('team-size-row').hidden = agent;
+    $('team-budget-row').hidden = !agent;
+    $('team-how').textContent = agent
+      ? 'The lead decides: it spawns as many helpers as it wants, as often as it wants, or none. Helpers work in their own context and send back a short result, so the lead\'s context stays small. The budget is the only limit; when it runs out, the lead answers with what it has.'
+      : loop
       ? 'The lead hands out tasks when it wants, reads the results, may hand out more for a few rounds, then answers. Workers see only the task the lead writes.'
       : 'Always three steps: the lead splits the question into parts, the workers each do one at the same time, and the lead answers from their results. Workers see the whole question and their part.';
     const l = $('team-lead').value, w = $('team-worker').value;
@@ -274,15 +282,17 @@
     // A name to start from, until one is typed.
     if (!$('team-name').dataset.touched && l && w) {
       const short = (id) => ($(id).selectedOptions[0]?.textContent || '').split(' · ')[0];
-      $('team-name').value = l === w ? `${short('team-lead')} ×${$('team-size').value}` : `${short('team-lead')} leads ${short('team-worker')}`;
+      $('team-name').value = l === w ? (agent ? `${short('team-lead')} agent` : `${short('team-lead')} ×${$('team-size').value}`) : `${short('team-lead')} leads ${short('team-worker')}`;
     }
   }
   for (const id of ['team-strategy', 'team-lead', 'team-worker', 'team-size']) $(id).addEventListener('change', teamForm);
   $('team-name').addEventListener('input', () => { $('team-name').dataset.touched = '1'; });
   $('team-form').onsubmit = async (ev) => {
     ev.preventDefault();
-    const loop = $('team-strategy').value === 'loop';
-    const body = { title: $('team-name').value, strategy: $('team-strategy').value, lead: $('team-lead').value, worker: $('team-worker').value, size: Number($('team-size').value), rounds: loop ? Number($('team-rounds').value) : 0, notes: $('team-notes').value };
+    const how = $('team-strategy').value;
+    const body = { title: $('team-name').value, strategy: how, lead: $('team-lead').value, worker: $('team-worker').value, notes: $('team-notes').value };
+    if (how === 'agent') Object.assign(body, { budget: Number($('team-budget').value), maxCost: Number($('team-cost').value), minutes: Number($('team-minutes').value) });
+    else Object.assign(body, { size: Number($('team-size').value), rounds: how === 'loop' ? Number($('team-rounds').value) : 0 });
     try {
       const r = await api('PUT', `/api/teams/${editingT ? editingT.id : 'new'}`, body);
       $('team-dlg').close();

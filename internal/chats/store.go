@@ -55,6 +55,9 @@ type TeamStep struct {
 	// and time taken.
 	Tokens int   `json:"tokens"`
 	Ms     int64 `json:"ms"`
+	// Ctx is how many tokens the call's context held (prompt and reply),
+	// for the lead's steps: what delegating keeps small.
+	Ctx int `json:"ctx,omitempty"`
 	// Tail is the end of what it has written so far; only while running.
 	Tail string `json:"tail,omitempty"`
 }

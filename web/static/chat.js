@@ -659,7 +659,8 @@
     row.className = `team-row ${st.state}`;
     row.querySelector('.team-who').textContent = `${st.lead ? 'Lead' : 'Worker'} · ${st.step}`;
     row.querySelector('.team-model').textContent = st.model;
-    row.querySelector('.team-num').textContent = `${(st.tokens || 0).toLocaleString()} tok · ${(ms / 1000).toFixed(st.state === 'running' ? 0 : 1)} s`;
+    const ctxText = st.ctx ? `context ${st.ctx < 1000 ? st.ctx : (st.ctx / 1000).toFixed(1) + 'k'} · ` : '';
+    row.querySelector('.team-num').textContent = `${ctxText}${(st.tokens || 0).toLocaleString()} tok · ${(ms / 1000).toFixed(st.state === 'running' ? 0 : 1)} s`;
     const task = row.querySelector('.team-task');
     task.textContent = st.task || '';
     task.hidden = !st.task;

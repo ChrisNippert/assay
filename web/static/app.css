@@ -2496,3 +2496,6 @@ button.bm-api-row:hover { background: var(--soft, var(--raised)); }
 .team-task { color: var(--text-2, var(--text)); font-size: var(--fs-sm); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .team-tail { color: var(--muted); font-size: var(--fs-xs); font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .team-task[hidden], .team-tail[hidden] { display: none; }
+.bm-field-row3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 640px) { .bm-field-row3 { grid-template-columns: minmax(0, 1fr); } }
+.bm-field-row[hidden] { display: none; }

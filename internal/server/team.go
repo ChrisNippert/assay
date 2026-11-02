@@ -60,17 +60,23 @@ func (s *Server) member(ctx context.Context, name string) (member, error) {
 // teamDigest keys a team's results: it changes with anything that changes
 // its answers, members included.
 func teamDigest(t remote.Team, lead, worker member) string {
-	h := sha256.Sum256([]byte(strings.Join([]string{teamPrompts, t.Strategy, strconv.Itoa(t.Size), strconv.Itoa(t.Rounds), t.Notes, lead.digest, worker.digest}, "\x00")))
+	parts := []string{teamPrompts, t.Strategy, strconv.Itoa(t.Size), strconv.Itoa(t.Rounds), t.Notes, lead.digest, worker.digest}
+	if t.Strategy == remote.Agent {
+		parts = append(parts, strconv.Itoa(t.Budget), strconv.FormatFloat(t.MaxCost, 'f', -1, 64), strconv.Itoa(t.Minutes))
+	}
+	h := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 	return "team-" + hex.EncodeToString(h[:12])
 }
 
 // teamQuant describes a team in a few words, for its row.
 func teamQuant(t remote.Team, lead, worker string) string {
-	how := "Plan, work, combine"
-	if t.Strategy == remote.Loop {
-		how = fmt.Sprintf("Free loop, %d round%s", t.Rounds, plural(t.Rounds))
+	switch t.Strategy {
+	case remote.Loop:
+		return fmt.Sprintf("Free loop, %d round%s · %s → %s ×%d", t.Rounds, plural(t.Rounds), lead, worker, t.Size)
+	case remote.Agent:
+		return fmt.Sprintf("Agent, %s token budget · %s → %s", kTokens(t.Budget), lead, worker)
 	}
-	return fmt.Sprintf("%s · %s → %s ×%d", how, lead, worker, t.Size)
+	return fmt.Sprintf("Plan, work, combine · %s → %s ×%d", lead, worker, t.Size)
 }
 
 func plural(n int) string {
@@ -361,8 +367,11 @@ func (tr *teamRun) run(ctx context.Context, conv []remote.Message) (evals.Answer
 	if len(hist) == 0 || hist[len(hist)-1].Role != "user" {
 		return evals.Answer{}, errors.New("nothing to answer")
 	}
-	if tr.t.Strategy == remote.Loop {
+	switch tr.t.Strategy {
+	case remote.Loop:
 		return tr.loop(ctx, system, hist)
+	case remote.Agent:
+		return tr.agent(ctx, system, hist)
 	}
 	return tr.pipeline(ctx, system, hist)
 }
@@ -529,7 +538,7 @@ func (s *Server) chatTeam(ctx context.Context, t remote.Team, req ollama.ChatReq
 	if err != nil {
 		return err
 	}
-	if t.Strategy == remote.Loop {
+	if t.Strategy != remote.Pipeline {
 		// The lead's last reply is the answer; it wasn't streamed, since
 		// until it ended it might have handed out more work.
 		if err := fn(ollama.ChatResponse{Model: req.Model, CreatedAt: time.Now(), Message: ollama.Message{Role: "assistant", Content: a.Reply}}); err != nil {

@@ -106,9 +106,14 @@ type Team struct {
 	Lead     string `json:"lead"`
 	Worker   string `json:"worker"`
 	// Size is the most workers per round (1–8); Rounds the most rounds of
-	// delegation in a Loop (1–5).
-	Size   int `json:"size"`
+	// delegation in a Loop (1–5). An Agent has neither.
+	Size   int `json:"size,omitempty"`
 	Rounds int `json:"rounds,omitempty"`
+	// An Agent's rails: tokens for one answer across every call, the most
+	// it may cost in US dollars (0: no cap) and minutes.
+	Budget  int     `json:"budget,omitempty"`
+	MaxCost float64 `json:"maxCost,omitempty"`
+	Minutes int     `json:"minutes,omitempty"`
 	// Notes are extra instructions for the lead.
 	Notes string `json:"notes,omitempty"`
 }
@@ -121,6 +126,9 @@ const (
 	// Loop: the lead hands out tasks when it wants, reads the results and
 	// may hand out more, for up to Rounds rounds, then answers.
 	Loop = "loop"
+	// Agent: the lead spawns as many helpers as often as it likes (a
+	// spawn_agents tool), within a budget of tokens, cost and time.
+	Agent = "agent"
 )
 
 // TeamPrefix marks team names.
@@ -133,14 +141,26 @@ func (t Team) validate() error {
 	if !idRe.MatchString(t.ID) {
 		return errors.New("team id: lowercase letters, digits and dashes")
 	}
-	if t.Strategy != Pipeline && t.Strategy != Loop {
-		return errors.New("strategy should be pipeline or loop")
+	if t.Strategy != Pipeline && t.Strategy != Loop && t.Strategy != Agent {
+		return errors.New("strategy should be pipeline, loop or agent")
 	}
 	if t.Lead == "" || t.Worker == "" {
 		return errors.New("pick a lead and a worker model")
 	}
 	if strings.HasPrefix(t.Lead, TeamPrefix) || strings.HasPrefix(t.Worker, TeamPrefix) {
 		return errors.New("a team can't be a member of a team")
+	}
+	if t.Strategy == Agent {
+		if t.Budget < 1000 || t.Budget > 5_000_000 {
+			return errors.New("token budget: 1,000 to 5,000,000")
+		}
+		if !(t.MaxCost >= 0 && t.MaxCost <= 1000) {
+			return errors.New("cost cap: $0 to $1,000 (0 for none)")
+		}
+		if t.Minutes < 1 || t.Minutes > 240 {
+			return errors.New("time limit: 1 to 240 minutes")
+		}
+		return nil
 	}
 	if t.Size < 1 || t.Size > 8 {
 		return errors.New("workers per round: 1 to 8")
@@ -350,8 +370,14 @@ func (st *Store) Team(name string) (Team, bool) {
 // PutTeam adds or replaces a team.
 func (st *Store) PutTeam(t Team) error {
 	t.Title, t.Notes = strings.TrimSpace(t.Title), strings.TrimSpace(t.Notes)
-	if t.Strategy == Pipeline {
+	switch t.Strategy {
+	case Pipeline:
 		t.Rounds = 0
+	case Agent:
+		t.Size, t.Rounds = 0, 0
+	}
+	if t.Strategy != Agent {
+		t.Budget, t.MaxCost, t.Minutes = 0, 0, 0
 	}
 	if err := t.validate(); err != nil {
 		return err
