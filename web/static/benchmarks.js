@@ -49,10 +49,16 @@
     // them by being brief and wrong.
     tpr: { name: 'Tokens/right', val: (c) => (c.correct ? (c.tokens + (c.answered - c.correct) * penalty * typical.tokens) / c.correct : null) },
     spr: { name: 'Seconds/right', val: (c) => (c.correct && c.ms ? (c.ms / 1000 + (c.answered - c.correct) * penalty * typical.secs) / c.correct : null) },
+    // Price only means something for API models; local ones show –.
+    cpa: { name: '$/answer', val: (c) => (c.cost && c.answered ? c.cost / c.answered : null) },
+    cpr: { name: '$/right', val: (c) => (c.cost && c.correct ? (c.cost + (c.answered - c.correct) * penalty * typical.cost) / c.correct : null) },
   };
+  const PRICE = { cpa: true, cpr: true };
+  // hasCost: some model on the page was charged for, so the price metrics apply.
+  let hasCost = false;
   let penalty = (() => { const v = Number(store.get('bm-penalty-x')); return store.get('bm-penalty-x') != null && v >= 0 ? v : 1.5; })();
   // typical is the median answer on the board being ranked; standings sets it.
-  let typical = { tokens: 0, secs: 0 };
+  let typical = { tokens: 0, secs: 0, cost: 0 };
   const median = (xs) => {
     const a = xs.filter((x) => x != null && isFinite(x)).sort((p, q) => p - q);
     return a.length ? (a.length % 2 ? a[a.length >> 1] : (a[a.length / 2 - 1] + a[a.length / 2]) / 2) : 0;
@@ -96,6 +102,8 @@
 
   // ---- rendering ----
   function render() {
+    hasCost = data.rows.some((r) => Object.values(r.cells).some((c) => c && c.cost > 0));
+    if (PRICE[metric] && !hasCost) metric = 'score';
     renderStats();
     renderModel();
     renderBoard();
@@ -106,6 +114,7 @@
     root.querySelectorAll('[data-metric]').forEach((b) => {
       const on = b.dataset.metric === shown;
       if (b.dataset.metric === 'score') b.hidden = view === 'trade';
+      if (PRICE[b.dataset.metric]) b.hidden = !hasCost;
       b.classList.toggle('on', on);
       b.setAttribute('aria-checked', on ? 'true' : 'false');
     });
@@ -537,9 +546,11 @@
     tpt: 'Tokens written per question, thinking included',
     tpr: 'Tokens written for each right answer, each wrong one counting extra',
     spr: 'Seconds taken for each right answer, each wrong one counting extra',
+    cpa: 'Dollars an API model charged per question',
+    cpr: 'Dollars charged for each right answer, each wrong one counting extra',
   };
-  const LOWER_BETTER = { tpt: true, tpr: true, spr: true };
-  const BOARD_COLS = ['score', 'rpm', 'tpm', 'tps', 'tpt', 'tpr', 'spr'];
+  const LOWER_BETTER = { tpt: true, tpr: true, spr: true, cpa: true, cpr: true };
+  const boardCols = () => ['score', 'rpm', 'tpm', 'tps', 'tpt', 'tpr', 'spr', ...(hasCost ? ['cpa', 'cpr'] : [])];
   let cat = store.get('bm-cat') || 'overall';
   let view = store.get('bm-view') === 'trade' ? 'trade' : 'bars';
   let subset = (() => { try { return JSON.parse(store.get('bm-subset') || 'null'); } catch { return null; } })();
@@ -555,7 +566,7 @@
     return [ids, cat];
   }
   const metricVal = (key, cs) => (METRICS[key].val ? METRICS[key].val(sumCells(cs)) : cs.reduce((n, c) => n + c.score, 0) / cs.length);
-  const fmtMetric = (key, v) => (v == null ? '–' : key === 'score' ? `${pct(v)}` : key === 'tpt' || key === 'tpr' ? Math.round(v).toLocaleString() : num(v));
+  const fmtMetric = (key, v) => (v == null ? '–' : key === 'score' ? `${pct(v)}` : key === 'tpt' || key === 'tpr' ? Math.round(v).toLocaleString() : PRICE[key] ? money(v) : num(v));
   // standings ranks the models that finished every set in ids, by key;
   // the rest that finished some are listed as unranked.
   function standings(ids, key) {
@@ -564,6 +575,7 @@
     typical = {
       tokens: median(done.map((c) => (c.answered ? c.tokens / c.answered : null))),
       secs: median(done.map((c) => (c.answered && c.ms ? c.ms / 1000 / c.answered : null))),
+      cost: median(done.map((c) => (c.cost && c.answered ? c.cost / c.answered : null))),
     };
     for (const r of data.rows) {
       const cs = ids.map((id) => r.cells[id]);
@@ -648,8 +660,8 @@
       b.setAttribute('aria-checked', on ? 'true' : 'false');
     });
     $('bm-trade').hidden = view !== 'trade';
-    $('bm-penalty').hidden = metric !== 'tpr' && metric !== 'spr';
-    $('bm-pen-typ').textContent = `${Math.round(typical.tokens).toLocaleString()} tokens, ${Math.round(typical.secs)} s`;
+    $('bm-penalty').hidden = metric !== 'tpr' && metric !== 'spr' && metric !== 'cpr';
+    $('bm-pen-typ').textContent = `${Math.round(typical.tokens).toLocaleString()} tokens, ${Math.round(typical.secs)} s` + (typical.cost ? `, ${money(typical.cost)} for API models` : '');
     $('bm-bars').parentElement.hidden = view === 'trade';
     if (view === 'trade') {
       const xk = metric === 'score' ? 'tpm' : metric;
@@ -666,7 +678,9 @@
     const vals = ranked.map((x) => x.vals[metric]).filter((v) => v != null && isFinite(v));
     const max = Math.max(...vals, metric === 'score' ? 1 : 0);
     if (!ranked.length) bars.append(el('p', 'muted small bm-vbars-empty', `No model has finished ${ids.length === 1 ? setName(ids[0]) : 'all of these sets'} yet.`));
+    else if (PRICE[metric] && !vals.length) bars.append(el('p', 'muted small bm-vbars-empty', ranked.some((x) => x.vals.cpa != null) ? 'No API model has a right answer here yet, so none has a price per right answer.' : `No API model has finished ${ids.length === 1 ? setName(ids[0]) : 'all of these sets'} yet.`));
     for (const { r, vals: v } of ranked) {
+      if (PRICE[metric] && v[metric] == null) continue;
       const b = el('button', 'bm-vbar' + (r.name === picked ? ' sel' : ''));
       b.type = 'button';
       b.title = `${r.title}${r.quant ? ' · ' + r.quant : ''}: ${fmtMetric(metric, v[metric])}${metric === 'score' ? '%' : ' ' + m.name.toLowerCase()}. Click to pick it.`;
@@ -683,7 +697,7 @@
     t.innerHTML = '';
     const head = el('tr');
     head.append(el('th', 'bm-rank-n', '#'), el('th', 'bm-rank-model', 'Model'));
-    for (const k of BOARD_COLS) {
+    for (const k of boardCols()) {
       const th = el('th', 'bm-rank-num' + (k === metric ? ' on' : '') + (k === 'score' ? ' k-score' : ''));
       const hb = el('button', 'bm-rank-sort' + (k === metric ? ' on' : ''), k === 'score' ? 'Score' : METRICS[k].name);
       hb.type = 'button';
@@ -706,7 +720,7 @@
       nb.onclick = () => pick(r.name);
       nameCell.append(nb);
       tr.append(el('td', 'bm-rank-n', String(i + 1)), nameCell);
-      for (const k of BOARD_COLS) tr.append(el('td', 'bm-rank-num' + (k === metric ? ' on' : '') + (k === 'score' ? ' k-score' : ''), fmtMetric(k, v[k])));
+      for (const k of boardCols()) tr.append(el('td', 'bm-rank-num' + (k === metric ? ' on' : '') + (k === 'score' ? ' k-score' : ''), fmtMetric(k, v[k])));
       tbody.append(tr);
     });
     t.append(thead, tbody);
@@ -918,7 +932,7 @@
       box.append(b);
       return;
     }
-    for (const k of BOARD_COLS) {
+    for (const k of boardCols()) {
       const order = standings(ids, k).ranked;
       const i = order.findIndex((x) => x.r === r);
       const b = el('button', 'bm-rankchip' + (k === metric ? ' on' : '') + (i === 0 ? ' top' : ''));
