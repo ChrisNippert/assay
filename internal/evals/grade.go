@@ -3,6 +3,7 @@ package evals
 import (
 	"math"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -24,6 +25,8 @@ func (s *Set) Messages(q Question) (system, user string) {
 		b.WriteString("\n\nEnd your reply with a final line of the form \"Answer: N\", where N is just the number.")
 	case CheckExact:
 		b.WriteString("\n\nEnd your reply with a final line of the form \"Answer: …\" giving only the answer.")
+	case CheckSet:
+		b.WriteString("\n\nEnd your reply with a final line of the form \"Answer: a, b, c\" listing every value in the set (each once, separated by commas), in the order the question asks for.")
 	case CheckCode:
 		b.WriteString("\n\nWrite it in Python 3, using only the standard library. Put the complete solution in one ```python code block; it will be run against hidden tests.")
 	case CheckJudge:
@@ -76,6 +79,10 @@ func (s *Set) Grade(q Question, reply string) (got string, ok bool) {
 			}
 		case CheckChoice:
 			if letterIndex(got) >= 0 && letterIndex(got) == letterIndex(a) {
+				return got, true
+			}
+		case CheckSet:
+			if slices.Equal(setItems(got), setItems(a)) {
 				return got, true
 			}
 		default:
@@ -231,4 +238,15 @@ func Looping(s string) bool {
 		}
 	}
 	return false
+}
+
+// setItems reads a set written as "3, 5, 7", "{3 5 7}", "[AB, BA]" or
+// "{\"AB\", \"BA\"}": brackets, quotes and backticks are dropped, the rest is
+// split at commas, semicolons and spaces, and the sorted, lowercased,
+// de-duplicated values come back.
+func setItems(s string) []string {
+	s = strings.NewReplacer("{", " ", "}", " ", "[", " ", "]", " ", "(", " ", ")", " ", "\"", "", "'", "", "`", "", "\\", "", "$", "", "*", "").Replace(s)
+	items := strings.FieldsFunc(strings.ToLower(s), func(r rune) bool { return r == ',' || r == ';' || unicode.IsSpace(r) })
+	slices.Sort(items)
+	return slices.Compact(items)
 }

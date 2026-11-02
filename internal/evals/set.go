@@ -32,10 +32,11 @@ const (
 	CheckCode     = "code"     // the reply's last Python code block passes Tests
 	CheckJudge    = "judge"    // a judge model compares the reply with Answer (a reference solution)
 	CheckLean     = "lean"     // the reply's Lean code proves Statement, checked by Lean
+	CheckSet      = "set"      // the final answer is this set of values (any order, braces and spaces ignored; none missing or extra)
 )
 
 // Checks lists every check, for the UI.
-var Checks = []string{CheckNumber, CheckExact, CheckChoice, CheckContains, CheckRegex, CheckCode, CheckLean, CheckJudge}
+var Checks = []string{CheckNumber, CheckExact, CheckChoice, CheckContains, CheckRegex, CheckCode, CheckLean, CheckJudge, CheckSet}
 
 // Question is one item of a set.
 type Question struct {
@@ -187,6 +188,10 @@ func (s *Set) Validate() error {
 		case CheckRegex:
 			if _, err := regexp.Compile(q.Answer); err != nil {
 				return fmt.Errorf("%s: %v", n, err)
+			}
+		case CheckSet:
+			if len(setItems(q.Answer)) == 0 {
+				return fmt.Errorf("%s: the answer has no values", n)
 			}
 		case CheckExact, CheckContains, CheckJudge:
 		default:

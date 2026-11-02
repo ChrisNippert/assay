@@ -85,6 +85,9 @@ func TestGrade(t *testing.T) {
 	sci := Question{Prompt: "p", Answer: "32000", Check: CheckNumber, Tolerance: 100}
 	small := Question{Prompt: "p", Answer: "0.0045", Check: CheckNumber, Tolerance: 0.00002}
 	notRe := Question{Prompt: "p", Answer: "(?i)e", Check: CheckRegex, Not: true}
+	set := Question{Prompt: "p", Answer: "3, 5, 7", Check: CheckSet}
+	setStr := Question{Prompt: "p", Answer: "AB, BA", Check: CheckSet}
+	setPair := Question{Prompt: "p", Answer: "1:2, 3:4", Check: CheckSet}
 	cases := []struct {
 		q     Question
 		reply string
@@ -119,6 +122,18 @@ func TestGrade(t *testing.T) {
 		{small, "Answer: -4.5×10⁻³", false},
 		{notRe, "A cat naps", true},
 		{notRe, "The cat naps", false},
+		{set, "Answer: 3, 5, 7", true},
+		{set, "Answer: 7 5 3", true},
+		{set, "**Answer:** {3, 5, 7}", true},
+		{set, "Answer: [3,5,7]", true},
+		{set, "Answer: 3, 5", false},
+		{set, "Answer: 3, 5, 7, 8", false},
+		{set, "Answer: 3, 5, 5, 7", true},
+		{setStr, "Answer: {\"BA\", \"ab\"}", true},
+		{setStr, "Answer: AB", false},
+		{setStr, "Answer: AB, BA, BB", false},
+		{setPair, "Answer: 1:2, 3:4", true},
+		{setPair, "Answer: 1:2", false},
 	}
 	for _, c := range cases {
 		if got, ok := s.Grade(c.q, c.reply); ok != c.ok {
@@ -436,7 +451,7 @@ func verifyGenerated(t *testing.T, s *Set) {
 		t.Errorf("%s: no checker at verify/%s.py", s.ID, s.ID)
 		return
 	}
-	if exec.Command("python3", "-E", "-P", "-c", "import sympy, mpmath").Run() != nil {
+	if s.ID != "concurrency" && exec.Command("python3", "-E", "-P", "-c", "import sympy, mpmath").Run() != nil { // concurrency needs only the standard library
 		t.Logf("%s: python3 with sympy and mpmath not found; not verified", s.ID)
 		return
 	}

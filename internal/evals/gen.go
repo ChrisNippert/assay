@@ -1,6 +1,7 @@
 package evals
 
 import (
+	"cmp"
 	"fmt"
 	"hash/fnv"
 	"math"
@@ -29,6 +30,8 @@ type Generator struct {
 // GenSpec describes one generated set.
 type GenSpec struct {
 	ID, Name, Short, Description, System string
+	// Check is how answers are graded (default number).
+	Check string
 	// Seed picks the questions; bump it to write a fresh set.
 	Seed uint64
 	// PerGen is how many questions each generator writes.
@@ -49,7 +52,7 @@ func registerGen(g *GenSpec) { genSpecs = append(genSpecs, g) }
 
 // Build writes the set's questions.
 func (g *GenSpec) Build() (*Set, error) {
-	s := &Set{ID: g.ID, Name: g.Name, Short: g.Short, Description: g.Description, System: g.System, Check: CheckNumber, MaxTokens: g.MaxTokens, BuiltIn: true, Generated: true}
+	s := &Set{ID: g.ID, Name: g.Name, Short: g.Short, Description: g.Description, System: g.System, Check: cmp.Or(g.Check, CheckNumber), MaxTokens: g.MaxTokens, BuiltIn: true, Generated: true}
 	for _, gen := range g.Gens {
 		h := fnv.New64a()
 		h.Write([]byte(gen.ID))

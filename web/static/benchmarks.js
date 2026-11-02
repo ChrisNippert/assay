@@ -524,7 +524,7 @@
     ['Science', ['physics']],
     ['Code', ['code', 'coding', 'formulas']],
     ['Projects', ['projects-games', 'projects-sims']],
-    ['Reasoning', ['logic']],
+    ['Reasoning', ['logic', 'concurrency']],
     ['Knowledge', ['knowledge']],
     ['Instructions', ['instructions']],
     ['Proofs', ['lean']],
