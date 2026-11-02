@@ -43,14 +43,19 @@
     tpt: { name: 'Tokens/answer', val: (c) => (c.answered ? c.tokens / c.answered : null) },
     tpm: { name: 'Answers/min', val: (c) => (c.ms ? c.answered / (c.ms / 60000) : null) },
     rpm: { name: 'Right/min', val: (c) => (c.ms ? c.correct / (c.ms / 60000) : null) },
-    // The per-right costs charge each wrong answer a penalty on top, so a
-    // model can't win them by being cheap and wrong.
-    tpr: { name: 'Tokens/right', val: (c) => (c.correct ? (c.tokens + (c.answered - c.correct) * penalty.tokens) / c.correct : null) },
-    spr: { name: 'Seconds/right', val: (c) => (c.correct && c.ms ? (c.ms / 1000 + (c.answered - c.correct) * penalty.secs) / c.correct : null) },
+    // The per-right costs charge each wrong answer a multiple of the board's
+    // typical answer on top, the same for every model, so a model can't win
+    // them by being brief and wrong.
+    tpr: { name: 'Tokens/right', val: (c) => (c.correct ? (c.tokens + (c.answered - c.correct) * penalty * typical.tokens) / c.correct : null) },
+    spr: { name: 'Seconds/right', val: (c) => (c.correct && c.ms ? (c.ms / 1000 + (c.answered - c.correct) * penalty * typical.secs) / c.correct : null) },
   };
-  const penalty = (() => {
-    try { return { tokens: 2000, secs: 30, ...JSON.parse(store.get('bm-penalty') || '{}') }; } catch { return { tokens: 2000, secs: 30 }; }
-  })();
+  let penalty = (() => { const v = Number(store.get('bm-penalty-x')); return store.get('bm-penalty-x') != null && v >= 0 ? v : 1.5; })();
+  // typical is the median answer on the board being ranked; standings sets it.
+  let typical = { tokens: 0, secs: 0 };
+  const median = (xs) => {
+    const a = xs.filter((x) => x != null && isFinite(x)).sort((p, q) => p - q);
+    return a.length ? (a.length % 2 ? a[a.length >> 1] : (a[a.length / 2 - 1] + a[a.length / 2]) / 2) : 0;
+  };
   let metric = METRICS[store.get('bm-metric')] ? store.get('bm-metric') : 'score';
   // sumCells adds cells up, so speed stats can be had over several sets.
   const sumCells = (cs) => cs.reduce((a, c) => ({ tokens: a.tokens + (c.tokens || 0), ms: a.ms + (c.ms || 0), answered: a.answered + c.answered, correct: a.correct + c.correct }), { tokens: 0, ms: 0, answered: 0, correct: 0 });
@@ -550,6 +555,11 @@
   // the rest that finished some are listed as unranked.
   function standings(ids, key) {
     const ranked = [], unranked = [];
+    const done = data.rows.map((r) => ids.map((id) => r.cells[id])).filter((cs) => cs.every(finished)).map(sumCells);
+    typical = {
+      tokens: median(done.map((c) => (c.answered ? c.tokens / c.answered : null))),
+      secs: median(done.map((c) => (c.answered && c.ms ? c.ms / 1000 / c.answered : null))),
+    };
     for (const r of data.rows) {
       const cs = ids.map((id) => r.cells[id]);
       const left = ids.filter((id, i) => !finished(cs[i]));
@@ -634,6 +644,7 @@
     });
     $('bm-trade').hidden = view !== 'trade';
     $('bm-penalty').hidden = metric !== 'tpr' && metric !== 'spr';
+    $('bm-pen-typ').textContent = `${Math.round(typical.tokens).toLocaleString()} tokens, ${Math.round(typical.secs)} s`;
     $('bm-bars').parentElement.hidden = view === 'trade';
     if (view === 'trade') {
       const xk = metric === 'score' ? 'tpm' : metric;
@@ -1365,17 +1376,14 @@ answer = "7.5"
   root.querySelectorAll('[data-view]').forEach((b) => {
     b.onclick = () => { view = b.dataset.view; store.set('bm-view', view); render(); };
   });
-  for (const [id, k] of [['bm-pen-tokens', 'tokens'], ['bm-pen-secs', 'secs']]) {
-    const inp = $(id);
-    inp.value = penalty[k];
-    inp.onchange = () => {
-      const v = Number(inp.value);
-      if (!(v >= 0)) { inp.value = penalty[k]; return; }
-      penalty[k] = v;
-      store.set('bm-penalty', JSON.stringify(penalty));
-      render();
-    };
-  }
+  $('bm-pen-x').value = penalty;
+  $('bm-pen-x').onchange = () => {
+    const v = Number($('bm-pen-x').value);
+    if (!(v >= 0) || $('bm-pen-x').value === '') { $('bm-pen-x').value = penalty; return; }
+    penalty = v;
+    store.set('bm-penalty-x', String(v));
+    render();
+  };
   root.querySelectorAll('[data-metric]').forEach((b) => {
     b.onclick = () => {
       metric = b.dataset.metric;
