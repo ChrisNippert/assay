@@ -32,6 +32,7 @@ import (
 	"assay/internal/presets"
 	"assay/internal/projects"
 	"assay/internal/pulls"
+	"assay/internal/remote"
 	"assay/internal/scores"
 	"assay/internal/service"
 	"assay/internal/tools"
@@ -101,6 +102,9 @@ type Options struct {
 	Tools *tools.Store
 	// Limits holds the resource limits; nil keeps them in memory.
 	Limits *limits.Store
+	// Remote holds the API models the benchmarks can run; nil keeps them
+	// in memory.
+	Remote *remote.Store
 	// Voice is the speech service for voice mode; nil turns it off.
 	Voice *voice.Client
 	// VoiceSettings are voice mode's preferences. Required.
@@ -142,6 +146,7 @@ type Server struct {
 	// toolSt holds the tool settings; fetcher and searcher run web tools.
 	toolSt  *tools.Store
 	limitSt *limits.Store
+	remote  *remote.Store
 	version string
 	updates *update.Checker
 	service service.Service
@@ -196,7 +201,7 @@ type Server struct {
 func New(opts Options) (*Server, error) {
 	s := &Server{
 		ollama: opts.Ollama, chats: opts.Chats, chatSt: opts.ChatSettings, presets: opts.Presets,
-		hf: opts.HF, pulls: opts.Pulls, llama: opts.LlamaCpp, scores: opts.Scores, bench: opts.Bench, projects: opts.Projects, ragSt: opts.RAGSettings, toolSt: opts.Tools, limitSt: opts.Limits, version: opts.Version, updates: opts.Updates, service: opts.Service, serviceArgs: opts.ServiceArgs, indexQueue: make(chan indexJob, 256), voice: opts.Voice, voiceSt: opts.VoiceSettings, speech: opts.VoiceLauncher, memory: opts.Memory, log: opts.Logger, setup: openSetupState(opts.SetupFile),
+		hf: opts.HF, pulls: opts.Pulls, llama: opts.LlamaCpp, scores: opts.Scores, bench: opts.Bench, projects: opts.Projects, ragSt: opts.RAGSettings, toolSt: opts.Tools, limitSt: opts.Limits, remote: opts.Remote, version: opts.Version, updates: opts.Updates, service: opts.Service, serviceArgs: opts.ServiceArgs, indexQueue: make(chan indexJob, 256), voice: opts.Voice, voiceSt: opts.VoiceSettings, speech: opts.VoiceLauncher, memory: opts.Memory, log: opts.Logger, setup: openSetupState(opts.SetupFile),
 		vramUsed: hw.VRAMUsed,
 	}
 	if s.bench == nil {
@@ -226,6 +231,9 @@ func New(opts Options) (*Server, error) {
 	}
 	if s.ragSt == nil {
 		s.ragSt, _ = projects.OpenSettings("")
+	}
+	if s.remote == nil {
+		s.remote, _ = remote.Open("")
 	}
 	if s.limitSt == nil {
 		s.limitSt, _ = limits.Open("")
@@ -291,6 +299,12 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("GET /api/evals/run", s.handleEvalRunState)
 	mux.HandleFunc("POST /api/evals/run", s.handleEvalRunStart)
 	mux.HandleFunc("DELETE /api/evals/run", s.handleEvalRunCancel)
+	mux.HandleFunc("GET /api/remote", s.handleRemote)
+	mux.HandleFunc("PUT /api/remote/endpoints/{id}", s.handleRemoteEndpointPut)
+	mux.HandleFunc("DELETE /api/remote/endpoints/{id}", s.handleRemoteEndpointDelete)
+	mux.HandleFunc("GET /api/remote/endpoints/{id}/models", s.handleRemoteList)
+	mux.HandleFunc("PUT /api/remote/models/{id}", s.handleRemoteModelPut)
+	mux.HandleFunc("DELETE /api/remote/models/{id}", s.handleRemoteModelDelete)
 	mux.HandleFunc("GET /api/lean", s.handleLeanStatus)
 	mux.HandleFunc("POST /api/lean/install", s.handleLeanInstall)
 	mux.HandleFunc("DELETE /api/lean/install", s.handleLeanCancel)

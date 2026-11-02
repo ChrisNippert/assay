@@ -2237,7 +2237,8 @@ button.bm-th:hover { color: var(--text); }
 .bm-check > span:not(.muted) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bm-check .muted { margin-left: auto; white-space: nowrap; }
 .bm-field { display: flex; flex-direction: column; gap: 4px; }
-.bm-field input { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.bm-field input, .bm-field select, .bm-field textarea { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.bm-field textarea { resize: vertical; min-height: 5em; }
 .bm-toml { font-family: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace; font-size: 12.5px; line-height: 1.5; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--sunk, var(--soft)); color: var(--text); resize: vertical; min-height: 260px; tab-size: 2; }
 .bm-help summary { cursor: pointer; color: var(--muted); font-size: var(--fs-sm); }
 .bm-help ul { padding-left: 18px; margin: 6px 0; }
@@ -2452,3 +2453,10 @@ button.bm-th:hover { color: var(--text); }
 .bm-penalty { margin: 0 0 var(--s3, 12px); line-height: 2.2; }
 .bm-penalty[hidden] { display: none; }
 .bm-penalty input { width: 6em; margin: 0 4px; }
+
+/* Benchmarks › API models. */
+.bm-api-row { width: 100%; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.bm-api-row:hover { background: var(--soft, var(--raised)); }
+.bm-api-prompt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; }
+.bm-api-eps { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-top: var(--s2, 8px); }
+#bm-api > p { margin: 0 0 var(--s3, 12px); }

@@ -905,6 +905,25 @@ bending, reversed tie orders…), all caught except two that behave the
 same as correct code. The leaderboard groups both under Projects.
 Pass/fail per program, so a nearly working game scores 0.
 
+**API models (internal/remote, 2026-11-01).** So API models can be
+benchmarked next to local ones, and so one API model can be tried with
+different system prompts. An endpoint is any OpenAI-compatible base URL
+and key (OpenRouter by default); a model is an id there plus an optional
+system prompt (put before each set's own) and reasoning effort. Both live in
+`<config>/remote.json`, written 0600; the browser only ever sees whether a
+key is set and its last four characters, and changing an endpoint's URL
+drops its saved key so it can't be redirected elsewhere. API models are
+named `api:<id>` and keyed for results by a hash of URL, model, prompt and
+reasoning, so editing any of them starts fresh results while the old ones
+stay on disk ("Copy with another prompt" is the way to compare prompts).
+`runAPIEvalItem` skips loading and the GPU wait and answers 4 questions at
+once over streamed chat completions (reasoning read from `reasoning` or
+`reasoning_content`); tokens and, on OpenRouter, cost come from the usage
+chunk, and the cost is saved per answer and summed per cell. A 400 reply is
+retried once without sampling options and with `max_completion_tokens`, for
+APIs that refuse them. A refused key or an empty balance stops the item
+instead of failing every question. Their tokens/s include network time.
+
 **Running.** `POST /api/evals/run` takes models × sets, a think mode
 (`""` = the model's default, `off`) and a token limit per reply (8192 with
 thinking, 2048 without; a set's `max_tokens` raises it). Sampling is

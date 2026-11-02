@@ -31,6 +31,7 @@ import (
 	"assay/internal/presets"
 	"assay/internal/projects"
 	"assay/internal/pulls"
+	"assay/internal/remote"
 	"assay/internal/scores"
 	"assay/internal/server"
 	"assay/internal/tools"
@@ -139,6 +140,10 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("chat settings: %w", err)
 	}
+	remoteStore, err := remote.Open(filepath.Join(*configDir, "remote.json"))
+	if err != nil {
+		return fmt.Errorf("API models: %w", err)
+	}
 	limitStore, err := limits.Open(filepath.Join(*configDir, "limits.json"))
 	if err != nil {
 		return fmt.Errorf("resource limits: %w", err)
@@ -193,6 +198,7 @@ func run() error {
 		RAGSettings:   ragSettings,
 		Tools:         toolSettings,
 		Limits:        limitStore,
+		Remote:        remoteStore,
 		HF:            hfClient,
 		Pulls:         pulls.New(enginePuller{eng}, log),
 		LlamaCpp:      llama,

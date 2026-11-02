@@ -58,18 +58,20 @@
   };
   let metric = METRICS[store.get('bm-metric')] ? store.get('bm-metric') : 'score';
   // sumCells adds cells up, so speed stats can be had over several sets.
-  const sumCells = (cs) => cs.reduce((a, c) => ({ tokens: a.tokens + (c.tokens || 0), ms: a.ms + (c.ms || 0), answered: a.answered + c.answered, correct: a.correct + c.correct }), { tokens: 0, ms: 0, answered: 0, correct: 0 });
+  const sumCells = (cs) => cs.reduce((a, c) => ({ tokens: a.tokens + (c.tokens || 0), ms: a.ms + (c.ms || 0), answered: a.answered + c.answered, correct: a.correct + c.correct, cost: a.cost + (c.cost || 0) }), { tokens: 0, ms: 0, answered: 0, correct: 0, cost: 0 });
   const dur = (ms) => {
     const s = Math.round(ms / 1000);
     if (s < 90) return `${s} s`;
     const m = Math.round(s / 60);
     return m < 90 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`;
   };
+  const money = (v) => (v >= 1 ? `$${v.toFixed(2)}` : v >= 0.01 ? `$${v.toFixed(3)}` : `$${v.toPrecision(2)}`);
   const cellStats = (c) => {
     const parts = [];
     if (c.ms) parts.push(`${num(METRICS.tps.val(c))} tokens/s`, `${num(METRICS.tpm.val(c))} answers/min`, `${num(METRICS.rpm.val(c))} right/min`, `${dur(c.ms)} in all`);
     if (c.answered) parts.push(`${Math.round(METRICS.tpt.val(c)).toLocaleString()} tokens/answer`);
     if (c.correct) parts.push(`${Math.round(c.tokens / c.correct).toLocaleString()} tokens per right answer`);
+    if (c.cost) parts.push(`${money(c.cost)} in all${c.correct ? `, ${money(c.cost / c.correct)} per right answer` : ''}`);
     return parts.join(' · ');
   };
   const setName = (id) => (data.sets.find((s) => s.id === id) || { name: id }).name;
@@ -1393,6 +1395,7 @@ answer = "7.5"
       render();
     };
   });
+  document.addEventListener('assay:remote', reload);
   if (suite) reload(); else render();
   renderRun();
   if (run.running) poll();

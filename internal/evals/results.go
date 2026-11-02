@@ -34,6 +34,8 @@ type Answer struct {
 	Looped bool   `json:"looped,omitempty"`
 	Ms     int64  `json:"ms"`
 	Error  string `json:"error,omitempty"`
+	// Cost is what an API model charged for it, in US dollars.
+	Cost float64 `json:"cost,omitempty"`
 	// Output is what the tests printed (code check).
 	Output string `json:"output,omitempty"`
 	// Pending marks an answer waiting for a judge; Judge is the judge's

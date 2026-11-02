@@ -10,7 +10,7 @@ import (
 
 const (
 	local  = "127.0.0.1:5555"
-	remote = "192.168.1.20:5555"
+	remoteAddr = "192.168.1.20:5555"
 )
 
 func TestServiceAPI(t *testing.T) {
@@ -36,13 +36,13 @@ func TestServiceAPIRefusesRemote(t *testing.T) {
 	s, _, _ := newTestServer(t)
 	fake := service.NewFake("/x/app")
 	s.service = fake
-	rec := doFrom(s, remote, "PUT", "/api/service", `{"enabled":true}`)
+	rec := doFrom(s, remoteAddr, "PUT", "/api/service", `{"enabled":true}`)
 	if rec.Code != 403 || fake.Status(nil).Enabled {
 		t.Fatalf("remote PUT: %d %s", rec.Code, rec.Body)
 	}
 	// A remote GET learns nothing: not even the path of the binary.
 	fake.Install(nil, []string{"-secret"}, false)
-	rec = doFrom(s, remote, "GET", "/api/service", "")
+	rec = doFrom(s, remoteAddr, "GET", "/api/service", "")
 	if rec.Code != 200 || strings.Contains(rec.Body.String(), "secret") || !strings.Contains(rec.Body.String(), `"supported":false`) {
 		t.Fatalf("remote GET: %d %s", rec.Code, rec.Body)
 	}
@@ -65,7 +65,7 @@ func TestSettingsShowsServiceRowOnlyLocally(t *testing.T) {
 	if body := doFrom(s, local, "GET", "/settings", "").Body.String(); !strings.Contains(body, `id="svc-on"`) || !strings.Contains(body, "v9.9.9") {
 		t.Error("loopback settings lacks the start-on-boot switch or the version")
 	}
-	if body := doFrom(s, remote, "GET", "/settings", "").Body.String(); strings.Contains(body, `id="svc-on"`) {
+	if body := doFrom(s, remoteAddr, "GET", "/settings", "").Body.String(); strings.Contains(body, `id="svc-on"`) {
 		t.Error("remote settings shows the start-on-boot switch")
 	}
 }

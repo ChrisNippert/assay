@@ -16,6 +16,7 @@ import (
 	"assay/internal/evals"
 	"assay/internal/lean"
 	"assay/internal/ollama"
+	"assay/internal/remote"
 	"assay/internal/scores"
 )
 
@@ -193,6 +194,16 @@ func (s *Server) startEvals(ctx context.Context, req evalRunRequest) (evalState,
 	}
 	var items []evalItem
 	for _, name := range req.Models {
+		if m, ep, ok := s.remote.Lookup(name); ok {
+			for _, set := range sets {
+				if !slices.ContainsFunc(items, func(it evalItem) bool { return it.Model == name && it.Set == set.ID }) {
+					items = append(items, s.evalItemFor(name, m.Title, m.Digest(ep), set, req))
+				}
+			}
+			continue
+		} else if strings.HasPrefix(name, remote.Prefix) {
+			return evalState{}, errors.New("no such API model: " + name)
+		}
 		gi := slices.IndexFunc(groups, func(g modelGroup) bool { return g.Has(name) })
 		if gi < 0 {
 			return evalState{}, errors.New("no such model: " + name)
@@ -203,16 +214,9 @@ func (s *Server) startEvals(ctx context.Context, req evalRunRequest) (evalState,
 			if slices.ContainsFunc(items, func(it evalItem) bool { return it.Model == g.Primary.Name && it.Set == set.ID }) {
 				continue
 			}
-			it := evalItem{Model: g.Primary.Name, Title: title, Set: set.ID, SetName: set.Name, State: itemPending, Total: len(set.Questions)}
+			it := s.evalItemFor(g.Primary.Name, title, g.Primary.Digest, set, req)
 			if isEmbeddingName(g.Primary.Name) {
 				it.State, it.Reason = itemSkipped, "It's an embedding model; it doesn't write text."
-			} else if old, ok := s.evalRes.Get(g.Primary.Digest, set.ID, req.Think); ok && old.Current(set.Hash) {
-				if old.Done() && !req.Redo {
-					it.State, it.Reason = itemSkipped, "Already done."
-					it.Answered, it.Correct = len(old.Answers), old.Correct
-				} else if !req.Redo {
-					it.Answered, it.Correct = len(old.Answers), old.Correct // resumes
-				}
 			}
 			items = append(items, it)
 		}
@@ -227,6 +231,19 @@ func (s *Server) startEvals(ctx context.Context, req evalRunRequest) (evalState,
 	j.mu.Unlock()
 	go s.runEvals(jctx, req.Redo)
 	return j.state(), nil
+}
+
+// evalItemFor makes the queue entry for one model and set, picking up a
+// saved run: skipped when done, resumed when part done.
+func (s *Server) evalItemFor(name, title, digest string, set *evals.Set, req evalRunRequest) evalItem {
+	it := evalItem{Model: name, Title: title, Set: set.ID, SetName: set.Name, State: itemPending, Total: len(set.Questions)}
+	if old, ok := s.evalRes.Get(digest, set.ID, req.Think); ok && old.Current(set.Hash) && !req.Redo {
+		it.Answered, it.Correct = len(old.Answers), old.Correct // resumes
+		if old.Done() {
+			it.State, it.Reason = itemSkipped, "Already done."
+		}
+	}
+	return it
 }
 
 func groupTitle(g modelGroup) string {
@@ -307,6 +324,9 @@ func (s *Server) runEvalItem(ctx context.Context, i int, redo bool) error {
 	if err != nil {
 		return errors.New("the set is gone")
 	}
+	if strings.HasPrefix(it.Model, remote.Prefix) {
+		return s.runAPIEvalItem(ctx, i, set, redo)
+	}
 	models, err := s.ollama.List(ctx)
 	if err != nil {
 		return err
@@ -349,23 +369,8 @@ func (s *Server) runEvalItem(ctx context.Context, i int, redo bool) error {
 		}
 		if err != nil {
 			a.Error = err.Error()
-		} else {
-			switch set.CheckOf(q) {
-			case evals.CheckCode:
-				if err := gradeCode(ctx, q, &a); ctx.Err() != nil {
-					return ctx.Err()
-				} else if err != nil {
-					return err // no Python: the rest would fail the same way
-				}
-			case evals.CheckJudge:
-				a.Pending = true
-			case evals.CheckLean:
-				if err := s.gradeLean(ctx, q, &a); ctx.Err() != nil {
-					return ctx.Err()
-				} else if err != nil {
-					return err
-				}
-			}
+		} else if err := s.gradeAnswer(ctx, set, q, &a); err != nil {
+			return err
 		}
 		res.Answers = append(res.Answers, a)
 		res.Recount()
@@ -379,6 +384,25 @@ func (s *Server) runEvalItem(ctx context.Context, i int, redo bool) error {
 }
 
 // gradeCode runs the reply's code against the question's tests.
+// gradeAnswer runs the checks that need more than the reply: code and
+// Lean are run, judged answers wait. Its error stops the run (no Python,
+// no Lean, or cancelled).
+func (s *Server) gradeAnswer(ctx context.Context, set *evals.Set, q evals.Question, a *evals.Answer) error {
+	var err error
+	switch set.CheckOf(q) {
+	case evals.CheckCode:
+		err = gradeCode(ctx, q, a)
+	case evals.CheckJudge:
+		a.Pending = true
+	case evals.CheckLean:
+		err = s.gradeLean(ctx, q, a)
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return err
+}
+
 func gradeCode(ctx context.Context, q evals.Question, a *evals.Answer) error {
 	code, ok := evals.ExtractCode(a.Reply)
 	if !ok {
@@ -642,6 +666,8 @@ type evalCell struct {
 	Tokens      int   `json:"tokens"`
 	Ms          int64 `json:"ms"`
 	RightTokens int   `json:"rightTokens"`
+	// Cost is what an API model charged, in US dollars.
+	Cost float64 `json:"cost,omitempty"`
 }
 
 type evalRow struct {
@@ -651,6 +677,10 @@ type evalRow struct {
 	Digest string              `json:"digest"`
 	Params float64             `json:"params,omitempty"` // billions
 	Cells  map[string]evalCell `json:"cells"`
+	// API marks an API model; System and Reasoning are how it's run.
+	API       bool   `json:"api,omitempty"`
+	System    string `json:"system,omitempty"`
+	Reasoning string `json:"reasoning,omitempty"`
 	// Overall is the mean score over the suite, when every suite set is done.
 	Overall *float64 `json:"overall,omitempty"`
 	// Index is the published Intelligence Index of the base model; Of names it.
@@ -719,38 +749,8 @@ func (s *Server) evalResultsFor(ctx context.Context, think string, suite []strin
 		if isEmbeddingName(g.Primary.Name) {
 			continue
 		}
-		row := evalRow{Name: g.Primary.Name, Title: groupTitle(g), Quant: quantOf(g), Digest: g.Primary.Digest, Params: float64(parseParams(g.Primary.Details.ParameterSize)) / 1e9, Cells: map[string]evalCell{}}
-		for _, r := range byDigest[g.Primary.Digest] {
-			c := evalCell{Score: r.Score(), Correct: r.Correct, Answered: len(r.Answers), Total: r.Total, Done: r.Done(), At: r.At, Pending: r.Pending()}
-			c.Stale = hashes[r.Set] != "" && !r.Current(hashes[r.Set])
-			for _, a := range r.Answers {
-				c.Tokens += a.Tokens
-				c.Ms += a.Ms
-				if a.Correct {
-					c.RightTokens += a.Tokens
-				}
-				if a.Cut || a.Looped {
-					c.Cut++
-				}
-				if a.Error != "" {
-					c.Errors++
-				}
-			}
-			row.Cells[r.Set] = c
-		}
-		sum, all := 0.0, true
-		for _, id := range suite {
-			c, ok := row.Cells[id]
-			if !ok || !c.Done || c.Stale {
-				all = false
-				break
-			}
-			sum += c.Score
-		}
-		if all {
-			v := sum / float64(len(suite))
-			row.Overall = &v
-		}
+		row := evalRow{Name: g.Primary.Name, Title: groupTitle(g), Quant: quantOf(g), Digest: g.Primary.Digest, Params: float64(parseParams(g.Primary.Details.ParameterSize)) / 1e9}
+		fillRow(&row, byDigest[g.Primary.Digest], hashes, suite)
 		out.Rows = append(out.Rows, row)
 		if g.HFRepo != "" && row.Overall != nil {
 			i := len(out.Rows) - 1
@@ -770,6 +770,18 @@ func (s *Server) evalResultsFor(ctx context.Context, think string, suite []strin
 		}
 	}
 	wg.Wait()
+	for _, m := range s.remote.Models() {
+		ep, ok := s.remote.Endpoint(m.Endpoint)
+		if !ok {
+			continue
+		}
+		row := evalRow{Name: m.Name(), Title: m.Title, Quant: ep.Name, Digest: m.Digest(ep), API: true, System: m.System, Reasoning: m.Reasoning}
+		if m.System != "" {
+			row.Quant += " · own prompt"
+		}
+		fillRow(&row, byDigest[row.Digest], hashes, suite)
+		out.Rows = append(out.Rows, row)
+	}
 	out.Fit = fitRows(out.Rows)
 	sort.SliceStable(out.Rows, func(a, b int) bool {
 		x, y := out.Rows[a], out.Rows[b]
@@ -782,6 +794,44 @@ func (s *Server) evalResultsFor(ctx context.Context, think string, suite []strin
 		return len(x.Cells) > len(y.Cells)
 	})
 	return out, nil
+}
+
+// fillRow adds a row's cells from its results and its overall when every
+// suite set is done.
+func fillRow(row *evalRow, results []*evals.Result, hashes map[string]string, suite []string) {
+	row.Cells = map[string]evalCell{}
+	for _, r := range results {
+		c := evalCell{Score: r.Score(), Correct: r.Correct, Answered: len(r.Answers), Total: r.Total, Done: r.Done(), At: r.At, Pending: r.Pending()}
+		c.Stale = hashes[r.Set] != "" && !r.Current(hashes[r.Set])
+		for _, a := range r.Answers {
+			c.Tokens += a.Tokens
+			c.Ms += a.Ms
+			c.Cost += a.Cost
+			if a.Correct {
+				c.RightTokens += a.Tokens
+			}
+			if a.Cut || a.Looped {
+				c.Cut++
+			}
+			if a.Error != "" {
+				c.Errors++
+			}
+		}
+		row.Cells[r.Set] = c
+	}
+	sum, all := 0.0, true
+	for _, id := range suite {
+		c, ok := row.Cells[id]
+		if !ok || !c.Done || c.Stale {
+			all = false
+			break
+		}
+		sum += c.Score
+	}
+	if all {
+		v := sum / float64(len(suite))
+		row.Overall = &v
+	}
 }
 
 // fitRows fits the line on the rows with both an overall score and an
