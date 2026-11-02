@@ -884,6 +884,20 @@ the .tar.zst is smaller but needs zstd, which Go's stdlib lacks) into
 installed. The 16 built-in theorems' reference proofs (in `answer`) are
 checked by `TestBuiltinLeanReferences`; `TestCheck` covers the cheats.
 
+**Concurrent outputs (gen_concurrency.go, check `set`, 2026-11-02).** 55
+generated questions: small 2–3-thread programs in pseudo-code under a
+stated sequentially consistent model (a statement with the shared variable
+on both sides is two steps), asking for every possible final value, `x:y`
+pair or printed output. Easy: lost updates, print interleavings; medium:
+three threads, `repeat`, `join`, a lock dropped between read and write;
+hard: partial locks, check-then-act, `wait_until` spin-waits, two
+variables. The generator keeps each program as a small AST, renders it and
+enumerates every interleaving (DFS, memoised on the full state).
+`verify/concurrency.py` re-parses the program from the prompt text and
+recomputes the answers with its own BFS interpreter, so it also catches the
+prompt and answer disagreeing. The `set` check ignores order, spacing,
+braces and quotes and fails a missing or extra value.
+
 **Project sets (builtin/projects-games.toml, projects-sims.toml).** Asked
 for 2026-11-01 because rankings built on short puzzles didn't match how
 models do when asked to build something real, like a game or a simulation.
