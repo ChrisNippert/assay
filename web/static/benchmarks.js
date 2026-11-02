@@ -724,7 +724,83 @@
         un.append(b);
       }
     }
+    renderBreakdown(ids, ranked);
     renderRanks(ids, label, ranked, unranked);
+  }
+  // groupsOf splits the board's sets for the breakdown: by category on
+  // Overall, by set everywhere else. Sets in no category go under Other.
+  function groupsOf(ids) {
+    if (cat !== 'overall') return ids.map((id) => ({ key: id, name: shortName(data.sets.find((s) => s.id === id) || { name: id }), ids: [id] }));
+    const groups = CATS.map(([n, sets]) => ({ key: n, name: n, ids: ids.filter((id) => sets.includes(id)) })).filter((g) => g.ids.length);
+    const rest = ids.filter((id) => !groups.some((g) => g.ids.includes(id)));
+    if (rest.length) groups.push({ key: 'other', name: 'Other', ids: rest });
+    return groups;
+  }
+  let splitSort = null;
+  // renderBreakdown shows the ranked models' metric on each part of the
+  // board, so a category score can be read back to the sets behind it.
+  function renderBreakdown(ids, ranked) {
+    const box = $('bm-breakdown');
+    const groups = groupsOf(ids);
+    box.hidden = groups.length < 2 || !ranked.length;
+    if (box.hidden) return;
+    const keep = typical;
+    const per = new Map(groups.map((g) => {
+      const vals = new Map(standings(g.ids, metric).ranked.map((x) => [x.r.name, x.vals[metric]]));
+      return [g.key, vals];
+    }));
+    typical = keep;
+    if (splitSort && !per.has(splitSort)) splitSort = null;
+    const lo = LOWER_BETTER[metric];
+    const v = (name, key) => per.get(key).get(name) ?? (lo ? Infinity : -Infinity);
+    const rows = splitSort ? [...ranked].sort((a, b) => (lo ? v(a.r.name, splitSort) - v(b.r.name, splitSort) : v(b.r.name, splitSort) - v(a.r.name, splitSort))) : ranked;
+    const best = new Map(groups.map((g) => {
+      const xs = [...per.get(g.key).values()].filter((x) => x != null && isFinite(x));
+      return [g.key, xs.length ? (lo ? Math.min(...xs) : Math.max(...xs)) : null];
+    }));
+    $('bm-breakdown-h').textContent = `${metric === 'score' ? 'Score' : METRICS[metric].name} by ${cat === 'overall' ? 'category' : 'set'}`;
+    const t = $('bm-split');
+    t.innerHTML = '';
+    const head = el('tr');
+    const all = el('button', 'bm-rank-sort' + (splitSort ? '' : ' on'), metric === 'score' ? 'Score' : METRICS[metric].name);
+    all.type = 'button';
+    all.title = 'Sort like the board';
+    all.onclick = () => { splitSort = null; renderBreakdown(ids, ranked); };
+    const allTh = el('th', 'bm-rank-num');
+    allTh.append(all);
+    head.append(el('th', 'bm-rank-n', '#'), el('th', 'bm-rank-model', 'Model'), allTh);
+    for (const g of groups) {
+      const th = el('th', 'bm-rank-num');
+      const hb = el('button', 'bm-rank-sort' + (splitSort === g.key ? ' on' : ''), g.name);
+      hb.type = 'button';
+      hb.title = `Sort by ${g.name}${g.ids.length > 1 ? ': ' + g.ids.map(setName).join(', ') : ''}`;
+      hb.onclick = () => { splitSort = g.key; renderBreakdown(ids, ranked); };
+      th.setAttribute('aria-sort', splitSort === g.key ? (lo ? 'ascending' : 'descending') : 'none');
+      th.append(hb);
+      head.append(th);
+    }
+    const thead = el('thead');
+    thead.append(head);
+    const tbody = el('tbody');
+    rows.forEach(({ r, vals }, i) => {
+      const tr = el('tr', r.name === picked ? 'sel' : '');
+      const nameCell = el('td', 'bm-rank-model');
+      const nb = el('button', 'bm-rank-pick');
+      nb.type = 'button';
+      nb.append(el('span', 'bm-rank-title', r.title));
+      if (r.quant) nb.append(el('span', 'bm-rank-quant', r.quant));
+      nb.onclick = () => pick(r.name);
+      nameCell.append(nb);
+      tr.append(el('td', 'bm-rank-n', String(i + 1)), nameCell, el('td', 'bm-rank-num' + (splitSort ? '' : ' on'), fmtMetric(metric, vals[metric])));
+      for (const g of groups) {
+        const x = per.get(g.key).get(r.name);
+        const td = el('td', 'bm-rank-num' + (splitSort === g.key ? ' on' : '') + (x != null && x === best.get(g.key) && rows.length > 1 ? ' best' : ''), fmtMetric(metric, x));
+        td.title = `${r.title} on ${g.name}`;
+        tr.append(td);
+      }
+      tbody.append(tr);
+    });
+    t.append(thead, tbody);
   }
   // renderTradeoff plots score against a speed or token metric (log scale,
   // better to the right) and joins the frontier: the models no other model
