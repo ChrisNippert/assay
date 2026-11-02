@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -272,7 +273,14 @@ func (tr *teamRun) leadCall(ctx context.Context, msgs []ollama.Message, tools []
 		opts["num_predict"] = tr.maxTok
 	}
 	var a evals.Answer
-	if !mb.api {
+	if tr.tog != nil {
+		maps.Copy(opts, tr.tog.opts(mb))
+		if tr.chat == nil {
+			if err := tr.s.evalWait(ctx); err != nil {
+				return ollama.Message{}, a, err
+			}
+		}
+	} else if !mb.api {
 		tr.gpu.Lock()
 		defer tr.gpu.Unlock()
 		if tr.chat == nil {

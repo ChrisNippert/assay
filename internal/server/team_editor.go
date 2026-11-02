@@ -148,7 +148,7 @@ func (s *Server) chatTeamEditor(ctx context.Context, t remote.Team, req ollama.C
 	}
 	var gpu sync.Mutex
 	loaded, numCtx := "", 0
-	tr := &teamRun{s: s, t: t, lead: lead, worker: worker, maxTok: intOf(req.Options["num_predict"]), gpu: &gpu, loaded: &loaded, numCtx: &numCtx, chat: &req, emit: fn, live: true}
+	tr := &teamRun{s: s, t: t, lead: lead, worker: worker, maxTok: intOf(req.Options["num_predict"]), gpu: &gpu, loaded: &loaded, numCtx: &numCtx, chat: &req, emit: fn, live: true, tog: s.together(ctx, t, lead, worker)}
 	start := time.Now()
 	if t.Strategy == remote.Pipeline && msgs[len(msgs)-1].Role == "user" {
 		if msgs, err = tr.editorParts(ctx, msgs); err != nil {

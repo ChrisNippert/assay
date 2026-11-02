@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -155,6 +156,7 @@ const (
 // loadOpts are the request options that need a (re)start to change.
 type loadOpts struct {
 	Ctx         int    // 0: let llama.cpp fit the largest that fits
+	Slots       int    // requests served at once, sharing Ctx; 0 or 1: one
 	GPULayers   int    // -1: let llama.cpp decide
 	CPUMoE      int    // cpuMoEUnset, cpuMoEAll, or how many layers keep their experts on the CPU
 	LoadMode    string // --load-mode; "": llama.cpp's default (mmap)
@@ -209,6 +211,9 @@ func loadOptsFrom(o map[string]any) loadOpts {
 	}
 	if v, ok := num(o["num_ctx"]); ok && v > 0 {
 		lo.Ctx = int(v)
+	}
+	if v, ok := num(o["num_parallel"]); ok && v > 1 {
+		lo.Slots = int(v)
 	}
 	if v, ok := num(o["num_gpu"]); ok && v >= 0 {
 		lo.GPULayers = int(v)
@@ -338,9 +343,14 @@ func (e *Engine) args(m *Model, o loadOpts, port int) []string {
 	a := []string{
 		"-m", e.store.Blob(m.Files[0]),
 		"--host", "127.0.0.1", "--port", strconv.Itoa(port),
-		"-np", "1", // more slots split the context and overfill VRAM
 		"--jinja", "--no-webui", "-lv", "4",
 		"-a", m.Name,
+	}
+	if o.Slots > 1 {
+		// Slots share one context (a team's workers, side by side).
+		a = append(a, "-np", strconv.Itoa(o.Slots), "-kvu")
+	} else {
+		a = append(a, "-np", "1") // more slots split the context and overfill VRAM
 	}
 	// Without a context, --fit would grow it to the model's maximum (262k
 	// for Qwen3.5), which made writing 3x slower here (15 vs 46 tok/s on a
@@ -492,7 +502,7 @@ func (e *Engine) ensure(ctx context.Context, name string, options map[string]any
 		e.stop(p)
 	}
 	if !o.Embedding && o.GPULayers != 0 {
-		e.makeRoom(m.Name)
+		e.makeRoom(m.Name, e.keepWith(options))
 	}
 	// The load goes on if the request that asked for it goes away (the
 	// user switched chats or pages): it's slow, and they'll want the model.
@@ -547,15 +557,41 @@ var oomRe = regexp.MustCompile(`(?i)out of memory|failed to allocate|unable to a
 
 func outOfMemory(err error) bool { return errors.Is(err, errGPUMemory) }
 
+// keepWith reads the keep_with option: models (a list, or names joined by
+// commas) that loading this one shouldn't unload, as a team's lead and
+// workers that fit on the GPU together.
+func (e *Engine) keepWith(options map[string]any) []string {
+	var names []string
+	switch v := options["keep_with"].(type) {
+	case string:
+		names = strings.Split(v, ",")
+	case []string:
+		names = v
+	case []any:
+		for _, x := range v {
+			if s, ok := x.(string); ok {
+				names = append(names, s)
+			}
+		}
+	}
+	var out []string
+	for _, n := range names {
+		if m, err := e.store.Get(strings.TrimSpace(n)); err == nil {
+			out = append(out, m.Name)
+		}
+	}
+	return out
+}
+
 // makeRoom stops other models that use the GPU, so the new one gets it
-// whole, like Ollama does. Pinned models, CPU-only models and embedding
-// models stay; llama.cpp fits the new one around them.
-func (e *Engine) makeRoom(except string) {
+// whole, like Ollama does. Pinned models, CPU-only models, embedding
+// models and those in keep stay; llama.cpp fits the new one around them.
+func (e *Engine) makeRoom(except string, keep []string) {
 	e.mu.Lock()
 	var victims []*proc
 	for name, p := range e.procs {
 		p.mu.Lock()
-		keep := name == except || p.pinned || p.opts.Embedding || p.opts.GPULayers == 0 || p.vram == 0 || p.busy > 0
+		keep := name == except || slices.Contains(keep, name) || p.pinned || p.opts.Embedding || p.opts.GPULayers == 0 || p.vram == 0 || p.busy > 0
 		p.mu.Unlock()
 		if !keep {
 			victims = append(victims, p)
@@ -1237,6 +1273,22 @@ func (e *Engine) SetServer(path string) {
 	e.mu.Lock()
 	e.opt.Server = path
 	e.mu.Unlock()
+}
+
+// WeightsSize is the size of a model's own weights: its files without the
+// vision projector or a draft. 0 if it isn't installed.
+func (e *Engine) WeightsSize(name string) int64 {
+	m, err := e.store.Get(name)
+	if err != nil {
+		return 0
+	}
+	var n int64
+	for _, f := range m.Files {
+		if fi, err := os.Stat(e.store.Blob(f)); err == nil {
+			n += fi.Size()
+		}
+	}
+	return n
 }
 
 // LoadedNames lists the models the engine has running, so callers can ask

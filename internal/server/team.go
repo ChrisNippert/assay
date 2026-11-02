@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"regexp"
 	"slices"
@@ -107,6 +108,8 @@ type teamRun struct {
 	gpu    *sync.Mutex
 	loaded *string
 	numCtx *int
+	// tog is set when a local lead and workers stay loaded together.
+	tog *together
 
 	mu     sync.Mutex
 	tokens int
@@ -186,7 +189,7 @@ func (tr *teamRun) call(ctx context.Context, mb member, msgs []remote.Message, s
 	var a evals.Answer
 	var err error
 	if tr.chat != nil {
-		if !mb.api {
+		if !mb.api && tr.tog == nil {
 			tr.gpu.Lock()
 			defer tr.gpu.Unlock()
 		}
@@ -197,6 +200,10 @@ func (tr *teamRun) call(ctx context.Context, mb member, msgs []remote.Message, s
 			m.Reasoning = "off"
 		}
 		a, err = tr.s.askAPIMsgs(ctx, mb.ep, m, msgs, tr.maxTok)
+	} else if tr.tog != nil {
+		if err = tr.s.evalWait(ctx); err == nil {
+			a, err = tr.s.askModelWith(ctx, mb.name, msgs, tr.think, tr.maxTok, tr.tog.opts(mb))
+		}
 	} else {
 		tr.gpu.Lock()
 		if err = tr.s.evalWait(ctx); err == nil && *tr.loaded != mb.name {
@@ -266,6 +273,9 @@ func (tr *teamRun) chatCall(ctx context.Context, mb member, msgs []remote.Messag
 	}
 	if tr.maxTok > 0 {
 		opts["num_predict"] = tr.maxTok
+	}
+	if tr.tog != nil && !mb.api {
+		maps.Copy(opts, tr.tog.opts(mb))
 	}
 	req := ollama.ChatRequest{Model: mb.name, Messages: om, Options: opts, Think: tr.chat.Think}
 	var content, thinking strings.Builder
@@ -539,7 +549,7 @@ func (s *Server) chatTeam(ctx context.Context, t remote.Team, req ollama.ChatReq
 	maxTok := intOf(req.Options["num_predict"])
 	var gpu sync.Mutex
 	loaded, numCtx := "", 0
-	tr := &teamRun{s: s, t: t, lead: lead, worker: worker, maxTok: maxTok, gpu: &gpu, loaded: &loaded, numCtx: &numCtx, chat: &req, emit: fn}
+	tr := &teamRun{s: s, t: t, lead: lead, worker: worker, maxTok: maxTok, gpu: &gpu, loaded: &loaded, numCtx: &numCtx, chat: &req, emit: fn, tog: s.together(ctx, t, lead, worker)}
 	start := time.Now()
 	a, err := tr.run(ctx, withSystem(strings.Join(sys, "\n\n"), turns))
 	if err != nil {
@@ -585,8 +595,9 @@ func (s *Server) runTeamEvalItem(ctx context.Context, i int, set *evals.Set, red
 	}
 	var gpu sync.Mutex
 	loaded, numCtx := "", 0
+	tog := s.together(ctx, t, lead, worker)
 	return s.runEvalItemWith(ctx, i, set, redo, teamDigest(t, lead, worker), workers, func(ctx context.Context, q evals.Question, maxTok int) (evals.Answer, error) {
-		tr := &teamRun{s: s, t: t, lead: lead, worker: worker, think: think, maxTok: maxTok, gpu: &gpu, loaded: &loaded, numCtx: &numCtx}
+		tr := &teamRun{s: s, t: t, lead: lead, worker: worker, think: think, maxTok: maxTok, gpu: &gpu, loaded: &loaded, numCtx: &numCtx, tog: tog}
 		return tr.answer(ctx, set, q)
 	})
 }

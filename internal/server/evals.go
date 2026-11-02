@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"math"
 	"net/http"
 	"slices"
@@ -544,6 +545,15 @@ func chatMsgs(system, user string) []remote.Message {
 
 // askModelMsgs is askModel with a whole conversation.
 func (s *Server) askModelMsgs(ctx context.Context, model string, in []remote.Message, think string, maxTok, numCtx int) (evals.Answer, error) {
+	var load map[string]any
+	if numCtx > 0 {
+		load = map[string]any{"num_ctx": numCtx}
+	}
+	return s.askModelWith(ctx, model, in, think, maxTok, load)
+}
+
+// askModelWith is askModelMsgs with load options (context, slots and so on).
+func (s *Server) askModelWith(ctx context.Context, model string, in []remote.Message, think string, maxTok int, load map[string]any) (evals.Answer, error) {
 	var a evals.Answer
 	msgs := make([]ollama.Message, len(in))
 	for i, m := range in {
@@ -551,9 +561,7 @@ func (s *Server) askModelMsgs(ctx context.Context, model string, in []remote.Mes
 	}
 	opts := evals.SamplingOptions()
 	opts["num_predict"] = maxTok
-	if numCtx > 0 {
-		opts["num_ctx"] = numCtx
-	}
+	maps.Copy(opts, load)
 	stream := true
 	req := ollama.ChatRequest{Model: model, Messages: msgs, Stream: &stream, Options: opts, KeepAlive: "10m"}
 	if think == evals.ThinkOff {
