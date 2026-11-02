@@ -261,7 +261,7 @@ func New(opts Options) (*Server, error) {
 	}
 	s.pages = map[string]*template.Template{}
 	for _, name := range []string{"chat", "library", "discover", "model", "presets", "settings", "compare", "project", "setup", "benchmarks"} {
-		t, err := template.New("").Funcs(templateFuncs).ParseFS(web.FS, "templates/layout.html", "templates/"+name+".html")
+		t, err := template.New("").Funcs(templateFuncs).ParseFS(web.FS, "templates/layout.html", "templates/partials.html", "templates/"+name+".html")
 		if err != nil {
 			return nil, fmt.Errorf("parse %s template: %w", name, err)
 		}
@@ -311,6 +311,7 @@ func New(opts Options) (*Server, error) {
 	mux.HandleFunc("PUT /api/remote/models/{id}", s.handleRemoteModelPut)
 	mux.HandleFunc("DELETE /api/remote/models/{id}", s.handleRemoteModelDelete)
 	mux.HandleFunc("GET /api/teams", s.handleTeams)
+	mux.HandleFunc("GET /api/teams/members", s.handleTeamMembers)
 	mux.HandleFunc("PUT /api/teams/{id}", s.handleTeamPut)
 	mux.HandleFunc("DELETE /api/teams/{id}", s.handleTeamDelete)
 	mux.HandleFunc("GET /api/lean", s.handleLeanStatus)

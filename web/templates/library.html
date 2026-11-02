@@ -139,6 +139,17 @@
     </form>
   </dialog>
 
+  <section class="found" id="teams">
+    <div class="found-top">
+      <h2 class="found-title">Teams</h2>
+      <span class="muted small" id="team-count"></span>
+      <button type="button" class="btn subtle" id="team-add">New team</button>
+    </div>
+    <p class="muted small found-intro">A lead model plans and hands parts of each message to worker models, then writes the answer. Chat with a team like any model, or run it on the benchmarks to see whether it beats the lead alone.</p>
+    <div class="boxed-list" id="team-list"></div>
+  </section>
+  {{template "team-dialog"}}
+
   <script src="/static/remote.js" defer></script>
 
   <section class="found" id="adapters">

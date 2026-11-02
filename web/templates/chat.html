@@ -26,7 +26,7 @@
         <input type="search" class="switcher-filter" id="switcher-filter" placeholder="Search models and presets" aria-label="Search models and presets" autocomplete="off">
         <div class="switcher-list" id="switcher-list" role="listbox" aria-label="Models and presets"></div>
         <div class="switcher-state" id="switcher-state" hidden><span class="switcher-dot" aria-hidden="true"></span><span class="switcher-state-text" id="switcher-state-text"></span><button type="button" class="btn subtle" id="eject-btn" hidden>Eject</button></div>
-        <div class="switcher-foot"><a href="/discover">Find more models</a><a href="/library">Manage library</a></div>
+        <div class="switcher-foot"><a href="/discover">Find more models</a><button type="button" class="linkish" id="switcher-team" title="Make a team of models: a lead that plans and workers that do the parts">New team…</button><a href="/library">Manage library</a></div>
       </div>
     </div>
     <button type="button" class="icon-btn load-btn" id="load-btn" hidden aria-label="Load model" title="Load this model into memory now"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 11l5 5 5-5"/><path d="M5 20h14"/></svg><span class="load-label">Load</span></button>
@@ -206,4 +206,6 @@
     </aside>
   </div>
 </div>
+{{template "team-dialog"}}
+<script src="/static/remote.js" defer></script>
 {{end}}

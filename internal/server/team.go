@@ -509,6 +509,29 @@ func (s *Server) teamRows(ctx context.Context, byDigest map[string][]*evals.Resu
 
 // Team settings.
 
+// handleTeamMembers lists the models a team can be made of: the local
+// ones (embedding models left out) and the API models.
+func (s *Server) handleTeamMembers(w http.ResponseWriter, r *http.Request) {
+	type opt struct {
+		Name  string `json:"name"`
+		Title string `json:"title"`
+		Meta  string `json:"meta,omitempty"`
+		API   bool   `json:"api,omitempty"`
+	}
+	out := []opt{}
+	if models, err := s.ollama.List(r.Context()); err == nil {
+		for _, g := range groupModels(models) {
+			if !isEmbeddingName(g.Primary.Name) {
+				out = append(out, opt{Name: g.Primary.Name, Title: groupTitle(g), Meta: quantOf(g)})
+			}
+		}
+	}
+	for _, m := range s.apiOptions() {
+		out = append(out, opt{Name: m.Name, Title: m.Title, Meta: m.Endpoint, API: true})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (s *Server) handleTeams(w http.ResponseWriter, r *http.Request) {
 	type teamJSON struct {
 		remote.Team

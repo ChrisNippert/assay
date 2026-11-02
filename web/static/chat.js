@@ -363,6 +363,30 @@
   }
 
   switcherBtn.addEventListener('click', () => openSwitcher(!switcherOpen()));
+  // Make a team on the spot (remote.js has the dialog); once saved, the
+  // chat switches to it.
+  document.getElementById('switcher-team')?.addEventListener('click', () => {
+    openSwitcher(false);
+    window.assayNewTeam?.();
+  });
+  document.addEventListener('assay:team-saved', (e) => {
+    const { name, title, meta } = e.detail;
+    let opt = modelOption(name);
+    if (!opt) {
+      let group = [...select.querySelectorAll('optgroup')].find((g) => g.label === 'Teams');
+      if (!group) {
+        group = document.createElement('optgroup');
+        group.label = 'Teams';
+        select.append(group);
+      }
+      opt = new Option(name, name);
+      Object.assign(opt.dataset, { base: name, names: name, quant: 'team' });
+      group.append(opt);
+    }
+    opt.dataset.pretty = title;
+    opt.dataset.meta = meta || '';
+    pick(name);
+  });
   filter.addEventListener('input', renderSwitcher);
   options.addEventListener('click', (e) => {
     const row = e.target.closest('.switcher-row');
