@@ -266,6 +266,8 @@ func (tr *teamRun) leadCall(ctx context.Context, msgs []ollama.Message, tools []
 		}
 		if tr.think == evals.ThinkOff {
 			think = false
+		} else if evals.IsLevel(tr.think) {
+			think = tr.think
 		}
 	}
 	if tr.maxTok > 0 {

@@ -123,7 +123,7 @@ answer = "391"
 	api.tokens, api.bodies = 600, nil
 	api.mu.Unlock()
 	do(s, "PUT", "/api/teams/agent", `{"title":"Agent","strategy":"agent","lead":"api:m","worker":"api:m","budget":1000,"minutes":5}`)
-	if _, err := s.startEvals(context.Background(), evalRunRequest{Models: []string{"team:agent"}, Sets: []string{"one"}}); err != nil {
+	if _, err := s.startEvalLevels(context.Background(), evalRunRequest{Models: []string{"team:agent"}, Sets: []string{"one"}}); err != nil {
 		t.Fatal(err)
 	}
 	if it := waitEvals(t, s).Items[0]; it.State != itemDone || it.Correct != 1 {

@@ -195,6 +195,8 @@ func (tr *teamRun) call(ctx context.Context, mb member, msgs []remote.Message, s
 		m := mb.m
 		if tr.think == evals.ThinkOff {
 			m.Reasoning = "off"
+		} else if evals.IsLevel(tr.think) {
+			m.Reasoning = tr.think
 		}
 		a, err = tr.s.askAPIMsgs(ctx, mb.ep, m, msgs, tr.maxTok)
 	} else {

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -15,7 +16,27 @@ import (
 const (
 	ThinkDefault = ""    // whatever the model does when left alone
 	ThinkOff     = "off" // asked not to think
+	ThinkLow     = "low" // reasoning effort levels
+	ThinkMedium  = "medium"
+	ThinkHigh    = "high"
 )
+
+// Thinks lists every mode, default first.
+var Thinks = []string{ThinkDefault, ThinkOff, ThinkLow, ThinkMedium, ThinkHigh}
+
+// ValidThink reports whether t is a mode.
+func ValidThink(t string) bool { return slices.Contains(Thinks, t) }
+
+// ThinkLabel names a mode for a row; "" for the default.
+func ThinkLabel(t string) string {
+	if t == ThinkOff {
+		return "no thinking"
+	}
+	return t
+}
+
+// IsLevel reports whether t is a reasoning effort level.
+func IsLevel(t string) bool { return t == ThinkLow || t == ThinkMedium || t == ThinkHigh }
 
 // Answer is one question's outcome.
 type Answer struct {
@@ -125,7 +146,7 @@ func (a *Answer) Clip() {
 	}
 }
 
-// Results keeps runs as <dir>/<digest>/<set>[@nothink].json.
+// Results keeps runs as <dir>/<digest>/<set>[@nothink|@low|@medium|@high].json.
 type Results struct {
 	dir string
 	mu  sync.Mutex
@@ -139,8 +160,11 @@ var unsafeRe = regexp.MustCompile(`[^a-zA-Z0-9]+`)
 func (rs *Results) path(digest, set, think string) string {
 	d := unsafeRe.ReplaceAllString(strings.TrimPrefix(digest, "sha256:"), "_")
 	name := set
-	if think == ThinkOff {
-		name += "@nothink"
+	switch {
+	case think == ThinkOff:
+		name += "@nothink" // the first mode saved, so its old name stays
+	case IsLevel(think):
+		name += "@" + think
 	}
 	return filepath.Join(rs.dir, d, name+".json")
 }

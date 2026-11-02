@@ -230,6 +230,39 @@ func TestResults(t *testing.T) {
 	}
 }
 
+func TestThinkModes(t *testing.T) {
+	rs := OpenResults(t.TempDir())
+	want := map[string]string{"": "math.json", ThinkOff: "math@nothink.json", ThinkLow: "math@low.json", ThinkMedium: "math@medium.json", ThinkHigh: "math@high.json"}
+	for think, name := range want {
+		if got := filepath.Base(rs.path("sha256:abc", "math", think)); got != name {
+			t.Errorf("%q: %s, want %s", think, got, name)
+		}
+		if !ValidThink(think) {
+			t.Errorf("%q invalid", think)
+		}
+	}
+	if ValidThink("max") || ValidThink("on") {
+		t.Error("accepted a made-up mode")
+	}
+	// A file in the old naming still loads, and each level is its own run.
+	dir := filepath.Join(rs.dir, "abc")
+	os.MkdirAll(dir, 0o755)
+	old := `{"model":"m","digest":"sha256:abc","set":"math","think":"off","total":1,"answers":[{"id":"1","correct":true}]}`
+	os.WriteFile(filepath.Join(dir, "math@nothink.json"), []byte(old), 0o644)
+	if r, ok := rs.Get("sha256:abc", "math", ThinkOff); !ok || len(r.Answers) != 1 {
+		t.Fatalf("old file: %+v %v", r, ok)
+	}
+	for _, l := range []string{ThinkLow, ThinkHigh} {
+		rs.Put(&Result{Digest: "sha256:abc", Set: "math", Think: l, Total: 1, Model: l})
+	}
+	if r, ok := rs.Get("sha256:abc", "math", ThinkHigh); !ok || r.Model != "high" {
+		t.Errorf("high: %+v", r)
+	}
+	if n := len(rs.All()); n != 3 {
+		t.Errorf("all: %d", n)
+	}
+}
+
 func TestFitLine(t *testing.T) {
 	if _, ok := FitLine([]Point{{0.1, 5}, {0.5, 20}}); ok {
 		t.Error("fitted two points")
