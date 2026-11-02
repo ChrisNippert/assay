@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -39,17 +40,9 @@ func (s *Server) v1Engine(w http.ResponseWriter) (apiEngine, bool) {
 	return e, ok
 }
 
-// handleV1Models lists the installed chat models, then the presets.
+// handleV1Models lists the installed chat models, the presets, then the
+// API models and teams.
 func (s *Server) handleV1Models(w http.ResponseWriter, r *http.Request) {
-	e, ok := s.v1Engine(w)
-	if !ok {
-		return
-	}
-	models, err := s.ollama.List(r.Context())
-	if err != nil {
-		writeV1Error(w, http.StatusBadGateway, err.Error())
-		return
-	}
 	type entry struct {
 		ID      string `json:"id"`
 		Object  string `json:"object"`
@@ -58,6 +51,15 @@ func (s *Server) handleV1Models(w http.ResponseWriter, r *http.Request) {
 	}
 	data := []entry{}
 	seen := map[string]bool{}
+	var models []ollama.Model
+	e, local := s.ollama.(apiEngine)
+	if local {
+		var err error
+		if models, err = s.ollama.List(r.Context()); err != nil {
+			writeV1Error(w, http.StatusBadGateway, err.Error())
+			return
+		}
+	}
 	for _, m := range models {
 		if e.IsEmbedding(m.Name) {
 			continue
@@ -65,12 +67,18 @@ func (s *Server) handleV1Models(w http.ResponseWriter, r *http.Request) {
 		seen[strings.ToLower(m.Name)] = true
 		data = append(data, entry{m.Name, "model", m.ModifiedAt.Unix(), "assay"})
 	}
-	if list, err := s.presets.List(); err == nil {
+	if list, err := s.presets.List(); err == nil && local {
 		for _, p := range list {
 			if !seen[p.Name] {
 				data = append(data, entry{p.Name, "model", 0, "assay"})
 			}
 		}
+	}
+	for _, m := range s.remote.Models() {
+		data = append(data, entry{m.Name(), "model", 0, "assay"})
+	}
+	for _, t := range s.remote.Teams() {
+		data = append(data, entry{t.Name(), "model", 0, "assay"})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
 }
@@ -92,7 +100,23 @@ func (s *Server) v1Target(ctx context.Context, name string) (model string, prese
 	return name, nil
 }
 
+// handleV1Chat runs API models and teams itself and passes the rest to
+// the engine.
 func (s *Server) handleV1Chat(w http.ResponseWriter, r *http.Request) {
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64<<20))
+	if err != nil {
+		writeV1Error(w, http.StatusBadRequest, "could not read the request: "+err.Error())
+		return
+	}
+	var peek struct {
+		Model string `json:"model"`
+	}
+	json.Unmarshal(raw, &peek)
+	if s.assayModel(peek.Model) {
+		s.v1Assay(w, r, raw)
+		return
+	}
+	r.Body = io.NopCloser(bytes.NewReader(raw))
 	s.v1Proxy(w, r, "/v1/chat/completions")
 }
 

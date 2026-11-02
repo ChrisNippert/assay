@@ -34,7 +34,7 @@ func ChatOllama(ctx context.Context, ep Endpoint, m Model, req ollama.ChatReques
 			w["content"] = parts
 		}
 		if len(x.ToolCalls) > 0 {
-			w["tool_calls"] = toWire(x.ToolCalls)
+			w["tool_calls"] = ToWire(x.ToolCalls)
 		}
 		if x.ToolCallID != "" {
 			w["tool_call_id"] = x.ToolCallID
@@ -106,7 +106,7 @@ func ChatOllama(ctx context.Context, ep Endpoint, m Model, req ollama.ChatReques
 	}
 	final := ollama.ChatResponse{Model: req.Model, Done: true, DoneReason: "stop"}
 	var first time.Time
-	var calls []wireCall
+	var calls []WireCall
 	sc := bufio.NewScanner(resp.Body)
 	sc.Buffer(make([]byte, 64<<10), 8<<20)
 	for sc.Scan() {
@@ -124,7 +124,7 @@ func ChatOllama(ctx context.Context, ep Endpoint, m Model, req ollama.ChatReques
 					Content          string     `json:"content"`
 					Reasoning        string     `json:"reasoning"`
 					ReasoningContent string     `json:"reasoning_content"`
-					ToolCalls        []wireCall `json:"tool_calls"`
+					ToolCalls        []WireCall `json:"tool_calls"`
 				} `json:"delta"`
 				FinishReason string `json:"finish_reason"`
 			} `json:"choices"`
@@ -155,7 +155,7 @@ func ChatOllama(ctx context.Context, ep Endpoint, m Model, req ollama.ChatReques
 			}
 			for _, tc := range ch.Delta.ToolCalls {
 				for len(calls) <= tc.Index {
-					calls = append(calls, wireCall{})
+					calls = append(calls, WireCall{})
 				}
 				w := &calls[tc.Index]
 				if tc.ID != "" {
@@ -188,7 +188,7 @@ func ChatOllama(ctx context.Context, ep Endpoint, m Model, req ollama.ChatReques
 	// reply the rest.
 	final.CreatedAt, final.TotalDuration = now, int64(now.Sub(start))
 	final.PromptEvalDuration, final.EvalDuration = int64(first.Sub(start)), int64(now.Sub(first))
-	final.Message = ollama.Message{Role: "assistant", ToolCalls: fromWire(calls)}
+	final.Message = ollama.Message{Role: "assistant", ToolCalls: FromWire(calls)}
 	return fn(final)
 }
 
@@ -204,8 +204,8 @@ func toInt(v any) (int, bool) {
 	return 0, false
 }
 
-// wireCall is a tool call in OpenAI's shape, arguments as a JSON string.
-type wireCall struct {
+// WireCall is a tool call in OpenAI's shape, arguments as a JSON string.
+type WireCall struct {
 	Index    int    `json:"index"`
 	ID       string `json:"id,omitempty"`
 	Type     string `json:"type,omitempty"`
@@ -215,10 +215,11 @@ type wireCall struct {
 	} `json:"function"`
 }
 
-func toWire(calls []ollama.ToolCall) []wireCall {
-	var out []wireCall
+// ToWire writes tool calls in OpenAI's shape.
+func ToWire(calls []ollama.ToolCall) []WireCall {
+	var out []WireCall
 	for i, c := range calls {
-		w := wireCall{Index: i, ID: c.ID, Type: "function"}
+		w := WireCall{Index: i, ID: c.ID, Type: "function"}
 		w.Function.Name = c.Function.Name
 		w.Function.Arguments = string(c.Function.Arguments)
 		if w.Function.Arguments == "" {
@@ -229,9 +230,9 @@ func toWire(calls []ollama.ToolCall) []wireCall {
 	return out
 }
 
-// fromWire keeps arguments that aren't JSON as a string, so the tool loop
+// FromWire reads tool calls in OpenAI's shape. It keeps arguments that aren't JSON as a string, so the tool loop
 // can tell the model.
-func fromWire(calls []wireCall) []ollama.ToolCall {
+func FromWire(calls []WireCall) []ollama.ToolCall {
 	var out []ollama.ToolCall
 	for _, w := range calls {
 		var c ollama.ToolCall

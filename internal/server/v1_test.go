@@ -91,7 +91,7 @@ func TestV1ChatPreset(t *testing.T) {
 
 func TestV1Errors(t *testing.T) {
 	s, _, _ := newTestServer(t)
-	rec := v1Request(s, "GET", "/v1/models", "")
+	rec := v1Request(s, "POST", "/v1/chat/completions", `{"model":"qwen3:8b","messages":[]}`)
 	if rec.Code != http.StatusNotImplemented || !strings.Contains(rec.Body.String(), `"error":{"code":null`) {
 		t.Errorf("ollama engine: %d %s", rec.Code, rec.Body)
 	}
