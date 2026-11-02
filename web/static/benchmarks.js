@@ -598,19 +598,22 @@
     renderModel();
     $('bm-model').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
+  // kept is the sets of a category to rank on: those at least half the
+  // models that tried it have finished, or all of them if none qualify.
+  function kept(all) {
+    const tried = data.rows.filter((r) => all.some((id) => finished(r.cells[id])));
+    const need = Math.max(1, Math.ceil(tried.length / 2));
+    const k = all.filter((id) => tried.filter((r) => finished(r.cells[id])).length >= need);
+    return k.length ? k : all;
+  }
   function renderBoard() {
     if (subset) subset = subset.filter((id) => data.sets.some((s) => s.id === id));
     const [all, label] = boardIds();
     // Rank on the sets at least half the models that tried this category
     // have finished, so one new set doesn't empty the board; Custom ranks on
     // exactly what was picked.
-    let ids = all, dropped = [];
-    if (cat !== 'custom') {
-      const tried = data.rows.filter((r) => all.some((id) => finished(r.cells[id])));
-      const need = Math.max(1, Math.ceil(tried.length / 2));
-      const kept = all.filter((id) => tried.filter((r) => finished(r.cells[id])).length >= need);
-      if (kept.length) { ids = kept; dropped = all.filter((id) => !kept.includes(id)); }
-    }
+    const ids = cat === 'custom' ? all : kept(all);
+    const dropped = all.filter((id) => !ids.includes(id));
     // Categories.
     const cats = $('bm-cats');
     cats.innerHTML = '';
@@ -738,32 +741,39 @@
         un.append(b);
       }
     }
-    renderBreakdown(ids, ranked);
+    renderBreakdown(all, ranked);
     renderRanks(ids, label, ranked, unranked);
   }
-  // groupsOf splits the board's sets for the breakdown: by category on
-  // Overall, by set everywhere else. Sets in no category go under Other.
-  function groupsOf(ids) {
-    if (cat !== 'overall') return ids.map((id) => ({ key: id, name: shortName(data.sets.find((s) => s.id === id) || { name: id }), ids: [id] }));
-    const groups = CATS.map(([n, sets]) => ({ key: n, name: n, ids: ids.filter((id) => sets.includes(id)) })).filter((g) => g.ids.length);
-    const rest = ids.filter((id) => !groups.some((g) => g.ids.includes(id)));
+  // groupsOf splits a board for the breakdown: by set, every set of the
+  // category including ones too new to rank on; on Overall by category,
+  // each on the sets its own board ranks on, plus overall sets in none.
+  function groupsOf(all) {
+    if (cat !== 'overall') return all.map((id) => ({ key: id, name: shortName(data.sets.find((s) => s.id === id) || { name: id }), ids: [id] }));
+    const groups = CATS.map(([n]) => ({ key: n, name: n, ids: catSets(n).length ? kept(catSets(n)) : [] })).filter((g) => g.ids.length);
+    const rest = all.filter((id) => !CATS.some(([, sets]) => sets.includes(id)));
     if (rest.length) groups.push({ key: 'other', name: 'Other', ids: rest });
     return groups;
   }
   let splitSort = null;
   // renderBreakdown shows the ranked models' metric on each part of the
   // board, so a category score can be read back to the sets behind it.
-  function renderBreakdown(ids, ranked) {
+  function renderBreakdown(all, ranked) {
     const box = $('bm-breakdown');
-    const groups = groupsOf(ids);
-    box.hidden = groups.length < 2 || !ranked.length;
-    if (box.hidden) return;
+    let groups = groupsOf(all);
     const keep = typical;
     const per = new Map(groups.map((g) => {
       const vals = new Map(standings(g.ids, metric).ranked.map((x) => [x.r.name, x.vals[metric]]));
       return [g.key, vals];
     }));
     typical = keep;
+    groups = groups.filter((g) => per.get(g.key).size); // sets nobody has finished
+    // The ranked models in board order, then any other with a value here.
+    const onBoard = new Set(ranked.map((x) => x.r.name));
+    const extra = data.rows.filter((r) => !onBoard.has(r.name) && groups.some((g) => per.get(g.key).has(r.name))).map((r) => ({ r, vals: {} }));
+    box.hidden = groups.length < 2 || !(ranked.length + extra.length);
+    if (box.hidden) return;
+    const base = ranked;
+    ranked = [...ranked, ...extra];
     if (splitSort && !per.has(splitSort)) splitSort = null;
     const lo = LOWER_BETTER[metric];
     const v = (name, key) => per.get(key).get(name) ?? (lo ? Infinity : -Infinity);
@@ -776,19 +786,19 @@
     const t = $('bm-split');
     t.innerHTML = '';
     const head = el('tr');
-    const all = el('button', 'bm-rank-sort' + (splitSort ? '' : ' on'), metric === 'score' ? 'Score' : METRICS[metric].name);
-    all.type = 'button';
-    all.title = 'Sort like the board';
-    all.onclick = () => { splitSort = null; renderBreakdown(ids, ranked); };
+    const boardBtn = el('button', 'bm-rank-sort' + (splitSort ? '' : ' on'), metric === 'score' ? 'Score' : METRICS[metric].name);
+    boardBtn.type = 'button';
+    boardBtn.title = 'Sort like the board';
+    boardBtn.onclick = () => { splitSort = null; renderBreakdown(all, base); };
     const allTh = el('th', 'bm-rank-num');
-    allTh.append(all);
+    allTh.append(boardBtn);
     head.append(el('th', 'bm-rank-n', '#'), el('th', 'bm-rank-model', 'Model'), allTh);
     for (const g of groups) {
       const th = el('th', 'bm-rank-num');
       const hb = el('button', 'bm-rank-sort' + (splitSort === g.key ? ' on' : ''), g.name);
       hb.type = 'button';
       hb.title = `Sort by ${g.name}${g.ids.length > 1 ? ': ' + g.ids.map(setName).join(', ') : ''}`;
-      hb.onclick = () => { splitSort = g.key; renderBreakdown(ids, ranked); };
+      hb.onclick = () => { splitSort = g.key; renderBreakdown(all, base); };
       th.setAttribute('aria-sort', splitSort === g.key ? (lo ? 'ascending' : 'descending') : 'none');
       th.append(hb);
       head.append(th);
