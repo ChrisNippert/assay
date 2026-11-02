@@ -9,6 +9,9 @@
       {{if .APIModels}}<optgroup label="API models">
         {{range .APIModels}}<option value="{{.Name}}" data-base="{{.Name}}" data-names="{{.Name}}" data-pretty="{{.Title}}" data-quant="{{.Endpoint}}" data-meta="{{.Meta}}"{{if and (not $.Data.Preset) (eq .Name $.Data.Model)}} selected{{end}}>{{.Name}}</option>{{end}}
       </optgroup>{{end}}
+      {{if .Teams}}<optgroup label="Teams">
+        {{range .Teams}}<option value="{{.Name}}" data-base="{{.Name}}" data-names="{{.Name}}" data-pretty="{{.Title}}" data-quant="team" data-meta="{{.Meta}}"{{if and (not $.Data.Preset) (eq .Name $.Data.Model)}} selected{{end}}>{{.Name}}</option>{{end}}
+      </optgroup>{{end}}
       {{if and (not .Models) (not .APIModels)}}<option value="">No models installed</option>{{end}}
     </select>
     <div class="switcher">

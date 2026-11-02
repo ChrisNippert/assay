@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"assay/internal/evals"
+	"assay/internal/ollama"
 	"assay/internal/remote"
 )
 
@@ -78,13 +79,18 @@ func plural(n int) string {
 	return "s"
 }
 
-// teamRun is one team answering one question.
+// teamRun is one team answering one question, or one chat message.
 type teamRun struct {
 	s            *Server
 	t            remote.Team
 	lead, worker member
 	think        string
 	maxTok       int
+	// chat is set when the team answers in a chat: calls go through s.chat
+	// with its think setting, the plan and the workers' results are shown
+	// as thinking, and the answer is streamed, all through emit.
+	chat *ollama.ChatRequest
+	emit func(ollama.ChatResponse) error
 	// gpu makes local calls take turns; loaded is the local model last
 	// loaded for this run and numCtx its context.
 	gpu    *sync.Mutex
@@ -98,16 +104,27 @@ type teamRun struct {
 }
 
 func (tr *teamRun) note(format string, args ...any) {
+	text := fmt.Sprintf(format, args...)
 	tr.mu.Lock()
-	fmt.Fprintf(&tr.log, format, args...)
+	tr.log.WriteString(text)
+	if tr.emit != nil {
+		tr.emit(ollama.ChatResponse{Model: tr.chat.Model, CreatedAt: time.Now(), Message: ollama.Message{Role: "assistant", Thinking: text}})
+	}
 	tr.mu.Unlock()
 }
 
-// call asks one member and counts what it cost.
-func (tr *teamRun) call(ctx context.Context, mb member, msgs []remote.Message) (evals.Answer, error) {
+// call asks one member and counts what it cost. In a chat, stream sends
+// its reply on as it's written.
+func (tr *teamRun) call(ctx context.Context, mb member, msgs []remote.Message, stream bool) (evals.Answer, error) {
 	var a evals.Answer
 	var err error
-	if mb.api {
+	if tr.chat != nil {
+		if !mb.api {
+			tr.gpu.Lock()
+			defer tr.gpu.Unlock()
+		}
+		a, err = tr.chatCall(ctx, mb, msgs, stream)
+	} else if mb.api {
 		m := mb.m
 		if tr.think == evals.ThinkOff {
 			m.Reasoning = "off"
@@ -142,7 +159,7 @@ func (tr *teamRun) work(ctx context.Context, tasks []string, msgs func(task stri
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			a, err := tr.call(ctx, tr.worker, msgs(task))
+			a, err := tr.call(ctx, tr.worker, msgs(task), false)
 			reply := strings.TrimSpace(a.Reply)
 			if err != nil {
 				reply = "(this helper failed: " + err.Error() + ")"
@@ -154,6 +171,42 @@ func (tr *teamRun) work(ctx context.Context, tasks []string, msgs func(task stri
 	}
 	wg.Wait()
 	return out
+}
+
+// chatCall is call in a chat: through s.chat (the engine loads local
+// models itself), with the chat's think setting and reply limit.
+func (tr *teamRun) chatCall(ctx context.Context, mb member, msgs []remote.Message, stream bool) (evals.Answer, error) {
+	var a evals.Answer
+	om := make([]ollama.Message, len(msgs))
+	for i, m := range msgs {
+		om[i] = ollama.Message{Role: m.Role, Content: m.Content}
+	}
+	opts := map[string]any{}
+	for _, k := range []string{"temperature", "top_p", "top_k", "min_p", "seed"} {
+		if v, ok := tr.chat.Options[k]; ok {
+			opts[k] = v
+		}
+	}
+	if tr.maxTok > 0 {
+		opts["num_predict"] = tr.maxTok
+	}
+	req := ollama.ChatRequest{Model: mb.name, Messages: om, Options: opts, Think: tr.chat.Think}
+	var content, thinking strings.Builder
+	t0 := time.Now()
+	err := tr.s.chat(ctx, req, func(r ollama.ChatResponse) error {
+		content.WriteString(r.Message.Content)
+		thinking.WriteString(r.Message.Thinking)
+		if r.Done {
+			a.Tokens, a.Cost, a.Cut = r.EvalCount, r.Cost, r.DoneReason == "length"
+			return nil
+		}
+		if stream && (r.Message.Content != "" || r.Message.Thinking != "") {
+			return tr.emit(ollama.ChatResponse{Model: tr.chat.Model, CreatedAt: time.Now(), Message: ollama.Message{Role: "assistant", Content: r.Message.Content, Thinking: r.Message.Thinking}})
+		}
+		return nil
+	})
+	a.Reply, a.Thinking, a.Ms = content.String(), thinking.String(), time.Since(t0).Milliseconds()
+	return a, err
 }
 
 const pipelinePlan = `You lead a small team of helper models. Read the task, then split it into at most %d parts that helpers can work on at the same time, each without seeing the others' work. Each helper sees the whole task plus the part you give it, so describe each part precisely: what to produce, and any decisions it must follow so the parts fit together (names, signatures, conventions, formulas). If the task is small or can't be split, give a single part.
@@ -212,18 +265,54 @@ func parts(plan string, max int) []string {
 // answer runs the team on one question.
 func (tr *teamRun) answer(ctx context.Context, set *evals.Set, q evals.Question) (evals.Answer, error) {
 	t0 := time.Now()
-	system, user := set.Messages(q)
-	var final evals.Answer
-	var err error
-	if tr.t.Strategy == remote.Loop {
-		final, err = tr.loop(ctx, system, user)
-	} else {
-		final, err = tr.pipeline(ctx, system, user)
-	}
+	final, err := tr.run(ctx, chatMsgs(set.Messages(q)))
 	final.Thinking = strings.TrimSpace(tr.log.String())
 	final.Tokens, final.Cost, final.Ms = tr.tokens, tr.cost, time.Since(t0).Milliseconds()
 	final.Clip()
 	return final, err
+}
+
+// run answers the last user message of a conversation (a system message,
+// if any, then the turns).
+func (tr *teamRun) run(ctx context.Context, conv []remote.Message) (evals.Answer, error) {
+	system, hist := "", conv
+	if len(hist) > 0 && hist[0].Role == "system" {
+		system, hist = hist[0].Content, hist[1:]
+	}
+	if len(hist) == 0 || hist[len(hist)-1].Role != "user" {
+		return evals.Answer{}, errors.New("nothing to answer")
+	}
+	if tr.t.Strategy == remote.Loop {
+		return tr.loop(ctx, system, hist)
+	}
+	return tr.pipeline(ctx, system, hist)
+}
+
+// workerContext is what a pipeline worker sees besides its part: the task,
+// or in a longer chat the conversation so far (its latest part, if long).
+func workerContext(hist []remote.Message) string {
+	last := hist[len(hist)-1].Content
+	if len(hist) == 1 {
+		return "The whole task, for context:\n\n" + last
+	}
+	var b strings.Builder
+	for _, m := range hist {
+		fmt.Fprintf(&b, "%s: %s\n\n", strings.ToUpper(m.Role[:1])+m.Role[1:], strings.TrimSpace(m.Content))
+	}
+	t := b.String()
+	if len(t) > 24000 {
+		t = "…" + t[len(t)-24000:]
+	}
+	return "The conversation so far, for context (the last message is what to answer):\n\n" + strings.TrimSpace(t)
+}
+
+// withSystem puts a system message (if any) before the turns.
+func withSystem(system string, turns []remote.Message) []remote.Message {
+	var out []remote.Message
+	if system != "" {
+		out = append(out, remote.Message{Role: "system", Content: system})
+	}
+	return append(out, turns...)
 }
 
 func (tr *teamRun) leadSystem(base, setSystem string) string {
@@ -237,8 +326,9 @@ func (tr *teamRun) leadSystem(base, setSystem string) string {
 	return sys
 }
 
-func (tr *teamRun) pipeline(ctx context.Context, system, user string) (evals.Answer, error) {
-	plan, err := tr.call(ctx, tr.lead, chatMsgs(tr.leadSystem(fmt.Sprintf(pipelinePlan, tr.t.Size), system), user))
+func (tr *teamRun) pipeline(ctx context.Context, system string, hist []remote.Message) (evals.Answer, error) {
+	user := hist[len(hist)-1].Content
+	plan, err := tr.call(ctx, tr.lead, withSystem(tr.leadSystem(fmt.Sprintf(pipelinePlan, tr.t.Size), system), hist), false)
 	if err != nil {
 		return plan, err
 	}
@@ -248,7 +338,7 @@ func (tr *teamRun) pipeline(ctx context.Context, system, user string) (evals.Ans
 	}
 	tr.note("## Plan (%s)\n\n%s\n\n", tr.lead.title, strings.TrimSpace(plan.Reply))
 	results := tr.work(ctx, ps, func(p string) []remote.Message {
-		return chatMsgs(pipelineWorker, "The whole task, for context:\n\n"+user+"\n\n---\n\nYour part:\n\n"+p)
+		return chatMsgs(pipelineWorker, workerContext(hist)+"\n\n---\n\nYour part:\n\n"+p)
 	})
 	var b strings.Builder
 	for k, p := range ps {
@@ -258,17 +348,21 @@ func (tr *teamRun) pipeline(ctx context.Context, system, user string) (evals.Ans
 	if ctx.Err() != nil {
 		return evals.Answer{}, ctx.Err()
 	}
-	final, err := tr.call(ctx, tr.lead, chatMsgs(system, user+"\n\n---\n\n"+fmt.Sprintf(pipelineCombine, strings.TrimSpace(b.String()))))
-	if final.Thinking != "" {
+	turns := append(slices.Clone(hist[:len(hist)-1]), remote.Message{Role: "user", Content: user + "\n\n---\n\n" + fmt.Sprintf(pipelineCombine, strings.TrimSpace(b.String()))})
+	if tr.chat != nil {
+		tr.note("## Answer (%s)\n\n", tr.lead.title)
+	}
+	final, err := tr.call(ctx, tr.lead, withSystem(system, turns), true)
+	if final.Thinking != "" && tr.chat == nil {
 		tr.note("## Final answer, thinking (%s)\n\n%s\n\n", tr.lead.title, strings.TrimSpace(final.Thinking))
 	}
 	return final, err
 }
 
-func (tr *teamRun) loop(ctx context.Context, system, user string) (evals.Answer, error) {
-	msgs := chatMsgs(tr.leadSystem(fmt.Sprintf(loopLead, tr.t.Size, tr.t.Rounds, plural(tr.t.Rounds)), system), user)
+func (tr *teamRun) loop(ctx context.Context, system string, hist []remote.Message) (evals.Answer, error) {
+	msgs := withSystem(tr.leadSystem(fmt.Sprintf(loopLead, tr.t.Size, tr.t.Rounds, plural(tr.t.Rounds)), system), slices.Clone(hist))
 	for round := 1; ; round++ {
-		a, err := tr.call(ctx, tr.lead, msgs)
+		a, err := tr.call(ctx, tr.lead, msgs, false)
 		if err != nil {
 			return a, err
 		}
@@ -307,6 +401,63 @@ func (tr *teamRun) loop(ctx context.Context, system, user string) (evals.Answer,
 		}
 		msgs = append(msgs, remote.Message{Role: "user", Content: next})
 	}
+}
+
+// chatTeam has a team answer a chat: the plan and the workers' results
+// stream as thinking, the answer as the reply, and the last chunk carries
+// the tokens and cost of every call.
+func (s *Server) chatTeam(ctx context.Context, t remote.Team, req ollama.ChatRequest, fn func(ollama.ChatResponse) error) error {
+	lead, err := s.member(ctx, t.Lead)
+	if err != nil {
+		return fmt.Errorf("the team's lead: %w", err)
+	}
+	worker, err := s.member(ctx, t.Worker)
+	if err != nil {
+		return fmt.Errorf("the team's workers: %w", err)
+	}
+	var conv []remote.Message
+	for _, m := range req.Messages {
+		switch m.Role {
+		case "system", "user":
+			conv = append(conv, remote.Message{Role: m.Role, Content: m.Content})
+		case "assistant":
+			if m.Content != "" {
+				conv = append(conv, remote.Message{Role: m.Role, Content: m.Content})
+			}
+		}
+	}
+	// Several system messages (instructions, a summary) become one.
+	var sys []string
+	var turns []remote.Message
+	for _, m := range conv {
+		if m.Role == "system" {
+			sys = append(sys, m.Content)
+		} else {
+			turns = append(turns, m)
+		}
+	}
+	maxTok := intOf(req.Options["num_predict"])
+	var gpu sync.Mutex
+	loaded, numCtx := "", 0
+	tr := &teamRun{s: s, t: t, lead: lead, worker: worker, maxTok: maxTok, gpu: &gpu, loaded: &loaded, numCtx: &numCtx, chat: &req, emit: fn}
+	start := time.Now()
+	a, err := tr.run(ctx, withSystem(strings.Join(sys, "\n\n"), turns))
+	if err != nil {
+		return err
+	}
+	if t.Strategy == remote.Loop {
+		// The lead's last reply is the answer; it wasn't streamed, since
+		// until it ended it might have handed out more work.
+		if err := fn(ollama.ChatResponse{Model: req.Model, CreatedAt: time.Now(), Message: ollama.Message{Role: "assistant", Content: a.Reply}}); err != nil {
+			return err
+		}
+	}
+	d := time.Since(start)
+	reason := "stop"
+	if a.Cut {
+		reason = "length"
+	}
+	return fn(ollama.ChatResponse{Model: req.Model, CreatedAt: time.Now(), Done: true, DoneReason: reason, EvalCount: tr.tokens, EvalDuration: int64(d), TotalDuration: int64(d), Cost: tr.cost})
 }
 
 // runTeamEvalItem runs a team on every question of one set: four

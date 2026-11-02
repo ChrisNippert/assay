@@ -928,6 +928,18 @@ takes images and tools. Chats skip auto context and tokenizing for them
 (the list's context drives compression and attachment sizing). Compare
 shows price, context and capabilities, and its speed test skips loading
 and measures over the network (never highlighted as best).
+Teams chat too (`chatTeam`): the chat switcher lists them, `s.chat` routes
+`team:` names, and the team runs on the conversation (the lead sees the
+whole chat; pipeline workers see it as a transcript, capped at 24k
+characters, plus their part). Every call goes through `s.chat`, so local
+members load as usual and API members record their cost. The plan and
+each worker's result stream as thinking, the pipeline's answer streams as
+the reply (a loop's last reply is sent whole, since until it ends it might
+delegate again), and the final chunk carries all calls' tokens and cost.
+Teams take no tools or images in chat.
+Cost: every API call adds to `<data>/api-spend.json` (per day and model);
+chat replies keep their cost in their stats and the footer sums the chat;
+the Library shows today, 7 days, 30 days and all time.
 `runAPIEvalItem` skips loading and the GPU wait and answers 4 questions at
 once over streamed chat completions (reasoning read from `reasoning` or
 `reasoning_content`); tokens and, on OpenRouter, cost come from the usage

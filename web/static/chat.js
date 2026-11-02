@@ -219,11 +219,11 @@
     const opt = selectedOption();
     const base = baseOf(opt);
     const as = (opt?.dataset.names || base).split(' ').find((n) => loadedNames.has(n)) || '';
-    const api = base.startsWith('api:'); // nothing to load: it runs on the API
+    const api = notLocal(base); // nothing to load: an API model or a team
     const loaded = !!as || api;
     switcherDot.classList.toggle('on', loaded);
     const shown = prettyOf(opt);
-    switcherBtn.title = !base ? 'Choose a model or preset' : api ? `${shown} runs on ${modelOption(base)?.dataset.quant || 'its API'}. Choose another model or preset` : `${shown} is ${loaded ? 'loaded' : 'not loaded yet'}. Choose another model or preset`;
+    switcherBtn.title = !base ? 'Choose a model or preset' : api ? `${shown} ${base.startsWith('team:') ? 'is a team of models' : 'runs on ' + (modelOption(base)?.dataset.quant || 'its API')}. Choose another model or preset` : `${shown} is ${loaded ? 'loaded' : 'not loaded yet'}. Choose another model or preset`;
     loadBtn.hidden = loaded || !base;
     if (!loadBtn.hidden) {
       setLoadButton(loadBtn, base, false);
@@ -231,12 +231,13 @@
     }
     stateRow.hidden = !base;
     stateRow.querySelector('.switcher-dot').classList.toggle('on', loaded);
-    document.getElementById('switcher-state-text').textContent = api ? `Runs on ${modelOption(base)?.dataset.quant || 'its API'}, not this computer` : loaded ? 'Loaded in memory' : 'Not loaded. It loads on your first message';
+    document.getElementById('switcher-state-text').textContent = api ? (base.startsWith('team:') ? `A team: ${modelOption(base)?.dataset.meta || ''}` : `Runs on ${modelOption(base)?.dataset.quant || 'its API'}, not this computer`) : loaded ? 'Loaded in memory' : 'Not loaded. It loads on your first message';
     ejectBtn.hidden = !loaded || api;
     if (loaded) { ejectBtn.dataset.eject = as; ejectBtn.disabled = false; ejectBtn.textContent = 'Eject'; }
   }
 
-  const isLoaded = (opt) => baseOf(opt).startsWith('api:') || (opt?.dataset.names || baseOf(opt)).split(' ').some((n) => loadedNames.has(n));
+  function notLocal(name) { return name.startsWith('api:') || name.startsWith('team:'); }
+  const isLoaded = (opt) => notLocal(baseOf(opt)) || (opt?.dataset.names || baseOf(opt)).split(' ').some((n) => loadedNames.has(n));
   // The model option a name (any of its aliases) belongs to.
   const modelOption = (name) => [...select.querySelectorAll('option[data-names]')]
     .find((o) => o.dataset.names.split(' ').includes(name));
@@ -257,7 +258,9 @@
     const hint = document.getElementById('welcome-hint');
     const opt = selectedOption();
     if (!hint || !opt?.value) return;
-    hint.textContent = baseOf(opt).startsWith('api:')
+    hint.textContent = baseOf(opt).startsWith('team:')
+      ? `${prettyOf(opt)} is a team: the lead plans, workers do the parts, and you can watch them under Thinking.`
+      : baseOf(opt).startsWith('api:')
       ? `${prettyOf(opt)} answers through ${modelOption(baseOf(opt))?.dataset.quant || 'its API'}.`
       : isLoaded(opt)
       ? `${prettyOf(opt)} is loaded and ready.`
@@ -300,7 +303,7 @@
         if (o.value.startsWith('preset:')) title.prepend(el('span', 'switcher-star', '★ '));
         text.append(title, el('span', 'row-sub', metaOf(o)));
         row.append(dot, text);
-        if (!o.value.startsWith('preset:') && !o.value.startsWith('api:')) {
+        if (!o.value.startsWith('preset:') && !notLocal(o.value)) {
           // A span, since the row is a button itself; app.js handles the click.
           const star = el('span', 'icon-btn star-btn switcher-fav');
           star.setAttribute('role', 'button');

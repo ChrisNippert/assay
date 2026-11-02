@@ -299,3 +299,50 @@ func TestParts(t *testing.T) {
 		}
 	}
 }
+
+func TestTeamChat(t *testing.T) {
+	s, fake, _ := newTestServer(t)
+	fake.tags = threeModels
+	api := &teamAPI{}
+	ts := httptest.NewServer(api)
+	defer ts.Close()
+	do(s, "PUT", "/api/remote/endpoints/new", `{"name":"Fake","url":"`+ts.URL+`"}`)
+	do(s, "PUT", "/api/remote/models/new", `{"endpoint":"fake","model":"m","title":"M"}`)
+	do(s, "PUT", "/api/teams/new", `{"title":"Pipe","strategy":"pipeline","lead":"api:m","worker":"api:m","size":2}`)
+	do(s, "PUT", "/api/teams/new", `{"title":"Loop","strategy":"loop","lead":"api:m","worker":"api:m","size":2,"rounds":1}`)
+	for _, team := range []string{"team:pipe", "team:loop"} {
+		rec := do(s, "POST", "/api/chat", `{"model":"`+team+`","content":"What is 17 × 23?"}`)
+		var thinking, content string
+		var done map[string]any
+		for _, line := range strings.Split(strings.TrimSpace(rec.Body.String()), "\n") {
+			var ev map[string]any
+			json.Unmarshal([]byte(line), &ev)
+			switch ev["type"] {
+			case "thinking":
+				thinking += ev["text"].(string)
+			case "content":
+				content += ev["text"].(string)
+			case "done":
+				done = ev["stats"].(map[string]any)
+			case "error":
+				t.Fatalf("%s: %v", team, ev["message"])
+			}
+		}
+		if content != "Adding the parts: Answer: 391" || done == nil || done["outputTokens"] != float64(20) || math.Abs(done["cost"].(float64)-0.004) > 1e-9 {
+			t.Errorf("%s: content %q done %v", team, content, done)
+		}
+		want := "## Plan (M)"
+		if team == "team:loop" {
+			want = "## Round 1, task 2 (M)"
+		}
+		if !strings.Contains(thinking, want) {
+			t.Errorf("%s thinking:\n%s", team, thinking)
+		}
+	}
+	// The chat was saved with the team as its model, the work as thinking.
+	list, _ := s.chats.List()
+	c, _ := s.chats.Get(list[0].ID)
+	if last := c.Messages[len(c.Messages)-1]; last.Role != "assistant" || !strings.Contains(last.Thinking, "## ") || last.Stats.Cost == 0 {
+		t.Errorf("saved %+v", last)
+	}
+}

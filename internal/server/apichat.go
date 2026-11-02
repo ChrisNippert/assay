@@ -17,9 +17,18 @@ import (
 
 func isAPIModel(name string) bool { return strings.HasPrefix(name, remote.Prefix) }
 
+// notLocal says a chat model isn't a model file here: an API model or a
+// team. Nothing to load, size or tokenize for it.
+func notLocal(name string) bool {
+	return strings.HasPrefix(name, remote.Prefix) || strings.HasPrefix(name, remote.TeamPrefix)
+}
+
 // chat sends a chat request to the model's backend: the API for an API
 // model, llama-server otherwise.
 func (s *Server) chat(ctx context.Context, req ollama.ChatRequest, fn func(ollama.ChatResponse) error) error {
+	if t, ok := s.remote.Team(req.Model); ok {
+		return s.chatTeam(ctx, t, req, fn)
+	}
 	if m, ep, ok := s.remote.Lookup(req.Model); ok {
 		return remote.ChatOllama(ctx, ep, m, req, func(r ollama.ChatResponse) error {
 			if r.Done {
@@ -35,6 +44,18 @@ func (s *Server) chat(ctx context.Context, req ollama.ChatRequest, fn func(ollam
 // endpoint's model list: context length, and tools and vision unless the
 // list says otherwise.
 func (s *Server) show(ctx context.Context, name string) (*ollama.ShowResponse, error) {
+	if t, ok := s.remote.Team(name); ok {
+		// A team writes text; no tools or images (its members see text).
+		lead, err := s.member(ctx, t.Lead)
+		if err != nil {
+			return nil, err
+		}
+		sh := &ollama.ShowResponse{Details: ollama.Details{Family: "team"}, ModelInfo: map[string]any{}, Capabilities: []string{"completion"}}
+		if lsh, err := s.show(ctx, lead.name); err == nil && lsh.HasCapability("thinking") {
+			sh.Capabilities = append(sh.Capabilities, "thinking")
+		}
+		return sh, nil
+	}
 	m, _, ok := s.remote.Lookup(name)
 	if !ok {
 		return s.ollama.Show(ctx, name)
@@ -107,6 +128,20 @@ func (s *Server) apiOptions() []apiOption {
 			meta += " · own prompt"
 		}
 		out = append(out, apiOption{Name: m.Name(), Title: m.Title, Model: m.Model, Endpoint: ep.Name, Meta: meta})
+	}
+	return out
+}
+
+// teamOptions are the teams as a model picker shows them.
+func (s *Server) teamOptions(ctx context.Context) []apiOption {
+	var out []apiOption
+	for _, t := range s.remote.Teams() {
+		lead, err1 := s.member(ctx, t.Lead)
+		worker, err2 := s.member(ctx, t.Worker)
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		out = append(out, apiOption{Name: t.Name(), Title: t.Title, Endpoint: "team", Meta: teamQuant(t, lead.title, worker.title)})
 	}
 	return out
 }

@@ -578,7 +578,7 @@ func (s *Server) prepareTurn(w http.ResponseWriter, r *http.Request, req sendReq
 	} else {
 		s.manualGPU.Delete(strings.ToLower(c.Model))
 	}
-	if isAPIModel(c.Model) {
+	if notLocal(c.Model) {
 		// Nothing to fit on the GPU: the context is the model's own, which
 		// compression and attachment sizing go by (it isn't sent).
 		if _, set := options["num_ctx"]; !set {

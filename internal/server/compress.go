@@ -135,7 +135,7 @@ func (s *Server) promptSize(ctx context.Context, model string, options map[strin
 	}
 	ctxLen := intOf(options["num_ctx"])
 	t, ok := s.ollama.(tokenizer)
-	if !ok || isAPIModel(model) {
+	if !ok || notLocal(model) {
 		return approxTokens(b.String()) + overhead, ctxLen, nil
 	}
 	n, engineCtx, err := t.Tokenize(ctx, model, options, b.String())
