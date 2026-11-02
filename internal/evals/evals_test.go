@@ -26,7 +26,7 @@ func TestBuiltinSetsLoad(t *testing.T) {
 		t.Fatalf("sets %d errs %v", len(sets), errs)
 	}
 	for _, s := range sets {
-		if !s.BuiltIn || s.Hash == "" || len(s.Questions) < 10 {
+		if !s.BuiltIn || s.Hash == "" || len(s.Questions) < 5 {
 			t.Errorf("%s: builtIn %v hash %q questions %d", s.ID, s.BuiltIn, s.Hash, len(s.Questions))
 		}
 	}
@@ -301,6 +301,50 @@ func TestBuiltinCodeTestsCompile(t *testing.T) {
 				t.Errorf("%s/%s: %v %s", s.ID, q.ID, err, out)
 			}
 		}
+	}
+}
+
+// Each "Simulation projects" question has a reference solution under
+// testdata/projects-sims that passes its hidden tests; an empty program does
+// not. The tests' expected values were computed independently (mpmath
+// quadrature, sympy-derived equations, analytic formulas), see the set's
+// doc in ARCHITECTURE.md.
+func TestProjectsSimsReferences(t *testing.T) {
+	if !HavePython() {
+		t.Skip("no python3")
+	}
+	l, _ := OpenLibrary("")
+	sets, _ := l.List()
+	var set *Set
+	for _, s := range sets {
+		if s.ID == "projects-sims" {
+			set = s
+		}
+	}
+	if set == nil {
+		t.Fatal("projects-sims set missing")
+	}
+	if set.MaxTokens != 16384 || len(set.Questions) < 5 {
+		t.Errorf("max_tokens %d, %d questions", set.MaxTokens, len(set.Questions))
+	}
+	for _, q := range set.Questions {
+		t.Run(q.ID, func(t *testing.T) {
+			ref, err := os.ReadFile(filepath.Join("testdata", "projects-sims", q.ID+".py"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			start := time.Now()
+			ok, out, err := RunCode(context.Background(), string(ref), q.Tests)
+			if err != nil || !ok {
+				t.Fatalf("reference failed: %v\n%s", err, out)
+			}
+			if d := time.Since(start); d > 10*time.Second {
+				t.Errorf("reference took %v", d)
+			}
+			if ok, _, _ := RunCode(context.Background(), "pass\n", q.Tests); ok {
+				t.Error("an empty solution passed")
+			}
+		})
 	}
 }
 

@@ -1,0 +1,628 @@
+name = "Simulation projects"
+short = "Sims"
+description = "Write a whole physics or graphics simulation from a spec: a black hole's light bending and shadow, N-body gravity, a ray tracer, a double pendulum, colliding discs, Kepler orbits. Hidden tests run it against known physics and maths (exact values, conserved quantities, long-run energy), so a plausible-looking program that gets the physics or a convention wrong fails. Needs Python 3."
+check = "code"
+max_tokens = 16384
+
+[[questions]]
+id = "black-hole"
+prompt = '''
+Write a Python module (standard library only, no numpy) for light rays around a non-rotating black hole, in geometric units G = c = M = 1 (Schwarzschild metric, event horizon at r = 2). A light ray arrives from infinity with impact parameter b, the perpendicular distance of its incoming straight line from the hole (b = L/E).
+
+Define these functions:
+
+- `captured(b) -> bool`: True if the ray ends up in the hole. Only |b| matters (the sign says which side the ray passes). A ray exactly at the critical value counts as captured.
+- `deflection(b) -> float | None`: for a ray that escapes, the total deflection in radians: the angle between its incoming direction and its outgoing direction, which is 0 for a straight line and (total change of azimuth) - pi in general. It can exceed pi for rays that pass close to the photon sphere. Return `None` if the ray is captured. Only |b| matters. It must be accurate to about 1e-3 absolute or 0.5% relative, whichever is larger, for any b from just above the critical value up to 1000.
+- `shadow(n, fov_deg, r_obs) -> list[list[bool]]`: the black hole's silhouette as seen by a static observer at radius `r_obs` (r_obs > 3) who looks straight at the hole with a pinhole camera. The image is an n x n grid (`grid[row][col]`, row 0 at the top) covering a total field of view of `fov_deg` degrees across its width and height (0 < fov_deg < 180). Pixel centres lie on a flat image plane at distance 1: for pixel (row i, col j) the point is x = (2(j + 0.5)/n - 1)*tan(fov/2), y = (1 - 2(i + 0.5)/n)*tan(fov/2), and the ray leaves the camera at the angle alpha from the line of sight to the hole with tan(alpha) = sqrt(x^2 + y^2). That angle is what the static observer measures in its own local orthonormal frame, so the gravitational time dilation of a static observer at r_obs matters. An element is True when that ray, followed backwards, would end up in the hole, so the pixel is dark.
+
+Use exact reasoning where you can: the shadow depends only on alpha, and `shadow(41, 90, 8)` should take well under a few seconds. Give the complete module.'''
+tests = '''
+import math
+
+BC = 3 * math.sqrt(3)
+
+# capture threshold at b = 3*sqrt(3) = 5.19615...
+assert captured(5.19) is True
+assert captured(5.0) is True
+assert captured(0.0) is True
+assert captured(1.0) is True
+assert captured(5.21) is False
+assert captured(6.0) is False
+assert captured(100.0) is False
+assert captured(-5.0) is True and captured(-6.0) is False
+assert deflection(5.19) is None
+assert deflection(3.0) is None
+assert deflection(0.0) is None
+assert deflection(-4.0) is None
+
+# exact values of  2 * integral_0^u0 du / sqrt(1/b^2 - u^2 + 2u^3) - pi
+# (computed with mpmath quadrature at 30 digits)
+exact = {
+    5.3: 3.5579380424596523,
+    6.0: 1.7193883102301668,
+    8.0: 0.8587300180790948,
+    12.0: 0.4526054125988861,
+    50.0: 0.0850834503832475,
+    100.0: 0.04122253974927284,
+    1000.0: 0.004011823809925292,
+}
+for b, want in exact.items():
+    got = deflection(b)
+    assert got is not None, b
+    assert abs(got - want) <= 1e-3 + 0.005 * want, (b, got, want)
+# deflection is symmetric in the sign of b
+assert abs(deflection(-8.0) - exact[8.0]) <= 1e-3 + 0.005 * exact[8.0]
+
+# weak field limit: 4/b to leading order (GR's famous twice the Newtonian value)
+for b in (200.0, 1000.0):
+    ratio = deflection(b) * b / 4
+    assert 1.0 < ratio < 1.0 + 20 / b, (b, ratio)
+# and it falls with b all the way down to the critical value
+bs = [5.25, 5.4, 5.8, 6.5, 8, 11, 20, 60, 300]
+ds = [deflection(b) for b in bs]
+assert all(d1 > d2 for d1, d2 in zip(ds, ds[1:])), ds
+assert ds[0] > 2 * math.pi * 0.6  # rays near the critical value loop around the hole
+
+# Shadow: a pixel is captured when its angle alpha from the line of sight to
+# the hole satisfies sin(alpha) <= (3*sqrt(3)/r_obs) * sqrt(1 - 2/r_obs).
+# tan(alpha_shadow) = 0.680336051416609 for r_obs = 8 and 0.169725025739105 for r_obs = 30.
+for n, fov, r, tan_s in ((41, 90.0, 8.0, 0.680336051416609), (41, 30.0, 30.0, 0.169725025739105), (64, 60.0, 12.0, None)):
+    g = shadow(n, fov, r)
+    assert isinstance(g, list) and len(g) == n and all(len(row) == n for row in g)
+    assert all(isinstance(v, bool) or v in (0, 1) for row in g for v in row)
+    T = math.tan(math.radians(fov) / 2)
+    if tan_s is None:
+        s_sh = 3 * math.sqrt(3) / r * math.sqrt(1 - 2 / r)
+        tan_s = s_sh / math.sqrt(1 - s_sh * s_sh)
+    wrong = 0
+    count = 0
+    for i in range(n):
+        y = (1 - 2 * (i + 0.5) / n) * T
+        for j in range(n):
+            x = (2 * (j + 0.5) / n - 1) * T
+            rho = math.hypot(x, y)
+            inside = rho <= tan_s
+            count += bool(g[i][j])
+            if bool(g[i][j]) != inside and abs(rho - tan_s) > 0.01 * T:
+                wrong += 1
+    assert wrong == 0, (n, fov, r, wrong)
+    # the shadow is a disc: about pi * tan_s^2 / (2T)^2 of the image
+    expect = math.pi * tan_s**2 / (2 * T) ** 2 * n * n
+    assert abs(count - expect) <= 0.06 * expect + 3, (count, expect)
+    # symmetric under flips and the centre is dark
+    assert all(g[i][j] == g[n - 1 - i][j] == g[i][n - 1 - j] for i in range(n) for j in range(n))
+
+# a wide view: rays far from the axis reach the observer's sky, so a corner is open
+g = shadow(41, 90.0, 8.0)
+assert g[20][20] and not g[0][0] and not g[0][40] and not g[40][0] and not g[40][40]
+# a view that fits inside the shadow is fully dark
+g = shadow(11, 10.0, 8.0)
+assert all(all(row) for row in g)
+# the shadow shrinks when the observer is far away (angular size ~ 3*sqrt(3)/r)
+near = sum(map(sum, shadow(31, 120.0, 7.0)))
+far = sum(map(sum, shadow(31, 120.0, 60.0)))
+assert near > 4 * far > 0
+'''
+
+[[questions]]
+id = "nbody"
+prompt = '''
+Write a Python module (standard library only, no numpy) for Newtonian N-body gravity in three dimensions with a symplectic integrator, so that energy does not drift over many orbits.
+
+Define these functions. Positions and velocities are lists of `[x, y, z]` (any sequence of 3 numbers may be passed in); the force between bodies i and j is G*m_i*m_j/r^2, with no softening.
+
+- `simulate(masses, positions, velocities, dt, steps, G=1.0) -> (positions, velocities)`: advance the system by `steps` steps of size `dt` and return the new positions and velocities as fresh lists of `[x, y, z]` lists of floats (never modify the arguments). `steps = 0` returns copies of the input. Use a second-order symplectic scheme such as velocity Verlet (kick-drift-kick leapfrog). The state alone must be enough to continue: calling `simulate` again on its own output must give the same result as one longer call.
+- `energy(masses, positions, velocities, G=1.0) -> float`: total kinetic plus potential energy.
+- `momentum(masses, velocities) -> [px, py, pz]`: total linear momentum.
+
+The tests integrate a circular two-body orbit (its period is 2*pi*sqrt(a^3/(G*M)) for separation a and total mass M), an eccentric orbit for 30 periods, a 3D three-body system and the figure-eight three-body choreography, and check periods, energy, angular momentum and momentum conservation. Keep each step cheap: tens of thousands of steps of 2 to 3 bodies must finish in a couple of seconds.'''
+tests = '''
+import math
+
+def close(a, b, tol):
+    return all(abs(x - y) <= tol for p, q in zip(a, b) for x, y in zip(p, q))
+
+def lz(m, pos, vel):
+    return sum(mi * (p[0] * v[1] - p[1] * v[0]) for mi, p, v in zip(m, pos, vel))
+
+# --- equal masses on a circular orbit: separation 1, total mass 2 ---
+# relative speed sqrt(G*M/a) = sqrt(2), period 2*pi*sqrt(a^3/(G*M)) = 2*pi/sqrt(2)
+m = [1.0, 1.0]
+p0 = [[0.5, 0.0, 0.0], [-0.5, 0.0, 0.0]]
+s = math.sqrt(2) / 2
+v0 = [[0.0, s, 0.0], [0.0, -s, 0.0]]
+T = 2 * math.pi / math.sqrt(2)
+assert abs(energy(m, p0, v0) - (-0.5)) < 1e-12          # -G m1 m2 / (2a)
+assert momentum(m, v0) == [0.0, 0.0, 0.0] or max(abs(c) for c in momentum(m, v0)) < 1e-15
+
+p_in, v_in = [[c for c in p] for p in p0], [[c for c in v] for v in v0]
+n = 2000
+p1, v1 = simulate(m, p0, v0, T / n, n)
+assert p0 == p_in and v0 == v_in            # inputs are not modified
+assert len(p1) == 2 and len(p1[0]) == 3 and len(v1) == 2
+assert close(p1, p0, 2e-3) and close(v1, v0, 2e-3), (p1, v1)
+ph, vh = simulate(m, p0, v0, T / n, n // 2)  # half a period: the bodies swap places
+assert close(ph, [p0[1], p0[0]], 2e-3), ph
+# a quarter period: body 1 is at (0, 0.5)
+pq, vq = simulate(m, p0, v0, T / n, n // 4)
+assert abs(pq[0][0]) < 2e-3 and abs(pq[0][1] - 0.5) < 2e-3, pq
+# zero steps gives the state back unchanged
+pz, vz = simulate(m, p0, v0, 0.01, 0)
+assert close(pz, p0, 0) and close(vz, v0, 0)
+# the period scales as a^1.5 / sqrt(M): same orbit, G = 4 -> period halves
+G4 = 4.0
+pg, vg = simulate(m, p0, [[0, 2 * s, 0], [0, -2 * s, 0]], (T / 2) / n, n, G=G4)
+assert close(pg, p0, 2e-3), pg
+
+# --- unequal masses 3:1 at separation 2: M = 4, T = 2*pi*sqrt(8/4) ---
+m = [3.0, 1.0]
+p0 = [[-0.5, 0.0, 0.0], [1.5, 0.0, 0.0]]
+v0 = [[0.0, -math.sqrt(2) / 4, 0.0], [0.0, 3 * math.sqrt(2) / 4, 0.0]]
+T = 2 * math.pi * math.sqrt(2)
+assert max(abs(c) for c in momentum(m, v0)) < 1e-15
+p1, v1 = simulate(m, p0, v0, T / 4000, 4000)
+assert close(p1, p0, 3e-3) and close(v1, v0, 3e-3), (p1, v1)
+p1, v1 = simulate(m, p0, v0, T / 4000, 2000)
+assert close(p1, [[0.5, 0, 0], [-1.5, 0, 0]], 3e-3), p1
+
+# --- an eccentric orbit (e = 0.5, a = 1, equal masses): energy stays bounded ---
+# periapsis separation a(1-e) = 0.5 with relative speed sqrt(M(1+e)/(a(1-e))) = sqrt(6)
+m = [1.0, 1.0]
+vs = math.sqrt(6) / 2
+p0 = [[0.25, 0.0, 0.0], [-0.25, 0.0, 0.0]]
+v0 = [[0.0, vs, 0.0], [0.0, -vs, 0.0]]
+T = 2 * math.pi * math.sqrt(1.0 / 2.0)
+E0, L0 = energy(m, p0, v0), lz(m, p0, v0)
+assert abs(E0 - (-0.5)) < 1e-12
+p, v = p0, v0
+worst = 0.0
+maxsep = 0.0
+for orbit in range(30):
+    for chunk in range(10):
+        p, v = simulate(m, p, v, T / 1000, 100)
+        worst = max(worst, abs(energy(m, p, v) - E0) / abs(E0))
+        maxsep = max(maxsep, math.dist(p[0], p[1]))
+assert worst < 2e-3, worst
+assert abs(lz(m, p, v) - L0) < 1e-6 * abs(L0) + 1e-9
+assert abs(maxsep - 1.5) < 0.02     # apoapsis a(1+e)
+assert close(p, p0, 0.05), p        # back near periapsis after 30 periods
+
+# --- three bodies in 3D: momentum and the centre of mass ---
+m = [1.0, 2.0, 3.0]
+p0 = [[3.0, 0.6, -0.9], [-3.0, 1.5, 1.2], [0.3, -3.3, 2.1]]
+v0 = [[0.1, -0.2, 0.3], [0.4, 0.1, -0.1], [-0.3, 0.2, 0.0]]
+P0 = momentum(m, v0)
+M = sum(m)
+com0 = [sum(mi * pi[k] for mi, pi in zip(m, p0)) / M for k in range(3)]
+p, v = simulate(m, p0, v0, 0.001, 1500)
+P = momentum(m, v)
+assert max(abs(a - b) for a, b in zip(P, P0)) < 1e-9, (P, P0)
+com = [sum(mi * pi[k] for mi, pi in zip(m, p)) / M for k in range(3)]
+want = [com0[k] + P0[k] / M * 1.5 for k in range(3)]
+assert max(abs(a - b) for a, b in zip(com, want)) < 1e-9, (com, want)
+assert abs(energy(m, p, v) - energy(m, p0, v0)) < 1e-5 * abs(energy(m, p0, v0))
+# the z-motion is really 3D: with all z = 0 and vz = 0 it stays planar
+pp, vv = simulate([1.0, 1.0, 1.0], [[1, 0, 0], [-1, 0, 0], [0, 2, 0]], [[0, .3, 0], [0, -.3, 0], [.1, 0, 0]], 0.001, 300)
+assert all(abs(q[2]) < 1e-12 for q in pp) and all(abs(q[2]) < 1e-12 for q in vv)
+
+# --- the figure-eight three-body choreography (Chenciner-Montgomery), period 6.32591398 ---
+m = [1.0, 1.0, 1.0]
+x, y = 0.97000436, -0.24308753
+vx3, vy3 = -0.93240737, -0.86473146
+p0 = [[x, y, 0.0], [-x, -y, 0.0], [0.0, 0.0, 0.0]]
+v0 = [[-vx3 / 2, -vy3 / 2, 0.0], [-vx3 / 2, -vy3 / 2, 0.0], [vx3, vy3, 0.0]]
+T = 6.32591398
+n = 4000
+p, v = simulate(m, p0, v0, T / n, n)
+assert close(p, p0, 5e-3), p
+assert close(v, v0, 5e-3), v
+E0 = energy(m, p0, v0)
+ph, vh = simulate(m, p0, v0, T / n, n // 3)    # a third of a period: the bodies have cycled
+assert close(ph, [p0[2], p0[0], p0[1]], 2e-2) or close(ph, [p0[1], p0[2], p0[0]], 2e-2), ph
+assert abs(energy(m, ph, vh) - E0) < 1e-4 * abs(E0)
+'''
+
+[[questions]]
+id = "raytracer"
+prompt = '''
+Write a small ray tracer in pure Python (standard library only, no numpy) that renders spheres and a ground plane, lit by one point light with Lambert shading and hard shadows, into a grayscale image.
+
+`render(width, height, spheres, light, plane_y=None, plane_albedo=0.7, fov_deg=60.0, ambient=0.1, background=0.2) -> list[list[float]]`
+
+Returns `height` rows (row 0 is the top of the image) of `width` floats each.
+
+Scene and camera:
+- World axes: x to the right, y up, z away from the camera. The camera is at the origin looking along +z with y up.
+- Pixel (column i, row j) has its centre at x = (2(i + 0.5)/width - 1) * aspect * t and y = (1 - 2(j + 0.5)/height) * t on the plane z = 1, where t = tan(fov_deg/2) (fov_deg is the vertical field of view) and aspect = width/height. The ray goes from the origin through that point (normalise the direction).
+- `spheres` is a list of tuples `(cx, cy, cz, radius, albedo)`. The camera is outside every sphere.
+- If `plane_y` is not None there is an infinite horizontal plane y = plane_y (below the camera, normal pointing up) with albedo `plane_albedo`.
+- `light` is a point light `(lx, ly, lz)` above the plane, with no distance falloff.
+
+Shading, for the nearest hit point p with unit surface normal n (outward for a sphere, +y for the plane) and L the unit vector from p to the light:
+- value = albedo * (ambient + (1 - ambient) * lit * max(0, n . L)), where lit is 0 if any sphere blocks the segment from p to the light (cast the shadow ray from p, nudged slightly along n to avoid self-shadowing) and 1 otherwise. The plane never casts a shadow.
+- A ray that hits nothing gets the value `background`.
+
+Images up to about 200 x 100 with a few spheres must render in a couple of seconds.'''
+tests = '''
+import math
+
+def flat(img):
+    return [v for row in img for v in row]
+
+# --- one sphere, no plane: the centre pixel looks straight along +z ---
+# hit at (0,0,4), normal (0,0,-1), light at (0,5,0): n.l = 4/sqrt(41)
+img = render(51, 51, [(0, 0, 5, 1, 0.8)], (0, 5, 0))
+assert len(img) == 51 and all(len(r) == 51 for r in img)
+want = 0.8 * (0.1 + 0.9 * 4 / math.sqrt(41))          # 0.529780...
+assert abs(img[25][25] - want) < 1e-6, (img[25][25], want)
+assert img[0][0] == 0.2 and img[0][50] == 0.2 and img[50][0] == 0.2 and img[50][50] == 0.2
+want = 0.8 * (0.25 + 0.75 * 4 / math.sqrt(41))
+img = render(51, 51, [(0, 0, 5, 1, 0.8)], (0, 5, 0), ambient=0.25, background=0.9)
+assert abs(img[25][25] - want) < 1e-6 and img[0][0] == 0.9
+
+# --- the sphere's size on screen: tan(half-angle) = 1/sqrt(24); pixels are square ---
+w, h = 200, 50
+img = render(w, h, [(0, 0, 5, 1, 0.8)], (0, 5, 0), background=0.95)
+count = sum(1 for v in flat(img) if v != 0.95)
+t = math.tan(math.radians(30))
+expect = math.pi * (1 / math.sqrt(24)) ** 2 / (2 * t / h) ** 2     # about 245 pixels
+assert abs(count - expect) < 0.06 * expect, (count, expect)
+# the disc is centred
+cols = [i for i in range(w) for j in range(h) if img[j][i] != 0.95]
+rows = [j for i in range(w) for j in range(h) if img[j][i] != 0.95]
+assert abs((min(cols) + max(cols)) / 2 - (w - 1) / 2) < 0.6 and abs((min(rows) + max(rows)) / 2 - (h - 1) / 2) < 0.6
+# a wider field of view makes it smaller
+img2 = render(w, h, [(0, 0, 5, 1, 0.8)], (0, 5, 0), fov_deg=90.0, background=0.95)
+count2 = sum(1 for v in flat(img2) if v != 0.95)
+assert count2 < 0.5 * count
+
+# --- orientation: +x is to the right, +y is up, row 0 is the top ---
+img = render(40, 30, [(1.5, 0, 5, 0.7, 0.8)], (1.5, 0, 0), background=0.95)
+left = sum(1 for r in img for v in r[:20] if v != 0.95)
+right = sum(1 for r in img for v in r[20:] if v != 0.95)
+assert left == 0 and right > 20
+img = render(40, 30, [(0, 1.2, 5, 0.7, 0.8)], (0, 1.2, 0), background=0.95)
+top = sum(1 for r in img[:15] for v in r if v != 0.95)
+bottom = sum(1 for r in img[15:] for v in r if v != 0.95)
+assert bottom == 0 and top > 20
+# a mirrored scene gives a mirrored image
+sph = [(1.3, -0.4, 6, 1.0, 0.9), (-0.5, 0.3, 4.5, 0.6, 0.5)]
+sph_m = [(-s[0], s[1], s[2], s[3], s[4]) for s in sph]
+a = render(37, 23, sph, (2, 4, 1), plane_y=-1.0)
+b = render(37, 23, sph_m, (-2, 4, 1), plane_y=-1.0)
+assert max(abs(x - y) for ra, rb in zip(a, b) for x, y in zip(ra, rb[::-1])) < 1e-9
+
+# --- two spheres, a plane at y = -1 and hard shadows, 61 x 41, light (-3, 6, 1) ---
+# expected values from an independent numpy ray tracer; pixels chosen away from edges
+spheres = [(0, 0, 5, 1, 0.8), (2.0, -0.5, 7, 1.5, 0.6)]
+img = render(61, 41, spheres, (-3, 6, 1), plane_y=-1.0, plane_albedo=0.7, fov_deg=60.0, ambient=0.1, background=0.2)
+assert len(img) == 41 and all(len(r) == 61 for r in img)
+checks = [
+    (2, 3, 0.2), (17, 3, 0.2),
+    (17, 27, 0.659438), (17, 43, 0.464736),
+    (22, 27, 0.301787), (22, 35, 0.08), (22, 43, 0.364641), (22, 51, 0.26491), (22, 59, 0.244877),
+    (27, 3, 0.611525), (27, 11, 0.614211), (27, 19, 0.60627), (27, 27, 0.07), (27, 35, 0.07),
+    (27, 43, 0.536996), (27, 51, 0.507547), (27, 59, 0.478394),
+    (32, 3, 0.673488), (32, 27, 0.637441), (32, 59, 0.556476), (37, 3, 0.680512), (37, 59, 0.588535),
+]
+for r, c, want in checks:
+    assert abs(img[r][c] - want) < 2e-3, (r, c, img[r][c], want)
+total = sum(flat(img))
+assert abs(total - 928.1264) < 0.01 * 928.1264, total
+# shadows: the plane in the sphere's shadow is dark (albedo * ambient = 0.07), lit plane is not
+assert abs(img[27][27] - 0.07) < 1e-6
+shadowed = sum(1 for v in flat(img) if abs(v - 0.07) < 1e-6)
+assert 10 < shadowed < 200, shadowed
+# no plane: the same pixels become background
+img_np = render(61, 41, spheres, (-3, 6, 1), fov_deg=60.0)
+assert img_np[37][3] == 0.2 and abs(img_np[17][27] - 0.659438) < 2e-3
+# a light behind a sphere leaves only ambient on its camera-facing side
+img = render(31, 31, [(0, 0, 5, 1, 0.8)], (0, 0, 20))
+assert abs(img[15][15] - 0.8 * 0.1) < 1e-9
+# every value is a plain number in [0, 1]
+assert all(isinstance(v, (int, float)) and 0 <= v <= 1 for v in flat(img))
+'''
+
+[[questions]]
+id = "double-pendulum"
+prompt = '''
+Write a Python module (standard library only, no numpy) that simulates a planar double pendulum with an accurate fixed-step Runge-Kutta integrator (RK4), the way you would for a physics demo.
+
+Two point masses m1 and m2 hang on rigid massless rods of lengths l1 and l2 from a fixed pivot, under gravity g. The angles theta1 (rod 1 from the pivot) and theta2 (rod 2, from the first bob) are measured from the straight-down vertical, in radians, and omega1, omega2 are their time derivatives. Use the full nonlinear equations of motion, from the Lagrangian.
+
+- `simulate(theta1, theta2, omega1, omega2, t, dt=0.001, m1=1.0, m2=1.0, l1=1.0, l2=1.0, g=9.81) -> (theta1, theta2, omega1, omega2)`: integrate from time 0 to time `t` (t >= 0) and return the final state as a tuple of 4 floats. Angles are not wrapped to any range. Take steps of about `dt` (use a whole number of equal steps that adds up to exactly `t`; for `t = 0` return the input). The result must be accurate to about 1e-5 at dt = 0.001 even for violent, chaotic motion lasting a few seconds, and restarting from a returned state must continue the same trajectory.
+- `energy(theta1, theta2, omega1, omega2, m1=1.0, m2=1.0, l1=1.0, l2=1.0, g=9.81) -> float`: total energy (kinetic + potential), with the potential energy zero at the height of the pivot, so that both bobs hanging at rest has the energy -(m1 + m2)*g*l1 - m2*g*l2.
+
+The tests check small-angle normal-mode periods, long-run energy conservation, time reversibility, and trajectories against a high-precision reference.'''
+tests = '''
+import math
+d2r = math.radians
+
+def near(got, want, tol):
+    return len(got) == len(want) and all(abs(a - b) <= tol for a, b in zip(got, want))
+
+# --- energy() at rest: V = -(m1+m2) g l1 cos(th1) - m2 g l2 cos(th2) ---
+assert abs(energy(0, 0, 0, 0) - (-2 * 9.81 - 9.81)) < 1e-9
+assert abs(energy(math.pi, 0, 0, 0) - (2 * 9.81 - 9.81)) < 1e-9
+# moving: both bobs at the bottom, omega1 = 2, omega2 = 3, unit masses/lengths: T = 0.5*4 + 0.5*(4 + 9 + 2*2*3) = 14.5
+assert abs(energy(0, 0, 2.0, 3.0) - (14.5 - 3 * 9.81)) < 1e-9
+
+# --- t = 0 and the return type ---
+r = simulate(0.3, -0.2, 1.0, 0.5, 0.0)
+assert len(r) == 4 and near(r, (0.3, -0.2, 1.0, 0.5), 1e-12)
+assert all(isinstance(v, float) for v in r)
+# hanging at rest stays at rest
+assert near(simulate(0.0, 0.0, 0.0, 0.0, 5.0), (0, 0, 0, 0), 1e-12)
+
+# --- small oscillations: the two normal modes of the equal double pendulum ---
+# omega^2 = (2 -+ sqrt 2) g / l with theta2 = +-sqrt(2) theta1 (lower mode: same sign)
+g = 9.81
+a = 1e-3
+for sign, w2 in ((+1, (2 - math.sqrt(2)) * g), (-1, (2 + math.sqrt(2)) * g)):
+    w = math.sqrt(w2)
+    T = 2 * math.pi / w
+    t1, t2 = a, sign * math.sqrt(2) * a
+    full = simulate(t1, t2, 0.0, 0.0, T)
+    assert near(full, (t1, t2, 0.0, 0.0), 2e-6 * max(1, w)), (sign, full)
+    half = simulate(t1, t2, 0.0, 0.0, T / 2)
+    assert near(half, (-t1, -t2, 0.0, 0.0), 2e-6 * max(1, w)), (sign, half)
+    quarter = simulate(t1, t2, 0.0, 0.0, T / 4)
+    assert abs(quarter[0]) < 2e-6 and abs(quarter[1]) < 2e-6
+    assert abs(quarter[2] + a * w) < 3e-6 * w, quarter    # theta1 = a cos(wt) so omega1 = -a w sin(wt)
+
+# --- a violent, chaotic trajectory against a high-precision reference ---
+# (Euler-Lagrange equations derived with sympy, integrated with RK4 at h = 2e-5; Richardson-checked to 1e-12)
+r = simulate(d2r(120), d2r(-10), 0.0, 0.0, 3.0)
+assert near(r, (-0.6262036677317623, 4.158048561314479, -0.7610202878270337, 4.5944288502468345), 1e-5), r
+# unequal masses and lengths, initial velocities; the angles are NOT wrapped to (-pi, pi]
+r = simulate(d2r(90), d2r(45), 1.0, -0.5, 2.5, m1=2.0, m2=0.5, l1=1.2, l2=0.8)
+assert near(r, (1.1629265680010596, -8.7264419138306, 1.645004354356022, -2.451991117385011), 1e-5), r
+r = simulate(d2r(30), d2r(20), 0.0, 0.0, 4.0, dt=0.0005)
+assert near(r, (-0.49373968253806844, -0.3925988624972887, 0.4995667832695228, -0.5918235949315968), 1e-5), r
+# gravity enters: theta(t; g) depends only on t*sqrt(g)
+r1 = simulate(d2r(30), d2r(20), 0.0, 0.0, 2.0, g=1.62)
+r2 = simulate(d2r(30), d2r(20), 0.0, 0.0, 2.0 * math.sqrt(1.62 / 9.81))
+assert near(r1[:2], r2[:2], 1e-5)
+
+# --- energy stays constant along a violent trajectory ---
+th1, th2, w1, w2 = d2r(120), d2r(-10), 0.0, 0.0
+E0 = energy(th1, th2, w1, w2)
+scale = 2 * g
+worst = 0.0
+for _ in range(10):
+    th1, th2, w1, w2 = simulate(th1, th2, w1, w2, 1.0)
+    worst = max(worst, abs(energy(th1, th2, w1, w2) - E0))
+assert worst < 1e-6 * scale, worst
+assert max(abs(th1), abs(th2)) > 2.0     # it really was violent
+# the same with unequal masses and lengths
+p = dict(m1=1.5, m2=0.7, l1=0.9, l2=1.3, g=9.81)
+th1, th2, w1, w2 = 2.0, 1.0, 0.5, -1.0
+E0 = energy(th1, th2, w1, w2, **p)
+for _ in range(8):
+    th1, th2, w1, w2 = simulate(th1, th2, w1, w2, 1.0, **p)
+assert abs(energy(th1, th2, w1, w2, **p) - E0) < 1e-6 * scale
+
+# --- time reversal: run forward, flip the velocities, run the same time back ---
+f = simulate(1.0, 2.0, 0.3, -0.4, 4.0)
+b = simulate(f[0], f[1], -f[2], -f[3], 4.0)
+assert near(b, (1.0, 2.0, -0.3, 0.4), 1e-6), b
+'''
+
+[[questions]]
+id = "collisions"
+prompt = '''
+Write a Python module (standard library only, no numpy) that simulates frictionless elastic discs bouncing in a rectangular box, exactly enough that fast discs never pass through each other or the walls.
+
+`simulate(disks, width, height, t) -> list`
+
+- The box is [0, width] x [0, height]. Each disk is a tuple `(x, y, vx, vy, radius, mass)`: x, y is the centre, and the disk stays entirely inside the box (its centre stays within [radius, width - radius] x [radius, height - radius]). The input has no overlaps, and no disk starts beyond a wall.
+- Advance the system by time `t` >= 0 and return the new list of tuples in the same order and format (radius and mass unchanged; positions and velocities as floats). Do not modify the input.
+- Disks bounce off the walls perfectly elastically (the velocity component perpendicular to the wall flips).
+- Disks collide with each other perfectly elastically: when the distance between centres equals the sum of the radii and they are approaching, the velocity components along the line of centres are exchanged according to conservation of momentum and kinetic energy (with the two masses), and the tangential components are unchanged.
+- Collisions must be detected at the moment they happen, not just by checking overlaps after a fixed time step: two small disks moving at 100 length units per second must still collide. Treat several touching disks (a Newton's cradle) as a sequence of pair collisions at the same instant. Ignore spin and friction.
+- 12 disks for 5 time units must run in about a second or two.
+
+The tests check exact bounce positions, head-on and oblique collisions of equal and unequal masses, and conservation of kinetic energy (and of momentum when no wall is hit).'''
+tests = '''
+import math, random
+
+def approx(disk, x, y, vx=None, vy=None, tol=0.01):
+    ok = abs(disk[0] - x) < tol and abs(disk[1] - y) < tol
+    if vx is not None:
+        ok = ok and abs(disk[2] - vx) < 0.02 and abs(disk[3] - vy) < 0.02
+    return ok
+
+def ke(ds):
+    return sum(0.5 * d[5] * (d[2] ** 2 + d[3] ** 2) for d in ds)
+
+# --- one disk bouncing in a 10 x 8 box (centre stays within [r, W-r]) ---
+# values from unfolding the motion onto a line (independent of any collision code)
+d0 = [(1.0, 1.0, 3.0, 2.0, 0.5, 1.0)]
+for t, x, y, vx, vy in ((0.0, 1.0, 1.0, 3.0, 2.0), (0.7, 3.1, 2.4, 3.0, 2.0),
+                        (3.3, 8.1, 7.4, -3.0, -2.0), (10.0, 6.0, 7.0, -3.0, 2.0)):
+    out = simulate(d0, 10.0, 8.0, t)
+    assert len(out) == 1 and len(out[0]) == 6, out
+    assert approx(out[0], x, y, vx, vy), (t, out)
+    assert out[0][4] == 0.5 and out[0][5] == 1.0
+assert d0 == [(1.0, 1.0, 3.0, 2.0, 0.5, 1.0)]          # input untouched
+
+# --- head-on, equal masses: they swap velocities ---
+ds = [(4.0, 4.0, 2.0, 0.0, 0.5, 1.0), (6.0, 4.0, -2.0, 0.0, 0.5, 1.0)]
+out = simulate(ds, 10.0, 10.0, 0.5)      # touch at t = 0.25 at x = 4.5 and 5.5
+assert approx(out[0], 4.0, 4.0, -2.0, 0.0) and approx(out[1], 6.0, 4.0, 2.0, 0.0), out
+out = simulate(ds, 10.0, 10.0, 0.2)      # not yet touching
+assert approx(out[0], 4.4, 4.0, 2.0, 0.0) and approx(out[1], 5.6, 4.0, -2.0, 0.0), out
+
+# --- head-on, masses 3 and 1: v1' = (m1-m2)/(m1+m2) v1 = 1, v2' = 2 m1/(m1+m2) v1 = 3 ---
+ds = [(2.0, 5.0, 2.0, 0.0, 0.5, 3.0), (6.0, 5.0, 0.0, 0.0, 0.5, 1.0)]
+out = simulate(ds, 10.0, 10.0, 2.5)      # contact at t = 1.5, A at x = 5
+assert approx(out[0], 6.0, 5.0, 1.0, 0.0) and approx(out[1], 9.0, 5.0, 3.0, 0.0), out
+# a light disk hits a heavy one at rest and bounces back
+ds = [(2.0, 5.0, 3.0, 0.0, 0.5, 1.0), (5.0, 5.0, 0.0, 0.0, 0.5, 9.0)]
+out = simulate(ds, 10.0, 10.0, 1.0)      # contact at t = 2/3; v1' = -2.4, v2' = 0.6
+assert approx(out[0], 3.2, 5.0, -2.4, 0.0) and approx(out[1], 5.2, 5.0, 0.6, 0.0), out
+
+# --- an oblique hit: equal masses, the target at rest, so they leave at right angles ---
+# A (3,4) v=(2,0); B (5,4.5) at rest; contact at t = 1 - sqrt(3)/4 = 0.56699, normal (0.866, 0.5)
+# afterwards A has v = (0.5, -0.866) and B has v = (1.5, 0.866)
+ds = [(3.0, 4.0, 2.0, 0.0, 0.5, 1.0), (5.0, 4.5, 0.0, 0.0, 0.5, 1.0)]
+for T, A, B in ((1.0, (4.350481, 3.625), (5.649519, 4.875)), (2.0, (4.850481, 2.758975), (7.149519, 5.741025))):
+    out = simulate(ds, 10.0, 10.0, T)
+    assert approx(out[0], A[0], A[1], 0.5, -0.866025), (T, out)
+    assert approx(out[1], B[0], B[1], 1.5, 0.866025), (T, out)
+
+# --- Newton's cradle: a moving disk hits two touching ones, only the last leaves ---
+ds = [(2.0, 5.0, 3.0, 0.0, 0.5, 1.0), (3.0, 5.0, 0.0, 0.0, 0.5, 1.0), (4.0, 5.0, 0.0, 0.0, 0.5, 1.0)]
+out = simulate(ds, 20.0, 10.0, 2.0)
+assert approx(out[0], 2.0, 5.0, 0.0, 0.0, tol=0.05) and approx(out[1], 3.0, 5.0, 0.0, 0.0, tol=0.05), out
+assert approx(out[2], 10.0, 5.0, 3.0, 0.0, tol=0.05), out
+
+# --- fast, small disks must not pass through each other ---
+ds = [(1.0, 5.0, 100.0, 0.0, 0.05, 1.0), (9.0, 5.0, -100.0, 0.0, 0.05, 1.0)]
+out = simulate(ds, 10.0, 10.0, 0.06)     # contact at t = 0.0395 at x = 4.95 / 5.05
+assert approx(out[0], 2.9, 5.0, -100.0, 0.0, tol=0.05) and approx(out[1], 7.1, 5.0, 100.0, 0.0, tol=0.05), out
+
+# --- walls: a disk at rest against a wall stays; the corner reflects both components ---
+out = simulate([(0.5, 0.5, 0.0, 0.0, 0.5, 1.0)], 4.0, 4.0, 5.0)
+assert approx(out[0], 0.5, 0.5, 0.0, 0.0)
+out = simulate([(1.0, 1.0, -1.0, -1.0, 0.5, 1.0)], 4.0, 4.0, 1.0)   # hits both walls at t = 0.5
+assert approx(out[0], 1.0, 1.0, 1.0, 1.0), out
+assert simulate([], 5.0, 5.0, 1.0) == []
+
+# --- no walls involved: momentum and kinetic energy are conserved exactly ---
+rnd = random.Random(7)
+ds = []
+for k in range(6):
+    ds.append((500 + 3.0 * (k % 3) + rnd.uniform(-.3, .3), 500 + 3.0 * (k // 3) + rnd.uniform(-.3, .3),
+               rnd.uniform(-2, 2), rnd.uniform(-2, 2), 0.5, rnd.uniform(0.5, 3)))
+out = simulate(ds, 1000.0, 1000.0, 6.0)
+px0 = sum(d[5] * d[2] for d in ds); py0 = sum(d[5] * d[3] for d in ds)
+px1 = sum(d[5] * d[2] for d in out); py1 = sum(d[5] * d[3] for d in out)
+assert abs(px0 - px1) < 1e-9 and abs(py0 - py1) < 1e-9, (px0, px1, py0, py1)
+assert abs(ke(ds) - ke(out)) < 1e-9 * ke(ds)
+assert any(abs(a[2] - b[2]) > 0.1 for a, b in zip(ds, out)), "nothing collided"
+
+# --- twelve disks in a closed box: kinetic energy is conserved, nobody leaves or overlaps ---
+rnd = random.Random(3)
+W, H = 20.0, 15.0
+ds = []
+for k in range(12):
+    cx, cy = 2.5 + 5 * (k % 4), 2.5 + 5 * (k // 4)
+    ds.append((cx + rnd.uniform(-1, 1), cy + rnd.uniform(-1, 1), rnd.uniform(-4, 4), rnd.uniform(-4, 4), rnd.uniform(0.3, 0.9), rnd.uniform(0.5, 4)))
+for T in (2.0, 5.0):
+    out = simulate(ds, W, H, T)
+    assert len(out) == 12
+    assert abs(ke(out) - ke(ds)) < 1e-6 * ke(ds), (ke(out), ke(ds))
+    for d in out:
+        assert d[4] - 1e-3 <= d[0] <= W - d[4] + 1e-3 and d[4] - 1e-3 <= d[1] <= H - d[4] + 1e-3, d
+    for i in range(12):
+        for j in range(i + 1, 12):
+            gap = math.hypot(out[i][0] - out[j][0], out[i][1] - out[j][1]) - out[i][4] - out[j][4]
+            assert gap > -0.02, (i, j, gap)
+'''
+
+[[questions]]
+id = "kepler"
+prompt = '''
+Write a Python module (standard library only, no numpy) for Keplerian orbits: solve Kepler's equation robustly and propagate a two-body orbit analytically. Use consistent units of your caller's choosing; `mu` is the gravitational parameter G*(M + m) and a, e are the semi-major axis and eccentricity of an elliptical orbit (0 <= e < 1, including very eccentric ones like e = 0.9999).
+
+- `solve_kepler(M, e) -> float`: the eccentric anomaly E in [0, 2*pi) with E - e*sin(E) = M, where M (mean anomaly, radians, any real number) is first reduced modulo 2*pi. The residual must be below 1e-9 for every e < 1, so the iteration must converge even for e close to 1 and M near 0 or 2*pi (a bare Newton iteration started at E = M does not).
+- `period(a, mu) -> float`: the orbital period.
+- `state_at(a, e, mu, t) -> (x, y, vx, vy)`: position and velocity in the orbital plane at time t >= 0 after periapsis, with the origin at the focus (the central body), the periapsis on the +x axis and the motion counter-clockwise. t may span many periods.
+- `time_since_periapsis(a, e, mu, nu) -> float`: the time in [0, period) since the last periapsis passage for a true anomaly `nu` (radians, any real number, measured counter-clockwise from the periapsis direction).
+
+The tests check roots of Kepler's equation against a high-precision solve, exact states, and that the result follows Newton's law of gravitation, conserves angular momentum and satisfies the vis-viva equation.'''
+tests = '''
+import math
+
+TWO_PI = 2 * math.pi
+
+# --- Kepler's equation E - e sin E = M ---
+# reference roots found by bisection at 30 digits (mpmath)
+roots = [
+    (1.0, 0.5, 1.49870113351784831),
+    (0.1, 0.9, 0.630843527563153499),
+    (3.0, 0.99, 3.07041066911750175),
+    (5.5, 0.2, 5.33786284577664325),
+    (2.0, 0.0, 2.0),
+    (-1.0, 0.7, 4.58854639508774535),      # M is reduced modulo 2 pi first
+    (100.0, 0.3, 5.55186438011902681),
+    (6.2, 0.999, 5.48376453086111034),
+]
+for M, e, want in roots:
+    E = solve_kepler(M, e)
+    assert 0 <= E < TWO_PI, (M, e, E)
+    assert abs(E - want) < 1e-9, (M, e, E, want)
+# residual over a grid, including very eccentric orbits
+for e in (0.0, 0.1, 0.5, 0.9, 0.99, 0.9999):
+    for k in range(0, 41):
+        M = k * TWO_PI / 40
+        E = solve_kepler(M, e)
+        res = (E - e * math.sin(E) - M) % TWO_PI
+        assert min(res, TWO_PI - res) < 1e-9, (M, e, E, res)
+assert abs(solve_kepler(0.0, 0.7)) < 1e-12
+assert abs(solve_kepler(math.pi, 0.7) - math.pi) < 1e-9
+
+# --- periapsis, apoapsis and the period ---
+assert abs(period(2.0, 1.5) - 14.510394913873743) < 1e-9
+assert abs(period(1.0, 4 * math.pi**2) - 1.0) < 1e-12
+a, e, mu = 2.0, 0.7, 1.5
+T = period(a, mu)
+s = state_at(a, e, mu, 0.0)
+assert len(s) == 4
+assert all(abs(p - q) < 1e-9 for p, q in zip(s, (a * (1 - e), 0.0, 0.0, math.sqrt(mu / a * (1 + e) / (1 - e)))))
+s = state_at(a, e, mu, T / 2)       # apoapsis: on -x, moving in -y (counter-clockwise)
+assert abs(s[0] + a * (1 + e)) < 1e-8 and abs(s[1]) < 1e-8 and abs(s[2]) < 1e-8
+assert abs(s[3] + math.sqrt(mu / a * (1 - e) / (1 + e))) < 1e-8
+s = state_at(a, e, mu, T)
+assert all(abs(p - q) < 1e-7 for p, q in zip(s, state_at(a, e, mu, 0.0)))
+s = state_at(a, e, mu, 37 * T + 1.0)  # many periods later is the same as t = 1
+assert all(abs(p - q) < 1e-6 for p, q in zip(s, state_at(a, e, mu, 1.0)))
+
+# --- exact states (30-digit Kepler solve, cross-checked by RK4 of the two-body equations) ---
+cases = [
+    ((2.0, 0.7, 1.5, 3.0), (-2.1393431310934354, 1.3271094847816918, -0.6392575765741078, -0.18162906592578332)),
+    ((1.0, 0.0, 1.0, 1.0), (0.5403023058681398, 0.8414709848078965, -0.8414709848078965, 0.5403023058681398)),
+    ((5.0, 0.3, 3.986, 7.0), (-1.3957236845070258, 4.7686586237143, -0.8982865799118422, 0.017874987539095357)),
+    ((1.0, 0.95, 1.0, 5.0), (-1.4567306114996796, -0.2691920290768158, 0.5819548382184607, -0.10680924459234291)),
+]
+for args, want in cases:
+    got = state_at(*args)
+    assert all(abs(p - q) < 1e-7 for p, q in zip(got, want)), (args, got, want)
+
+# --- invariants over a whole orbit: vis-viva, angular momentum, Newton's law ---
+for a, e, mu in ((1.0, 0.0, 1.0), (3.0, 0.4, 2.0), (1.5, 0.9, 0.7), (10.0, 0.05, 398.6)):
+    T = period(a, mu)
+    h_exp = math.sqrt(mu * a * (1 - e * e))
+    prev = None
+    for k in range(0, 61):
+        t = T * k / 60 + 0.1234
+        x, y, vx, vy = state_at(a, e, mu, t)
+        r = math.hypot(x, y)
+        assert a * (1 - e) - 1e-9 <= r <= a * (1 + e) + 1e-9
+        assert abs(vx * vx + vy * vy - mu * (2 / r - 1 / a)) < 1e-8 * mu / r     # vis-viva
+        assert abs(x * vy - y * vx - h_exp) < 1e-8 * h_exp                      # counter-clockwise, constant
+        # the position follows the conic r = a(1-e^2)/(1+e cos nu)
+        nu = math.atan2(y, x)
+        assert abs(r * (1 + e * math.cos(nu)) - a * (1 - e * e)) < 1e-8 * a
+        # acceleration from a finite difference of the velocity is -mu r / |r|^3
+        dt = 1e-5
+        vxp, vyp = state_at(a, e, mu, t + dt)[2:]
+        vxm, vym = state_at(a, e, mu, t - dt)[2:]
+        ax, ay = (vxp - vxm) / (2 * dt), (vyp - vym) / (2 * dt)
+        assert abs(ax + mu * x / r**3) < 1e-4 * mu / r**2 and abs(ay + mu * y / r**3) < 1e-4 * mu / r**2
+
+# --- true anomaly -> time since periapsis, the inverse direction ---
+a, e, mu = 2.0, 0.7, 1.5
+T = period(a, mu)
+assert abs(time_since_periapsis(a, e, mu, 0.0)) < 1e-9
+assert abs(time_since_periapsis(a, e, mu, math.pi) - T / 2) < 1e-9
+for t in (0.5, 3.0, 8.0, 12.0, 14.0):
+    x, y, _, _ = state_at(a, e, mu, t)
+    nu = math.atan2(y, x)
+    got = time_since_periapsis(a, e, mu, nu)
+    assert abs(got - t) < 1e-8, (t, got)
+# time from periapsis to nu = 90 degrees: the integral of r^2 dnu / h (area law), 30-digit quadrature
+assert abs(time_since_periapsis(a, e, mu, math.pi / 2) - 0.6824253397067699) < 1e-8
+assert abs(time_since_periapsis(a, e, mu, -math.pi / 2) - (T - 0.6824253397067699)) < 1e-8
+'''
