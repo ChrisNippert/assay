@@ -494,3 +494,37 @@ func TestLooping(t *testing.T) {
 		t.Error("repeated line not flagged")
 	}
 }
+
+// Every Game projects question has a reference solution in
+// testdata/projects-games/<id>.py (written and run when the set was made);
+// the hidden tests must pass against it, through the real harness.
+func TestProjectsGamesReferences(t *testing.T) {
+	if !HavePython() {
+		t.Skip("no python3")
+	}
+	l, _ := OpenLibrary("")
+	s, err := l.Get("projects-games")
+	if err != nil || s == nil {
+		t.Fatalf("projects-games set: %v", err)
+	}
+	if s.MaxTokens < 16384 || len(s.Questions) < 5 {
+		t.Errorf("max_tokens %d, questions %d", s.MaxTokens, len(s.Questions))
+	}
+	for _, q := range s.Questions {
+		t.Run(q.ID, func(t *testing.T) {
+			ref, err := os.ReadFile(filepath.Join("testdata", "projects-games", q.ID+".py"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			ok, out, err := RunCode(context.Background(), string(ref), q.Tests)
+			if err != nil || !ok {
+				t.Errorf("reference fails its tests: %v\n%s", err, out)
+			}
+			// as a model would send it: inside a reply
+			code, found := ExtractCode("Here you go.\n```python\n" + string(ref) + "```\n")
+			if !found || strings.TrimSpace(code) != strings.TrimSpace(string(ref)) {
+				t.Errorf("reference not extracted from a reply")
+			}
+		})
+	}
+}

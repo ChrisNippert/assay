@@ -1,0 +1,904 @@
+name = "Game projects"
+short = "Games"
+description = "Write a small game's engine from a spec (a maze chase, falling sand, platformer physics, a match-three board, a turn-based dungeon); hidden tests play it move by move and check every detail. A realistic medium-size program, not a one-liner. Needs Python 3."
+check = "code"
+max_tokens = 16384
+
+[[questions]]
+id = "maze-chase"
+prompt = '''
+Write a Python class `MazeGame` for a small headless maze-chase game. Define everything exactly as below; hidden tests play scripted games and check the state after every tick. Only the standard library is available. Reply with one Python code block.
+
+**Constructor.** `MazeGame(maze: str)`: rows separated by newlines (use `maze.splitlines()`), all the same length. Characters: `#` wall, `.` pellet, `o` power pellet, space empty floor, `P` the player's start, `C` a chaser's start. `P` and `C` cells are plain floor (no pellet). Rows are numbered from 0 at the top and columns from 0 at the left; a position is a tuple `(row, col)`. Anything outside the map counts as a wall (no wrap-around). The chasers are numbered 0, 1, 2… in reading order (row by row, left to right).
+
+**State** (plain attributes, always up to date): `player` (a position), `chasers` (a list of positions, index = chaser number), `score` (starts 0), `lives` (starts 3), `tick` (starts 0), `frightened` (ticks of fright left, starts 0), `state` (`"playing"`, `"won"` or `"lost"`), and `pellets_left` (the number of `.` and `o` still on the map; it may be an attribute or a property).
+
+**`step(direction)`** advances one tick and returns `self.state`. `direction` is `"U"`, `"D"`, `"L"`, `"R"` or `None` (stand still). If `state` is not `"playing"`, `step` does nothing at all (not even `tick`) and returns the state. Otherwise, in this order:
+
+1. `tick` goes up by 1.
+2. The player moves one cell in `direction` unless that cell is a wall (then the player stays; `tick` still counted). A pellet on the cell the player is now on is eaten: `.` gives 10 points, `o` gives 50 points, sets `frightened` to 8 and resets the ghost-eating combo counter to 0. If that leaves `pellets_left == 0` the state becomes `"won"` and the tick ends immediately (nothing below happens).
+3. Collision check (below).
+4. Every chaser moves once, in index order, one at a time (they may share cells and pass through each other); the movement rule is below.
+5. Collision check again.
+6. If `frightened > 0`, it goes down by 1. (So a power pellet eaten on tick t makes chasers frightened for the collision checks and moves of ticks t … t+7.)
+
+**Collision check.** Go through the chasers in index order; each chaser standing on the player's cell is handled. While `frightened > 0` the chaser is eaten: the score goes up by `200 * 2**combo` and `combo` goes up by 1 (so 200, 400, 800… until the next power pellet resets it), and that chaser goes back to its start cell with no heading (below). Otherwise the player is caught: `lives` goes down by 1; if it is now 0 the state becomes `"lost"`; otherwise the player and every chaser go back to their start cells, every heading is cleared and `frightened` is set to 0. A catch ends the tick at once (no later step of that tick happens, including step 6) and the rest of the collision loop is skipped.
+
+**Chaser movement.** Each chaser remembers its heading: the direction (`"U"`, `"L"`, `"D"` or `"R"`) of its last move, or none at the start and after going back to its start cell. To move: the candidate directions are those, taken in the fixed priority order U, L, D, R, whose neighbouring cell is not a wall. If the chaser has a heading, the direction opposite to it is dropped from the candidates unless it is the only candidate (a dead end). With no candidates the chaser stays. Let `dist(cell)` be the length of the shortest 4-connected path over non-wall cells from `cell` to the player's current position (10**9 if there is none). A normal chaser (`frightened == 0` at that moment) takes the candidate whose neighbouring cell has the smallest `dist`; a frightened one takes the largest `dist`. Ties go to the candidate that comes first in the order U, L, D, R. The chaser moves there and its heading becomes that direction. All chasers use the player's position as it is at that moment (after step 2).'''
+tests = '''
+def snap(g):
+    return (tuple(g.player), [tuple(c) for c in g.chasers], g.score, g.lives, g.frightened, g.state)
+
+# --- start state
+g = MazeGame("#######\n#P.o.C#\n#.###.#\n#.....#\n#######")
+assert tuple(g.player) == (1, 1), f"player start {g.player}"
+assert [tuple(c) for c in g.chasers] == [(1, 5)], f"chaser start {g.chasers}"
+assert (g.score, g.lives, g.tick, g.frightened, g.state, g.pellets_left) == (0, 3, 0, 0, "playing", 10), \
+    f"initial (score, lives, tick, frightened, state, pellets_left) wrong: {(g.score, g.lives, g.tick, g.frightened, g.state, g.pellets_left)}"
+
+# --- walls, pellets, ticks
+g = MazeGame("#########\n#P.o....#\n#.#######\n#.......C#\n#########")
+assert g.step("U") == "playing" and tuple(g.player) == (1, 1) and g.tick == 1, "walking into a wall must leave the player in place but still count the tick"
+g.step("L")
+assert tuple(g.player) == (1, 1), "the map's left edge is a wall"
+g.step(None)
+assert tuple(g.player) == (1, 1) and g.tick == 3
+g.step("R")
+assert tuple(g.player) == (1, 2) and g.score == 10 and g.pellets_left == 13, f"eating a pellet: score {g.score}, left {g.pellets_left}"
+g.step("L")
+assert tuple(g.player) == (1, 1) and g.score == 10, "an eaten pellet must not be eaten twice"
+g.step("R")
+g.step("R")
+assert g.score == 60 and g.frightened == 7 and g.pellets_left == 12, f"power pellet: score {g.score}, frightened {g.frightened}, left {g.pellets_left}"
+
+# --- a chaser walks straight at a standing player and catches it on tick 7
+g = MazeGame("##########\n#C......P.#\n##########")
+for t in range(1, 7):
+    g.step(None)
+    assert [tuple(c) for c in g.chasers] == [(1, 1 + t)], f"tick {t}: chaser at {g.chasers}, expected (1, {1 + t})"
+    assert g.lives == 3
+g.step(None)
+assert g.lives == 2 and tuple(g.player) == (1, 8) and [tuple(c) for c in g.chasers] == [(1, 1)] and g.state == "playing", \
+    f"after being caught: {snap(g)} (expected the player and chaser back at their starts, 2 lives)"
+assert g.tick == 7
+
+# --- tie-break order U, L, D, R on a ring
+g = MazeGame("#####\n#C..#\n#.#.#\n#..P#\n#####")
+seen = []
+for t in range(3):
+    g.step(None)
+    seen.append(tuple(g.chasers[0]))
+assert seen == [(2, 1), (3, 1), (3, 2)], f"with two equally short routes the chaser takes the first direction in the order U, L, D, R: {seen}"
+g.step(None)
+assert g.lives == 2 and snap(g)[1] == [(1, 1)], f"the chaser should reach the player on tick 4: {snap(g)}"
+
+# --- frightened chaser flees, reverses only at a dead end, is eaten for 200 then 400
+g = MazeGame("############\n#Po.....C.#\n############")
+exp = [  # after each R: player col, chaser col, score, frightened
+    (2, 9, 50, 7), (3, 8, 60, 6), (4, 7, 70, 5), (5, 6, 80, 4),
+    (6, 9, 290, 3), (7, 8, 300, 2), (8, 7, 700, 1),
+]
+for i, (pc, cc, sc, fr) in enumerate(exp, 1):
+    g.step("R")
+    got = (g.player[1], g.chasers[0][1], g.score, g.frightened)
+    assert got == (pc, cc, sc, fr), f"tick {i}: (player col, chaser col, score, frightened) = {got}, expected {(pc, cc, sc, fr)}"
+assert g.state == "playing" and g.lives == 3
+assert g.step("R") == "won" and g.score == 710 and g.pellets_left == 0, f"winning: {snap(g)}"
+t0 = g.tick
+assert g.step("L") == "won" and g.tick == t0 and tuple(g.player) == (1, 9), "after the game ends step() must change nothing"
+
+# --- fright lasts exactly 8 ticks (the tick of the pellet included), then the chaser hunts again
+g = MazeGame("#############\n#.Po.......C#\n#.###########\n#...........#\n#############")
+g.step("R")
+assert g.frightened == 7 and g.score == 50, f"{snap(g)}"
+for k in range(6, -1, -1):
+    g.step(None)
+    assert g.frightened == k, f"frightened should count down to 0, got {g.frightened} expecting {k}"
+# the chaser fled while frightened; the next ticks it must come back towards the player
+col = g.chasers[0][1]
+g.step(None)
+g.step(None)
+assert g.chasers[0][1] < col or tuple(g.chasers[0]) != (1, col), f"chaser should chase again after fright: {snap(g)}"
+
+# --- a power pellet eaten while frightened resets the timer and the combo
+g = MazeGame("###############\n#PooC.........#\n###############")
+g.step("R")
+assert g.frightened == 7
+g.step(None)
+g.step(None)
+assert g.frightened == 5, g.frightened
+g.step("R")
+assert g.frightened == 7 and g.score == 100, f"second power pellet: frightened {g.frightened}, score {g.score}"
+
+# --- the combo restarts at 200 with every power pellet (a map may be a single row)
+g = MazeGame("#PoC.o..#")
+g.step("L")
+assert [tuple(c) for c in g.chasers] == [(0, 2)], f"tick 1: {snap(g)}"
+g.step("R")
+assert g.score == 250 and [tuple(c) for c in g.chasers] == [(0, 4)] and g.frightened == 7, \
+    f"tick 2: stepping onto a power pellet and a chaser in the same move: {snap(g)} (expected score 50 + 200 and the chaser sent home, then fleeing to column 4)"
+for _ in range(4):
+    g.step("R")
+assert g.score == 520 and g.state == "playing" and g.lives == 3, f"the second ghost after a new power pellet is worth 200 again: {snap(g)}"
+
+# --- a catch in step 3 ends the tick: nobody moves afterwards
+g = MazeGame("#########\n#PC.C.. #".replace(" #", "#"))
+g.step("R")
+assert g.lives == 2 and tuple(g.player) == (0 + 1, 1) and [tuple(c) for c in g.chasers] == [(1, 2), (1, 4)], \
+    f"after the player walks into a chaser everyone is back at the start and nobody moves that tick: {snap(g)}"
+
+# --- equal distances: the first of U, L, D, R wins
+room = ["#######", "#.....#", "#.....#", "#.....#", "#.....#", "#######"]
+r1 = list(room); r1[1] = "#..C..#"; r1[3] = "#P....#"   # chaser (1,3), player (3,1): L and D tie
+g = MazeGame("\n".join(r1)); g.step(None)
+assert tuple(g.chasers[0]) == (1, 2), f"L comes before D: {snap(g)}"
+r2 = list(room); r2[3] = "#C....#"; r2[1] = "#..P..#"   # chaser (3,1), player (1,3): U and R tie
+g = MazeGame("\n".join(r2)); g.step(None)
+assert tuple(g.chasers[0]) == (2, 1), f"U comes before R: {snap(g)}"
+
+# --- lost game
+g = MazeGame("#####\n#PC.#\n#####")
+res = [g.step(None) for _ in range(3)]
+assert res == ["playing", "playing", "lost"], f"three catches should lose the game: {res} {snap(g)}"
+assert g.lives == 0 and g.tick == 3
+assert g.step("R") == "lost" and g.tick == 3
+
+# --- full scripted games (state checked every 8 ticks)
+BIG = """###############
+#o...#.....#..#
+#.##.#.###.#.##
+#.#....#C#...##
+#.#.##.# #.##.#
+#...#..#.#..o.#
+###.#.##.#.##.#
+#P......C#....#
+###############"""
+GAMES = [
+    ('RRUUUURUULLLDDDDRRDDRRUURUUUURRRRDNRRULUUURRRUURRRRDDDDDDRRRUULLRRUDLLLUURRUURUNNNNNNNNNNNNRNNNNN',
+     [(8, (2, 4), ((6, 5), (4, 3)), 80, 3, 0, 'playing'), (16, (5, 1), ((1, 8), (2, 1)), 200, 3, 3, 'playing'),
+      (24, (5, 5), ((7, 10), (7, 4)), 250, 3, 0, 'playing'), (32, (1, 9), ((5, 10), (1, 6)), 330, 3, 0, 'playing'),
+      (40, (5, 3), ((7, 7), (7, 3)), 350, 2, 0, 'playing'), (48, (1, 7), ((2, 6), (2, 6)), 360, 2, 0, 'playing'),
+      (56, (6, 10), ((4, 10), (4, 10)), 400, 2, 0, 'playing'), (64, (5, 11), ((5, 13), (5, 13)), 520, 2, 6, 'playing'),
+      (72, (4, 10), ((7, 6), (5, 8)), 1130, 2, 0, 'playing'), (80, (1, 13), ((1, 6), (5, 6)), 1180, 2, 0, 'playing'),
+      (88, (1, 13), ((3, 12), (1, 10)), 1180, 2, 0, 'playing'), (96, (7, 2), ((7, 7), (7, 3)), 1180, 1, 0, 'playing'),
+      (97, (7, 2), ((7, 6), (7, 2)), 1180, 0, 0, 'lost')]),
+    ('RRUUUURUULLLDDDDRRDDRRUURUUUURRRRDNDDRRUUUURRRDDLDDRRRUUUNRRUUUURRRUURRRRDDDDDDRRRUUUDLLLUURRUUR',
+     [(8, (2, 4), ((6, 5), (4, 3)), 80, 3, 0, 'playing'), (16, (5, 1), ((1, 8), (2, 1)), 200, 3, 3, 'playing'),
+      (24, (5, 5), ((7, 10), (7, 4)), 250, 3, 0, 'playing'), (32, (1, 9), ((5, 10), (1, 6)), 330, 3, 0, 'playing'),
+      (40, (6, 3), ((7, 7), (7, 3)), 350, 2, 0, 'playing'), (48, (5, 6), ((3, 3), (4, 6)), 360, 2, 0, 'playing'),
+      (56, (5, 8), ((7, 5), (6, 8)), 400, 2, 0, 'playing'), (64, (3, 3), ((7, 6), (6, 3)), 400, 1, 0, 'playing'),
+      (72, (1, 9), ((1, 6), (1, 6)), 400, 1, 0, 'playing'), (80, (7, 11), ((5, 10), (5, 10)), 460, 1, 0, 'playing'),
+      (88, (5, 11), ((4, 13), (4, 13)), 570, 1, 6, 'playing'), (96, (1, 13), ((6, 10), (6, 10)), 620, 1, 0, 'won')]),
+]
+for moves, cps in GAMES:
+    g = MazeGame(BIG)
+    for i, ch in enumerate(moves, 1):
+        g.step(None if ch == "N" else ch)
+        for cp in cps:
+            if cp[0] == i:
+                got = snap(g)
+                want = (cp[1], [tuple(x) for x in cp[2]], cp[3], cp[4], cp[5], cp[6])
+                assert got == want, f"tick {i} of a scripted game: (player, chasers, score, lives, frightened, state) = {got}, expected {want}"
+
+# --- speed: 30x30 open room, 4 chasers, 1000 ticks
+import time
+rows = ["#" * 30] + ["#" + "." * 28 + "#" for _ in range(28)] + ["#" * 30]
+rows[1] = "#P" + "." * 26 + "C#"
+rows[28] = "#C" + "." * 26 + "C#"
+rows[14] = rows[14][:15] + "C" + rows[14][16:]
+g = MazeGame("\n".join(rows))
+t = time.time()
+for i in range(1000):
+    g.step("RRDDLLUU"[i % 8])
+    if g.state != "playing":
+        break
+assert time.time() - t < 8, "step() is too slow: use one breadth-first search per tick"
+'''
+
+[[questions]]
+id = "falling-sand"
+prompt = '''
+Write a Python class `Sandbox` for a falling-sand toy simulation on a rectangular grid. Define everything exactly as below; hidden tests step the simulation and compare the whole grid after each step. Only the standard library is available. Reply with one Python code block.
+
+**Constructor.** `Sandbox(rows: list[str])`: all rows have the same length. Characters: `.` empty, `#` stone, `s` sand, `w` water. Row 0 is the top. The constructor must not modify the list it is given.
+
+**Methods.** `rows()` returns the current grid as a new list of strings (changing the returned list must not affect the simulation). `count(ch)` returns how many cells hold `ch`. `step()` advances one tick. The attribute `generation` is the number of `step()` calls so far (starts at 0). Outside the grid counts as solid: nothing can move there.
+
+**One tick.** Let `pref` be +1 (right) when `generation` is even and -1 (left) when it is odd, using the value from before this tick's increment; `generation` goes up by 1 at the end of the tick. Visit the cells row by row from the bottom row up to row 0; within a row, visit the columns left to right when `pref` is +1 and right to left when `pref` is -1. For each visited cell that holds sand or water and has not already moved during this tick, apply the matching rule once, using the grid as it is at that moment (earlier moves of this same tick are already in it). Stone never moves. A particle that moves, and the water that a sinking grain of sand swaps places with, counts as moved for the rest of the tick: it is skipped if the visit reaches its new cell later. (A grain of sand may still sink into water that has already moved this tick.)
+
+*Sand* at (r, c), in this order, takes the first option that applies:
+1. If the cell below, (r+1, c), is empty or holds water, move down. When it held water the two swap: the water goes to (r, c).
+2. Otherwise, for dx in (pref, -pref): if (r+1, c+dx) exists and is empty, move there. (Only empty cells count for diagonal moves. The neighbouring cell (r, c+dx) does not matter.)
+3. Otherwise stay.
+
+*Water* at (r, c), in this order:
+1. If (r+1, c) is empty, move down.
+2. Otherwise, for dx in (pref, -pref): if (r+1, c+dx) is empty, move there.
+3. Otherwise, for dx in (pref, -pref): if (r, c+dx) is empty, move there.
+4. Otherwise stay.
+
+Water never displaces anything except by being sunk through by sand as described, and a water particle may swap upward only that way. Sand and water counts, and the position of every stone, never change.'''
+tests = '''
+def run(rows, n):
+    s = Sandbox(rows)
+    for _ in range(n):
+        s.step()
+    return s
+
+def same(got, want, msg):
+    assert got == want, msg + "\n  got:\n    " + "\n    ".join(got) + "\n  expected:\n    " + "\n    ".join(want)
+
+# --- basics: input untouched, rows() is a copy, counts, generation
+src = ["..s.", "w.#.", "...."]
+s = Sandbox(src)
+assert src == ["..s.", "w.#.", "...."], "the constructor's argument must not be modified"
+assert s.rows() == src and s.count("s") == 1 and s.count("w") == 1 and s.count("#") == 1 and s.count(".") == 9
+assert s.generation == 0
+s.rows()[0] = "XXXX"
+assert s.rows() == src, "rows() must return a copy"
+s.step()
+assert s.generation == 1 and src == ["..s.", "w.#.", "...."]
+
+# --- a grain falls one row per tick and stops on the floor
+s = Sandbox(["..s..", ".....", ".....", "....."])
+for k in range(1, 6):
+    s.step()
+    r = min(k, 3)
+    want = ["....." for _ in range(4)]
+    want[r] = "..s.."
+    same(s.rows(), want, f"after {k} ticks a lone grain should be in row {r}")
+
+# --- a stack falls as a unit (rows are visited bottom to top)
+same(run(["..s..", "..s..", "..s..", ".....", ".....", "#####"], 1).rows(),
+     [".....", "..s..", "..s..", "..s..", ".....", "#####"], "a column of sand must fall together")
+same(run(["..s..", "..s..", "..s..", ".....", ".....", "#####"], 3).rows(),
+     [".....", ".....", ".....", "..s..", "..ss.", "#####"], "after 3 ticks the third grain slides off to the right (generation 2 prefers right)")
+
+# --- preference alternates: right on even generations, left on odd ones
+same(run([".....s.....", ".....#.....", "...........", "###########"], 1).rows(),
+     ["...........", ".....#s....", "...........", "###########"], "generation 0: sand on a pillar slides down-right")
+same(run([".s.", "...", ".#.", "###"], 2).rows(),
+     ["...", "...", "s#.", "###"], "generation 1: sand on a pillar slides down-left")
+same(run(["...s...", "...s...", ".......", ".......", "#######"], 3).rows(),
+     [".......", ".......", ".......", "...ss..", "#######"], "second grain lands to the right of the first")
+
+# sand slides diagonally only into empty cells
+same(run([".s.", "w#w", "###"], 1).rows(), [".s.", "w#w", "###"], "sand does not move diagonally into water")
+same(run([".s.", ".#.", "###"], 1).rows(), ["...", ".#s", "###"], "generation 0 prefers the right diagonal")
+same(run(["s.", "#.", "##"], 1).rows(), ["..", "#s", "##"], "sand at the left edge uses the right diagonal")
+same(run([".s", ".#", "##"], 1).rows(), ["..", "s#", "##"], "the right diagonal is outside the grid, so it goes left")
+
+# --- sand sinks through water by swapping
+s = Sandbox(["s", "w", "#"])
+s.step()
+same(s.rows(), ["w", "s", "#"], "sand swaps with the water below it")
+s.step()
+same(s.rows(), ["w", "s", "#"], "and then rests")
+same(run(["s.", "w#", "##"], 1).rows(), ["w.", "s#", "##"], "sand sinks through the water, which ends up where the sand was")
+same(run(["..w..", "..w..", "..s..", ".....", "wwwww", "#####"], 4).rows(),
+     [".....", ".....", ".....", "ww..w", "wwsww", "#####"], "sand sinking through a pool with water falling after it (4 ticks)")
+# live grid: water that slid under the sand earlier in the same tick is sunk through
+same(run(["s..", ".w#", "###"], 1).rows(), ["w..", "s.#", "###"], "the grid is updated as the tick goes: water moved sideways under the sand, and the sand sinks through it")
+
+# --- water
+same(run(["w...", "####"], 1).rows(), [".w..", "####"], "a particle that moved is not moved again in the same tick, even though the scan reaches its new cell")
+same(run(["w...", "####"], 2).rows(), ["w...", "####"], "generation 1 prefers left")
+same(run(["..w..", ".....", "#####"], 2).rows(), [".....", ".w...", "#####"], "water falls, then slides left (generation 1)")
+same(run([".w.", "#.#", "###"], 1).rows(), ["...", "#w#", "###"], "water falls straight down when it can")
+same(run(["w.", "##", "##"], 1).rows(), [".w", "##", "##"], "water on a ledge slides right at generation 0")
+same(run([".w", "#.", "##"], 1).rows(), ["..", "#w", "##"], "water falls before it slides")
+same(run(["w#", ".#"], 1).rows(), [".#", "w#"], "water falls")
+
+# --- noise in the golden grid
+START = ['w.w...s.s.w.s#', '..ws.s#.s#s.sw', 'w.ss..ssss.ws.', 'sss#..w#ss..w.', 'ww.ww..w..ws..', 's...w#..#w#w..', '.sws.s.w.w....', 'ww..#.sw.wwsw.', '##..#....#.##.', '..#..##...##..', '.#...#.....##.', '#...........#.']
+GOLD = {
+    1: ['.............#', 'w.w...#ss#w.s.', '..ws.s..s.s.sw', 'w.s#s.s#sssws.', 'sss...w.ss.ww.', 'ww.ww#.w#.#s..', 's...w....w.w..', 'wsws#s.w.wws..', '##w.#.sw.#w##w', '..#..##...##..', '.#...#.....##.', '#...........#.'],
+    2: ['.............#', '......#..#....', 'w.w....ss.w.s.', '.ws#.s.#s.s.sw', 'wws.s.s.sssws.', 'sss..#ws#s#ww.', 'ww.ww..w...s..', 'ss.w#....www..', '##ws#ssww#s##.', '.w#..##w.w##.w', '.#...#.....##.', '#...........#.'],
+    5: ['.............#', '......#..#....', '..............', '...#...#......', '.w.......s..w.', 'wwww.#.s#s#ws.', 'wws.s..s.s..sw', 'sss.#ssw.swss.', '##ss#.ws.#s##w', '..#ww##wws##.w', '.#sww#..wsw##.', '#..ss..swww.#w'],
+    40: ['.............#', '......#..#....', '..............', '...#...#......', '..............', '.....#..#.#...', '.ww......w.w..', 'swww#www.swssw', '##ss#wssw#s##w', '.s#sw##sws##ww', 's#wss#wsssw##s', '#wssswwsssww#s'],
+}
+s = Sandbox(START)
+for n in range(1, 41):
+    s.step()
+    if n in GOLD:
+        same(s.rows(), GOLD[n], f"busy grid after {n} ticks")
+
+# --- conservation on bigger random grids
+import random
+rnd = random.Random(11)
+rows = ["".join(rnd.choice("....ssswwww#") for _ in range(40)) for _ in range(30)]
+s = Sandbox(rows)
+before = {ch: s.count(ch) for ch in "sw#."}
+stones = {(r, c) for r, row in enumerate(rows) for c, ch in enumerate(row) if ch == "#"}
+for _ in range(60):
+    s.step()
+now = s.rows()
+assert {ch: s.count(ch) for ch in "sw#."} == before, "particles must be neither created nor destroyed"
+assert {(r, c) for r, row in enumerate(now) for c, ch in enumerate(row) if ch == "#"} == stones, "stone must never move"
+assert all(len(r) == 40 for r in now) and len(now) == 30
+
+# --- speed: 100x100 grid, 60 ticks
+import time
+rnd = random.Random(3)
+big = ["".join(rnd.choice("..sw#") for _ in range(100)) for _ in range(100)]
+s = Sandbox(big)
+t = time.time()
+for _ in range(60):
+    s.step()
+assert time.time() - t < 6, "step() is too slow for a 100x100 grid"
+'''
+
+[[questions]]
+id = "platformer"
+prompt = '''
+Write a Python class `Platformer` for the physics of a tile-based platform game, in whole pixels (integers only; y grows downward). Define everything exactly as below; hidden tests feed it key sequences and check the position after frames. Only the standard library is available. Reply with one Python code block.
+
+**Level.** `Platformer(level: list[str])`: one string per row, row 0 on top; a tile is 16 x 16 pixels, tile (col, row) covers x from 16*col to 16*col+16 and y from 16*row to 16*row+16. `#` is solid, `G` is a goal tile (not solid), `@` marks the start (empty tile) and anything else is empty. Beyond the left edge, the right edge (the width is the longest row) and the top edge of the map everything is solid; below the last row it is empty air. A row shorter than the width counts as empty for the missing tiles.
+
+**Player.** An axis-aligned box 12 pixels wide and 14 tall. Attributes: `x`, `y` (the box's top-left corner), `vx`, `vy`, `on_ground`, `dead`, `won`, `frames`. At the start `x = 16*col + 2` and `y = 16*(row+1) - 14` for the `@` tile (the box stands in the tile's bottom, 2 pixels in from its left side), `vx = vy = 0`, `frames = 0`, `dead = won = False`, and `on_ground` is computed as described below. Two boxes overlap only if they share area; touching edges do not overlap.
+
+**`update(left=False, right=False, jump=False)`** is one frame. If `dead` or `won` it does nothing at all. Otherwise, in this order:
+1. `frames += 1`.
+2. `vx = -3` if `left` and not `right`; `+3` if `right` and not `left`; else `0`.
+3. If `jump` and `on_ground` (the value from the end of the previous frame): `vy = -12`. Otherwise, if `jump` is not held and `vy < -4`: `vy = -4`.
+4. Gravity: `vy = min(vy + 1, 40)`.
+5. Move horizontally by `vx` pixels, then vertically by `vy` pixels (in that order). Each move goes as far as it can in that direction without the box overlapping a solid tile, and stops flush against it (so it can never skip over a thin tile, however fast it is). If the vertical move was stopped by a tile (up or down), `vy` becomes 0. `vx` keeps the value from step 2 even if the move was blocked.
+6. `on_ground` becomes True if the box moved down by one pixel would overlap a solid tile, else False.
+7. If the box now overlaps any `G` tile, `won` becomes True. Otherwise, if `y >= 16 * (number of rows)` (the top of the box is at or below the bottom edge of the map), `dead` becomes True.'''
+tests = '''
+def st(p):
+    return (p.x, p.y, p.vx, p.vy, p.on_ground)
+
+def frames(p, n, left=False, right=False, jump=False):
+    for _ in range(n):
+        p.update(left, right, jump)
+
+ROOM = [
+    "##########",
+    "#........#",
+    "#........#",
+    "#........#",
+    "#........#",
+    "#........#",
+    "#........#",
+    "#@.......#",
+    "##########",
+]
+Y0 = 8 * 16 - 14  # standing on the floor: 114
+
+# --- start
+p = Platformer(ROOM)
+assert (p.x, p.y) == (18, Y0), f"start position {(p.x, p.y)}: the box's left is the tile's left + 2 and its bottom is the tile's bottom"
+assert p.on_ground is True and p.vx == 0 and p.vy == 0 and not p.dead and not p.won and p.frames == 0
+frames(p, 5)
+assert (p.x, p.y) == (18, Y0) and p.on_ground and p.vy == 0 and p.frames == 5, f"standing still must stay put: {st(p)} frames {p.frames}"
+
+# --- walking: 3 px per frame, both keys cancel, walls stop it flush
+p = Platformer(ROOM)
+frames(p, 4, right=True)
+assert p.x == 18 + 12 and p.vx == 3 and p.y == Y0 and p.on_ground, st(p)
+frames(p, 2, left=True)
+assert p.x == 18 + 12 - 6 and p.vx == -3, st(p)
+frames(p, 3, left=True, right=True)
+assert p.x == 18 + 6 and p.vx == 0, f"left and right together cancel: {st(p)}"
+frames(p, 40, right=True)
+assert p.x == 9 * 16 - 12 and p.y == Y0, f"walking right into the wall should stop flush against it (x = {9 * 16 - 12}): {st(p)}"
+frames(p, 100, left=True)
+assert p.x == 16, f"walking left into the wall should stop at x = 16: {st(p)}"
+
+# --- a held jump: rises 11, 10, ..., 1 pixels (66 in all), then falls back the same way
+p = Platformer(ROOM)
+ys = []
+for _ in range(23):
+    p.update(False, False, True)
+    ys.append(p.y)
+    assert p.dead is False
+rise = [Y0 - sum(range(11, 11 - k, -1)) for k in range(1, 12)]
+assert ys[:11] == rise, f"rising: y after each frame should be {rise}, got {ys[:11]}"
+assert ys[11] == Y0 - 66, f"the apex is 66 px up and lasts a frame: {ys[9:13]}"
+fall = [Y0 - 66 + sum(range(1, k + 1)) for k in range(1, 12)]
+assert ys[12:23] == fall, f"falling: expected {fall}, got {ys[12:23]}"
+assert ys[22] == Y0 and p.on_ground and p.vy == 11, f"back on the floor after 23 frames: {st(p)}"
+p.update(False, False, True)  # jump is still held: it jumps again
+assert p.vy == -11 and p.y == Y0 - 11, f"holding jump on the floor jumps again: {st(p)}"
+
+# --- a tapped jump is shorter: after the key is released an upward speed is cut to 4
+p = Platformer(ROOM)
+p.update(False, False, True)
+assert p.y == Y0 - 11 and p.vy == -11 and not p.on_ground, st(p)
+p.update()
+assert p.vy == -3 and p.y == Y0 - 14, f"a released jump key cuts the climb to 4 before gravity: {st(p)}"
+frames(p, 3)
+assert p.y == Y0 - 17 and p.vy == 0, f"a tapped jump should peak 17 px up: {st(p)}"
+p.update()
+assert p.y == Y0 - 16 and p.vy == 1, st(p)
+
+# --- no jumping in mid-air
+p = Platformer(ROOM)
+p.update(False, False, True)
+p.update()
+p.update(False, False, True)
+assert p.vy == -2 and p.y == Y0 - 16, f"pressing jump in the air must do nothing: {st(p)}"
+
+# --- ceiling: stop flush and lose the upward speed
+CEIL = ["##########", "#........#", "#..###...#", "#........#", "#........#", "#@.......#", "##########"]
+p = Platformer(CEIL)
+y0 = 6 * 16 - 14
+frames(p, 9, right=True)   # x = 45: the box spans 45..57, under the block in column 3
+assert p.x == 45 and p.y == y0, st(p)
+log = []
+for _ in range(6):
+    p.update(False, False, True)
+    log.append((p.y, p.vy))
+assert log == [(y0 - 11, -11), (y0 - 21, -10), (y0 - 30, -9), (48, 0), (49, 1), (51, 2)], \
+    f"jumping up into a block: expected to stop flush against its underside at y = 48 with vy 0, then fall; got {log}"
+
+# --- the level edges: left, right and top are solid, the bottom is open
+EDGE = ["....", ".@..", "####"]
+p = Platformer(EDGE)
+assert (p.x, p.y) == (18, 18), st(p)
+frames(p, 10, left=True)
+assert p.x == 0, f"the left edge of the map is solid: {st(p)}"
+frames(p, 40, right=True)
+assert p.x == 4 * 16 - 12, f"the right edge of the map is solid: {st(p)}"
+frames(p, 2, jump=True)
+assert p.y == 0, f"the top edge of the map is solid: {st(p)}"
+
+# --- a high-speed fall must not tunnel through a one-tile floor (speed reaches 40, more than the floor and the box together)
+for rows in range(60, 73):
+    SHAFT = ["#@.....#"] + ["#......#"] * (rows - 1) + ["########"] + ["........"] * 6
+    p = Platformer(SHAFT)
+    assert p.y == 2
+    vmax = 0
+    for _ in range(200):
+        p.update()
+        vmax = max(vmax, p.vy)
+        assert not p.dead, f"{rows}-tile shaft: fell through the one-tile floor, frame {p.frames}: {st(p)}"
+    assert p.on_ground and p.y == rows * 16 - 14 and p.vy == 0, f"{rows}-tile shaft: must come to rest flush on top of the floor (y = {rows * 16 - 14}): {st(p)}"
+    assert vmax == 40, f"falling speed is capped at 40 px per frame, saw {vmax}"
+
+# --- walking off a ledge: x is resolved before y
+HOLE = ["#########", "#.......#", "#@......#", "##.######", "##.######", "#########"]
+p = Platformer(HOLE)
+assert (p.x, p.y) == (18, 34)
+frames(p, 4, right=True)
+assert (p.x, p.y, p.on_ground) == (30, 34, True), st(p)
+frames(p, 1, right=True)
+assert (p.x, p.y, p.vy, p.on_ground) == (33, 35, 1, False), \
+    f"the box moves sideways first, then down: expected x 33, y 35, vy 1, in the air; got {st(p)}"
+frames(p, 1, right=True)
+assert (p.x, p.y, p.vy) == (36, 37, 2), st(p)
+frames(p, 40, right=True)
+assert (p.x, p.y, p.vy, p.on_ground) == (36, 66, 0, True), \
+    f"it should be wedged against the far side of the hole (x = 36) on the bottom of the pit (y = 66): {st(p)}"
+assert not p.dead
+
+# --- the goal
+GOAL = ["########", "#......#", "#@...G.#", "########"]
+p = Platformer(GOAL)
+frames(p, 16, right=True)
+assert not p.won and p.x == 66, st(p)
+frames(p, 1, right=True)
+assert p.won and p.x == 69 and not p.dead, f"touching the goal tile (any overlap) wins: {st(p)} won={p.won}"
+n = p.frames
+frames(p, 5, right=True, jump=True)
+assert p.frames == n == 17 and p.x == 69 and p.won, "after winning, update() does nothing"
+
+# --- falling out of the bottom of the map kills
+PIT = ["######", "#@...#", "##..##"]
+p = Platformer(PIT)
+frames(p, 5, right=True)
+assert (p.x, p.y, p.on_ground) == (33, 19, False), st(p)
+for k in range(6, 11):
+    p.update()
+    assert not p.dead, f"frame {k}: y = {p.y} is still inside the map"
+assert p.y == 39 and p.frames == 10, f"y after frame 10: {p.y}"
+frames(p, 1)
+assert p.y == 46 and not p.dead, f"y after frame 11: {p.y}"
+frames(p, 1)
+assert p.y == 54 and p.dead, f"the player is dead once the top of the box is at or below the map's bottom edge (48): y = {p.y}, dead = {p.dead}"
+n = p.frames
+frames(p, 3, right=True)
+assert p.frames == n == 12 and p.y == 54, "after dying, update() does nothing"
+
+# --- scripted runs on a larger level, checked every 20 frames
+LV = [
+    "####################",
+    "#..................#",
+    "#..................#",
+    "#......###.........#",
+    "#..................#",
+    "#.....##.....###...#",
+    "#..................#",
+    "#@.....#....#......#",
+    "#######..#####..####",
+]
+KEYS = {".": (0, 0, 0), "L": (1, 0, 0), "R": (0, 1, 0), "J": (0, 0, 1), "l": (1, 0, 1), "r": (0, 1, 1), "B": (1, 1, 0)}
+RUNS = [
+    ('rrrBrBLlBrBRlRlrLRRBrRrRrRLrRR.rR.lrRBr.BRRRRLRrLrRRrlRlrL.LrrLrRrLLR.RrBBRRlrLrrrL.LRrBRBlRRRLRr.RL.lJRrrlJLBLlrRr.rrLJRrRl.r.llrlRJRR..rlRLRrrRrrrrrRrRlrrR.rrLlRrlrrrRrrrRrrr..llRrBlrrrRrrrJrrrrLRJrRrrLlRLRRRRLlRrrRBLJRJRrRLrLlRr.rJrrRRrr..rRBLLrrRrBRJRR.R.BrR.lJR.lRlRrJRrrLlRBrRRR.RrlrrrRrRlRRllR',
+     [(20, 33, 97, 0, False, False), (40, 69, 100, -3, False, False), (60, 87, 114, 0, True, False), (80, 106, 98, 0, True, False), (100, 124, 98, 0, True, False), (120, 130, 111, 5, False, False), (140, 145, 103, 3, False, False), (160, 189, 87, 0, False, False), (180, 211, 49, 0, False, False), (200, 250, 45, -10, False, False), (220, 268, 103, -11, False, False), (240, 292, 112, 5, False, False), (260, 292, 100, 2, False, False), (280, 289, 97, 0, False, False), (300, 289, 78, 5, False, False)]),
+    ('.RL.RRrRBR.RrBrBrLrrRRrrBr.rrrR.Rr.rRrrRLlLBllJrBRRrRrlJrlL.RJJB.lJLBRlRRRRLlrrRrLJrBlrllr.rlrrRrrrBLlrRRrJRL.RRRRrRRLlRRrBrLRrLRlRrrlRRRLrRBrLlrLlLrLr.rRlRRrrLRrRrBlRrlRRRrlrr.RJrrRrRRLRRl.RrrrlrL.rrrLLRlBBJrrR.BrBrrRRRLBRLRLlRRlJRrRlr.RL.lRRRRRL.rRlrlLRRBrlrLrrrRRLLRlrRlrrLBrRRrBRJrRJBrrRr',
+     [(20, 48, 93, -10, False, False), (40, 96, 100, 2, False, False), (60, 78, 106, 8, False, False), (80, 84, 81, -3, False, False), (100, 84, 71, 1, False, False), (120, 97, 98, 1, False, False), (140, 115, 97, 1, False, False), (160, 121, 98, 0, True, False), (180, 154, 103, -11, False, False), (200, 183, 70, 0, False, False), (220, 196, 71, -1, False, False), (240, 193, 86, 5, False, False), (260, 211, 113, 5, False, False), (280, 232, 98, -2, False, False), (292, 244, 152, 10, False, True)]),
+]
+for seq, cps in RUNS:
+    p = Platformer(LV)
+    want = {cp[0]: cp for cp in cps}
+    for i, ch in enumerate(seq, 1):
+        p.update(*[bool(v) for v in KEYS[ch]])
+        if i in want:
+            got = (i, p.x, p.y, p.vy, p.on_ground, p.dead)
+            assert got == want[i], f"scripted run, frame {i}: (frame, x, y, vy, on_ground, dead) = {got}, expected {want[i]}"
+    assert p.frames == len(seq) or p.dead
+
+# --- speed: a 100x100 tile cave, 4000 frames
+import random, time
+rnd = random.Random(2)
+cave = ["#" * 100] + ["#" + "".join("#" if rnd.random() < 0.08 else "." for _ in range(98)) + "#" for _ in range(98)] + ["#" * 100]
+cave[98] = "#@" + cave[98][2:]
+p = Platformer(cave)
+t = time.time()
+for i in range(4000):
+    p.update(i % 40 < 15, i % 40 >= 20, i % 7 < 3)
+assert time.time() - t < 3, "update() is too slow"
+'''
+
+[[questions]]
+id = "match-three"
+prompt = '''
+Write a Python class `Match3` for the rules of a match-three tile puzzle (swap neighbouring tiles, matches vanish, the rest fall, new tiles drop in). It is headless and deterministic: new tiles come from a fixed string. Define everything exactly as below; hidden tests play many moves and compare the score and the whole board. Only the standard library is available. Reply with one Python code block.
+
+**Constructor.** `Match3(rows: list[str], refill: str)`: `rows` is a rectangular board of tile letters (any characters), row 0 on top; `refill` is a non-empty string of new tiles, used in order and wrapping round to its start when used up. The board handed in has no match yet; the constructor does not resolve anything. Attributes: `score` (0), `moves` (0, the number of accepted swaps) and `refill_pos` (0; the total number of refill letters used so far, not wrapped).
+
+**Matches.** A run is a maximal horizontal or vertical line of 3 or more equal letters.
+
+**`swap(r1, c1, r2, c2) -> int`.** Swaps the tiles at two cells if the swap is allowed, then resolves the board, and returns the points gained by this swap. A swap is allowed only if both cells are on the board, they are next to each other (same row and neighbouring columns, or same column and neighbouring rows), and after exchanging them the board contains at least one run (anywhere). Otherwise `swap` returns -1 and nothing at all changes (board, `score`, `moves`, `refill_pos`).
+
+After an allowed swap, repeat these rounds, numbering them k = 1, 2, 3… until no run is left:
+1. Find all runs. The cells to clear are all cells that belong to at least one run (a cell in a horizontal and a vertical run counts once). The round is worth `k * (10 * C + 20 * E)` points, where `C` is the number of cells cleared and `E` is the sum over all runs of (length - 3), counting a horizontal and a vertical run separately.
+2. Clear those cells. In every column the tiles that are left fall straight down, keeping their order, to rest on the bottom or on each other. Then fill each column's empty cells at its top with new tiles: go through the columns from left to right, and within a column fill the empty cells from the lowest one up to row 0, taking letters from `refill` one by one (the first letter used goes to the lowest empty cell of the leftmost column that needs tiles).
+
+The points of all rounds are added to `score` and returned, and `moves` goes up by one.
+
+**Other methods.** `board()` returns the current board as a new list of strings. `find_move()` returns the first allowed swap as a tuple `(r1, c1, r2, c2)`, or `None` if there is none; it looks at the cells in reading order (row by row, left to right) and for each cell tries the swap with its right neighbour first and then the swap with the neighbour below it. `has_moves()` returns whether `find_move()` finds one. Neither changes the board or any counter.'''
+tests = '''
+def show(rows):
+    return "\n    ".join(rows)
+
+def same(got, want, msg):
+    assert got == want, msg + "\n  got:\n    " + show(got) + "\n  expected:\n    " + show(want)
+
+B = ["ABAB",
+     "BABA",
+     "CDCD",
+     "DCDC"]
+
+# --- the first valid swap in reading order
+m = Match3(B, "EFGHEF")
+assert m.find_move() == (0, 1, 1, 1), f"find_move should return the first valid swap (cells in reading order, right neighbour before lower): {m.find_move()}"
+assert m.has_moves() is True
+assert m.score == 0 and m.moves == 0 and m.refill_pos == 0
+same(m.board(), B, "find_move must not change the board")
+m.board()[0] = "XXXX"
+same(m.board(), B, "board() must return a copy")
+
+# --- a swap that clears two rows (a three of A's and a three of B's): 6 cells x 10 points
+m = Match3(B, "EFGHEF")
+pts = m.swap(0, 1, 1, 1)
+assert pts == 60, f"clearing 6 cells in the first round is worth 60, got {pts}"
+same(m.board(), ["FHFB", "EGEA", "CDCD", "DCDC"],
+     "after clearing, columns 0-2 are refilled from the sequence: the lowest empty cell of the leftmost column gets the first letter, then upwards, then the next column")
+assert (m.score, m.moves, m.refill_pos) == (60, 1, 6)
+
+# --- rejected swaps change nothing and return -1
+m = Match3(B, "EFGHEF")
+for args, why in [((0, 0, 0, 1), "swap that makes no match"), ((0, 0, 1, 1), "diagonal cells"), ((0, 0, 0, 2), "cells two apart"),
+                  ((-1, 0, 0, 0), "outside the board"), ((3, 3, 3, 4), "outside the board"), ((0, 0, 0, 0), "a cell with itself"),
+                  ((2, 0, 3, 0), "swap that makes no match")]:
+    assert m.swap(*args) == -1, f"{why}: swap{args} should return -1"
+same(m.board(), B, "rejected swaps must leave the board alone")
+assert (m.score, m.moves, m.refill_pos) == (0, 0, 0)
+# a diagonal or distant swap is rejected even when it would make a match
+m3 = Match3(["XAB", "XXD", "EFG"], "HIJK")
+assert m3.swap(2, 0, 1, 1) == -1, "diagonal swaps are not allowed, even when they would make a match"
+assert m3.swap(2, 0, 0, 0) == -1 and m3.board() == ["XAB", "XXD", "EFG"]
+# swapping two equal letters changes nothing, so it is not a match
+m2 = Match3(["AAB", "CDC", "DCD"], "E")
+assert m2.swap(0, 0, 0, 1) == -1
+
+# --- a cascade: the refill makes a second match, worth double
+m = Match3(B, "EFEGEH")
+pts = m.swap(0, 1, 1, 1)
+assert pts == 120, f"60 for the first round and 2 x 30 for the cascade: got {pts}"
+same(m.board(), ["EFEB", "FGHA", "CDCD", "DCDC"], "after the cascade (the sequence wraps around)")
+assert (m.score, m.refill_pos) == (120, 9)
+
+# --- an L/T shape clears each cell once; two runs of three give no bonus
+T = ["CDADC",
+     "DCACD",
+     "CABAC",
+     "DCADD",
+     "CDCDC"]
+m = Match3(T, "EFGHEFGH")
+pts = m.swap(2, 2, 3, 2)
+assert pts == 50, f"5 cells in one round = 50 points (a cell shared by two runs counts once): got {pts}"
+same(m.board(), ["CEHEC", "DDGDD", "CCFCC", "DCBDD", "CDCDC"], "T-shaped clear, refill column by column")
+assert m.refill_pos == 5
+
+# --- runs longer than three give 20 per extra tile
+m = Match3(["AABAC", "CDADA", "DCDCD"], "EFGH")
+assert m.swap(0, 2, 1, 2) == 60, "a run of 4: 4 x 10 + 20"
+same(m.board(), ["EFGHC", "CDBDA", "DCDCD"], "four cleared in the top row")
+m = Match3(["AABAA", "CDADC", "DCDCD"], "EFGHE")
+assert m.swap(0, 2, 1, 2) == 90, "a run of 5: 5 x 10 + 40"
+assert m.score == 90
+
+# --- no moves left
+S = ["ABAB", "CDCD", "ABAB", "CDCD"]
+m = Match3(S, "E")
+assert m.find_move() is None and m.has_moves() is False
+
+# --- a vertical clear: the column keeps its remaining tile at the bottom and is refilled from the lowest empty cell up
+m = Match3(["ABC", "ABD", "DCA", "CBA"], "EFGHIJKL")
+assert m.swap(2, 1, 3, 1) == 30, "a vertical three is worth 30"
+same(m.board(), ["AGC", "AFD", "DEA", "CCA"], "refill order within a column is bottom to top")
+assert (m.score, m.moves, m.refill_pos) == (30, 1, 3)
+
+# --- a long scripted game: points of each of 40 moves (cascades included) and checkpoints
+START = ['ADADCBCB', 'BCDBABCB', 'BCBDCAAD', 'CABACDCC', 'CBACABBA', 'BADCBDAB', 'ABCBCCDC', 'AADBDADC']
+REFILL = 'CCCACCDDDDAADABAAACBBCC'
+PTS = [280, 30, 90, 210, 150, 30, 30, 30, 420, 120, 210, 1270, 30, 90, 250, 30, 90, 90, 1550, 300, 130, 30, 60, 970, 90, 360, 90, 150, 30, 30, 30, 570, 180, 30, 30, 4270, 30, 150, 180, 300]
+CHECK = {
+    1: (280, 12, ['ACDAABCB', 'BCABABCB', 'BABDCAAD', 'CABACDCC', 'CBACABBA', 'BADCBDAB', 'ABCBCCDC', 'AADBDADC']),
+    3: (400, 21, ['ACDCBBCB', 'BCDAABCB', 'BABDCAAD', 'CABACDCC', 'CBACABBA', 'BADCBDAB', 'ABCBCCDC', 'AADBDADC']),
+    10: (1390, 67, ['DBCBBDAA', 'BABADBCB', 'BDBDCAAD', 'CCDACDCC', 'CBACABBA', 'BADCBDAB', 'ABCBCCDC', 'AADBDADC']),
+    25: (6580, 234, ['CBBDBCCA', 'DABABCCB', 'BDCCDAAD', 'CBBACDCC', 'ABACABBA', 'BADABDAB', 'ABCBCCDC', 'AADBDADC']),
+    40: (13010, 397, ['BACCBACB', 'ABCCADDB', 'BCADBACD', 'DADCDCAC', 'BBCDDACA', 'BCDABDAB', 'ABCBCCDC', 'AADBDADC']),
+}
+m = Match3(START, REFILL)
+for i in range(1, 41):
+    mv = m.find_move()
+    assert mv is not None, f"move {i}: no move found but the game still has some"
+    pts = m.swap(*mv)
+    assert pts == PTS[i - 1], f"move {i} ({mv}): points {pts}, expected {PTS[i - 1]}"
+    if i in CHECK:
+        score, pos, board = CHECK[i]
+        assert (m.score, m.refill_pos, m.moves) == (score, pos, i), f"move {i}: (score, refill_pos, moves) = {(m.score, m.refill_pos, m.moves)}, expected {(score, pos, i)}"
+        same(m.board(), board, f"board after move {i}")
+
+# --- after every accepted swap no run of three is left
+import random, time
+rnd = random.Random(9)
+def has_run(b):
+    for r in range(len(b)):
+        for c in range(len(b[0])):
+            if c + 2 < len(b[0]) and b[r][c] == b[r][c + 1] == b[r][c + 2]:
+                return True
+            if r + 2 < len(b) and b[r][c] == b[r + 1][c] == b[r + 2][c]:
+                return True
+    return False
+N = 24
+grid = []
+for r in range(N):
+    row = []
+    for c in range(N):
+        bad = set()
+        if c >= 2 and row[c - 1] == row[c - 2]:
+            bad.add(row[c - 1])
+        if r >= 2 and grid[r - 1][c] == grid[r - 2][c]:
+            bad.add(grid[r - 1][c])
+        row.append(rnd.choice([x for x in "ABCDEF" if x not in bad]))
+    grid.append(row)
+rows = ["".join(r) for r in grid]
+assert not has_run(rows)
+refill = "".join(rnd.choice("ABCDEF") for _ in range(101))
+m = Match3(rows, refill)
+t = time.time()
+total = 0
+done = 0
+for i in range(200):
+    mv = m.find_move()
+    if mv is None:
+        break
+    pts = m.swap(*mv)
+    assert pts > 0
+    total += pts
+    done += 1
+    assert not has_run(m.board()), f"move {i + 1}: the board still has a run after the swap: {m.board()}"
+assert done >= 100 and m.score == total and m.moves == done, f'{done} moves, score {m.score} vs {total}'
+assert time.time() - t < 8, "too slow on a 20x20 board"
+'''
+
+[[questions]]
+id = "dungeon-turns"
+prompt = '''
+Write a Python class `Dungeon` for one level of a turn-based dungeon crawler: a player, monsters that wake up when they are seen, line-of-sight, and combat whose dice come from a list you are given. Define everything exactly as below; hidden tests play scripted turns and check positions, hit points, the monsters and how many dice were used. Only the standard library is available. Reply with one Python code block.
+
+**Constructor.** `Dungeon(rows: list[str], rolls: list[int])`: `rows` is the map, all rows the same length, row 0 on top. Characters: `#` wall, `.` floor, `@` the player's start, `g` a goblin, `O` an ogre, `!` a healing potion, `>` the stairs; the cells under `@`, `g` and `O` are plain floor, and `!` and `>` are floor with an item. A position is `(x, y)` = (column, row). Outside the map counts as wall. `rolls` is a non-empty list of die results (1 to 6); every attack (the player's or a monster's, hit or miss) takes the next one, in order, and when the list is used up it starts again from the beginning.
+
+**State.** `pos` (the player's position), `hp` (starts 20; it is also the maximum), `state` (`"playing"`, `"won"` or `"dead"`), `turn` (0), `kills` (0) and `rolls_used` (0, the total number of dice taken, not wrapped). `monsters()` returns a list of `(kind, x, y, hp)` tuples, one per living monster, in the order the monsters appear in the map when reading it row by row, left to right (that order never changes; dead ones are removed). A goblin `g` starts with 6 hp, an ogre `O` with 15.
+
+**Field of view.** The line from (x0, y0) to (x1, y1) is the list of cells produced by this integer Bresenham routine, start and end included:
+```
+dx = abs(x1 - x0); dy = -abs(y1 - y0)
+sx = 1 if x0 < x1 else -1; sy = 1 if y0 < y1 else -1
+err = dx + dy; x, y = x0, y0; cells = []
+while True:
+    cells.append((x, y))
+    if (x, y) == (x1, y1): break
+    e2 = 2 * err
+    if e2 >= dy: err += dy; x += sx
+    if e2 <= dx: err += dx; y += sy
+```
+A cell is visible from the player if it is on the map, its squared distance `(x-px)**2 + (y-py)**2` from the player is at most 64, and none of the cells of the line from the player to it, other than the two ends, is a wall (so a wall cell is itself visible, but hides what is behind it; monsters and items do not block sight). The player's own cell is visible. `fov()` returns the sorted list of the visible `(x, y)` tuples.
+
+**`act(action)`** plays one turn and returns True if a turn was used. `action` is `"N"` (y - 1), `"S"` (y + 1), `"W"` (x - 1), `"E"` (x + 1), or `None` or `"."` to wait. If `state` is not `"playing"`, nothing happens and it returns False. Player's part:
+- A move into a wall or off the map does nothing, uses no turn and returns False.
+- A move into a cell with a monster is an attack: take the next die `r`; the monster loses `r + 1` hp; at 0 or less it is removed and `kills` goes up. The player does not move.
+- A move into an empty cell moves the player there. A potion on that cell is used up and heals 8 hp (never above 20); stairs set `state` to `"won"`.
+- Waiting does nothing.
+
+Then `turn` goes up by 1. If the state is now `"won"`, the turn ends (the monsters do not act) and it returns True. Otherwise the monsters act, one at a time in monster order, and the field of view is the one after the player's move. A monster acts only if its cell is visible. If it is orthogonally adjacent to the player (Manhattan distance 1) it attacks: take the next die `r`. A goblin hits when `r >= 3` and then deals `r - 2` damage; an ogre hits when `r >= 2` and deals `r + 1` damage; otherwise it misses. If the player's `hp` is now 0 or less the state becomes `"dead"` and the remaining monsters do not act. If the monster is not adjacent it takes one step: among the directions N, E, S, W (in that order) it considers each neighbouring cell that is on the map, not a wall, not the player's cell and not occupied by another monster (monsters that have already moved this turn are at their new cells), and measures its Manhattan distance to the player; it moves to the one with the smallest distance, the first in that order if there is a tie, but only if that distance is smaller than its current one; otherwise it stays. Monsters never pick up items and use no dice for moving.'''
+tests = '''
+def mons(d):
+    return [tuple(m) for m in d.monsters()]
+
+# --- start state
+d = Dungeon(["#######", "#@.g.O#", "#!..>.#", "#######"], [1])
+assert tuple(d.pos) == (1, 1), f"pos is (x, y) = (column, row): {d.pos}"
+assert d.hp == 20 and d.state == "playing" and d.kills == 0 and d.turn == 0 and d.rolls_used == 0
+assert mons(d) == [("g", 3, 1, 6), ("O", 5, 1, 15)], f"monsters are listed in reading order as (kind, x, y, hp): {mons(d)}"
+
+# --- field of view: Bresenham lines, radius 8, walls block but are seen
+d = Dungeon(["#########", "#.......#", "#@..#...#", "#.......#", "#########"], [1])
+assert [tuple(c) for c in d.fov()] == [(0, 1), (0, 2), (0, 3), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (2, 0), (2, 1), (2, 2), (2, 3), (2, 4), (3, 0), (3, 1), (3, 2), (3, 3), (3, 4), (4, 0), (4, 1), (4, 2), (4, 3), (4, 4), (5, 1), (5, 3), (6, 1), (6, 3), (7, 1), (7, 3)], \
+    f"fov() should be the sorted list of (x, y) of every visible cell, own cell and walls hit included: {sorted(map(tuple, d.fov()))}"
+vis = {tuple(c) for c in d.fov()}
+assert (4, 2) in vis and (5, 2) not in vis and (7, 2) not in vis, "a pillar is seen but hides what is straight behind it"
+assert (7, 1) in vis and (5, 0) not in vis, "the line to (5,0) runs through the wall cell (4,0)"
+
+# the exact line matters: from (0,0) to (2,1) the line goes through (1,1), not (1,0)
+b = Dungeon(["@..", ".#.", "..."], [1])
+assert (2, 1) not in {tuple(c) for c in b.fov()}, "wall at (1,1) is on the line (0,0)-(2,1) and hides (2,1)"
+assert (1, 2) not in {tuple(c) for c in b.fov()}, "and also hides (1,2) by the same rule"
+c = Dungeon(["@#.", "...", "..."], [1])
+assert (2, 1) in {tuple(x) for x in c.fov()}, "a wall at (1,0) is not on the line to (2,1)"
+
+# radius: squared distance at most 64
+wide = ["#" * 27, "#" + "." * 25 + "#", "#" + "." * 25 + "#", "#........@" + "." * 15 + "#", "#" + "." * 25 + "#", "#" + "." * 25 + "#", "#" * 27]
+d = Dungeon(wide, [1])
+vis = {tuple(c) for c in d.fov()}
+assert (1, 3) in vis and (17, 3) in vis and (0, 3) not in vis and (18, 3) not in vis, "radius 8 on the row"
+assert (2, 1) in vis and (16, 1) in vis and (1, 1) not in vis and (17, 1) not in vis, "squared distance 64 is the limit (dx = 7, dy = 2 is in; dx = 8, dy = 2 is out)"
+assert len(vis) == 99, f"number of visible cells {len(vis)}"
+
+# --- walking: walls take no turn
+d = Dungeon(["####", "#@.#", "####"], [1])
+assert d.act("N") is False and d.turn == 0 and tuple(d.pos) == (1, 1), "bumping a wall does not use a turn"
+assert d.act("W") is False and d.turn == 0
+assert d.act("E") is True and tuple(d.pos) == (2, 1) and d.turn == 1
+assert d.act(None) is True and d.turn == 2 and tuple(d.pos) == (2, 1), "None waits"
+assert d.act(".") is True and d.turn == 3, '"." waits too'
+d = Dungeon(["@.", ".."], [1])
+assert d.act("N") is False and d.act("W") is False, "outside the map is a wall"
+
+# --- combat: player damage is roll + 1, a goblin hits on 3+ for roll - 2
+d = Dungeon(["#######", "#@g...#", "#######"], [4, 3, 2])
+assert d.act("E") is True
+assert mons(d) == [("g", 2, 1, 1)] and d.hp == 19 and d.rolls_used == 2 and tuple(d.pos) == (1, 1), \
+    f"first exchange: the player rolls 4 (5 damage, goblin 6 -> 1), the goblin rolls 3 (hits for 1): {mons(d)} hp {d.hp} rolls used {d.rolls_used}"
+assert d.act("E") is True
+assert mons(d) == [] and d.kills == 1 and d.hp == 19 and d.rolls_used == 3, \
+    f"second attack rolls 2 (3 damage) and kills it; a dead goblin does not strike back: {mons(d)} kills {d.kills} hp {d.hp} rolls {d.rolls_used}"
+assert d.act("E") is True and tuple(d.pos) == (2, 1)
+
+# misses still use a roll; rolls wrap around
+d = Dungeon(["#####", "#@g.#", "#####"], [1, 2])
+for i in range(1, 5):
+    d.act(None)
+    assert d.hp == 20 and d.rolls_used == i, f"goblin misses on 1 and 2 and uses a roll each time: hp {d.hp}, rolls used {d.rolls_used}"
+
+# an ogre hits on 2+ for roll + 1; the player dies at hp 0 or less, and then nothing happens any more
+d = Dungeon(["#####", "#@O.#", "#####"], [6])
+res = []
+for _ in range(3):
+    res.append((d.act(None), d.hp, d.state))
+assert res == [(True, 13, "playing"), (True, 6, "playing"), (True, -1, "dead")], f"ogre hits for 7: {res}"
+assert d.act("E") is False and d.turn == 3 and d.rolls_used == 3 and d.hp == -1, "after death act() does nothing"
+d = Dungeon(["#####", "#O@O#", "#####"], [6])
+d.act(None); d.act(None)
+assert d.state == "dead" and d.rolls_used == 3, f"once the player is dead the other monsters do not act: rolls used {d.rolls_used}"
+
+# --- monsters chase only what they can see, one step towards the player, N then E then S then W on ties
+d = Dungeon(["#######", "#.....#", "#...g.#", "#.....#", "#.@...#", "#######"], [1])
+d.act(None)
+assert mons(d) == [("g", 4, 3, 6)], f"a goblin two columns right and two rows up: the south and west steps tie, south wins: {mons(d)}"
+d = Dungeon(["#########", "#@.#...g#", "#..#....#", "#########"], [1])
+d.act(None)
+assert mons(d) == [("g", 7, 1, 6)], "a monster that cannot see the player stays where it is"
+
+# monsters move one at a time, in order, so the second can follow into the first one's old cell
+d = Dungeon(["##########", "#@..gg...#", "##########"], [1])
+d.act(None)
+assert mons(d) == [("g", 3, 1, 6), ("g", 4, 1, 6)], f"both advance in the same turn: {mons(d)}"
+d.act(None)
+assert mons(d) == [("g", 2, 1, 6), ("g", 3, 1, 6)]
+assert d.rolls_used == 0 and d.hp == 20, "a monster that moves next to the player does not attack in the same turn"
+d.act(None)
+assert mons(d) == [("g", 2, 1, 6), ("g", 3, 1, 6)] and d.rolls_used == 1, "the one behind is blocked and cannot attack (not adjacent)"
+
+# monsters do not step diagonally, onto walls or onto the player; and they do not attack diagonally
+d = Dungeon(["#####", "#@#.#", "#.g.#", "#####"], [6])
+d.act(None)
+assert mons(d) == [("g", 1, 2, 6)] and d.rolls_used == 0, f"a diagonal neighbour does not attack: it steps to the west cell (the north one is a wall): {mons(d)}"
+d.act(None)
+assert d.rolls_used == 1, "and once orthogonally adjacent it attacks"
+
+# --- items
+d = Dungeon(["######", "#@!.>#", "######"], [1])
+d.hp = 15
+d.act("E")
+assert d.hp == 20 and tuple(d.pos) == (2, 1), f"a potion heals 8 up to 20: hp {d.hp}"
+d.act("W"); d.act("E")
+assert d.hp == 20
+d = Dungeon(["######", "#@!.>#", "######"], [1])
+d.hp = 5
+d.act("E"); d.act("W"); d.act("E")
+assert d.hp == 13, f"a potion is used up when taken: hp {d.hp}"
+d.act("E")
+assert d.state == "playing"
+d.act("E")
+assert d.state == "won" and tuple(d.pos) == (4, 1) and d.turn == 5
+assert d.act("W") is False and tuple(d.pos) == (4, 1)
+
+# stairs end the game before the monsters act
+d = Dungeon(["######", "#@>g.#", "######"], [6])
+d.act("E")
+assert d.state == "won" and d.hp == 20 and d.rolls_used == 0, "reaching the stairs wins at once; monsters do not get a turn"
+
+# --- a long scripted game: checkpoints every 20 inputs
+ROWS = ['##########################', '##.......g.#..#....!#g#..#', '#.#...#..g...............#', '#............##...#......#', '##.#.....#...@#..##.....##', '#...#.......##.g....#...##', '#....................#...#', '#...#..#.................#', '#.........#...O.........##', '#..O.!>...........#.....##', '#........g...............#', '##########################']
+ROLLS = [2, 5, 3, 5, 4, 6, 4, 6, 4, 3, 4, 1, 3, 6, 3, 5, 4, 3, 2, 2, 1, 2, 5, 4, 1, 2, 3, 3, 1, 5, 4, 5, 6, 4, 6, 5, 1]
+MOVES = "NNE.ESENE.NEWSWNWWES.NNWWE.NNEEEN.NSWEEESEWNWEWWEEWWESN..NS.EN.SENNENWNWNWEWWWE.EENENSWWWWENENWNNENSNWWWNSEEEESWSSEWNENE.WSWNNNWE.SNSEWWWNNS.EWEWWNEWNEEESNSSNSWWWSNEWESSWE.NES.ENESSNSSSWWWES.SWEWNENNN"
+CHECK = [
+    (20, (9, 3), 14, 0, 4, 8, [('g', 10, 3, 2), ('g', 21, 1, 6), ('g', 11, 3, 6), ('g', 15, 4, 6), ('O', 14, 7, 15), ('O', 3, 9, 15), ('g', 9, 9, 6)], 93),
+    (40, (11, 2), 10, 2, 8, 24, [('g', 21, 1, 6), ('g', 15, 4, 6), ('O', 14, 7, 15), ('O', 3, 9, 15), ('g', 9, 6, 6)], 84),
+    (60, (12, 2), 6, 3, 12, 44, [('g', 21, 1, 6), ('g', 15, 4, 6), ('O', 14, 7, 15), ('O', 3, 9, 15)], 70),
+    (80, (16, 1), 5, 4, 14, 56, [('g', 21, 1, 6), ('O', 14, 5, 15), ('O', 3, 9, 15)], 60),
+    (100, (19, 2), 1, 4, 21, 69, [('g', 21, 1, 6), ('O', 19, 1, 2), ('O', 3, 9, 15)], 69),
+    (120, (19, 5), 1, 6, 23, 86, [('O', 3, 9, 15)], 102),
+    (140, (15, 5), 1, 6, 23, 104, [('O', 3, 9, 15)], 110),
+    (160, (16, 7), 1, 6, 23, 122, [('O', 3, 9, 15)], 120),
+    (180, (18, 8), 1, 6, 23, 141, [('O', 3, 9, 15)], 114),
+    (200, (16, 6), 1, 6, 23, 158, [('O', 3, 9, 15)], 117),
+]
+d = Dungeon(ROWS, ROLLS)
+want = {c[0]: c for c in CHECK}
+for i, ch in enumerate(MOVES, 1):
+    d.act(None if ch == "." else ch)
+    if i in want:
+        _, pos, hp, kills, used, turn, ms, nfov = want[i]
+        got = (tuple(d.pos), d.hp, d.kills, d.rolls_used, d.turn, mons(d), len(d.fov()))
+        assert got == (pos, hp, kills, used, turn, ms, nfov), \
+            f"scripted game, input {i}: (pos, hp, kills, rolls used, turn, monsters, cells in view) = {got}, expected {(pos, hp, kills, used, turn, ms, nfov)}"
+assert d.state == "playing"
+
+# --- speed: 100x100 open level with 40 monsters, 400 turns
+import random, time
+rnd = random.Random(8)
+rows = ["#" * 100] + ["#" + "".join("#" if rnd.random() < 0.05 else "." for _ in range(98)) + "#" for _ in range(98)] + ["#" * 100]
+rows = [list(r) for r in rows]
+rows[50][50] = "@"
+placed = 0
+while placed < 40:
+    x, y = rnd.randint(30, 70), rnd.randint(30, 70)
+    if rows[y][x] == ".":
+        rows[y][x] = "g" if placed % 2 else "O"
+        placed += 1
+d = Dungeon(["".join(r) for r in rows], [3, 1, 4, 1, 5, 6, 2])
+t = time.time()
+for i in range(400):
+    d.act("NESW"[i % 4] if i % 3 else None)
+    if d.state != "playing":
+        break
+assert time.time() - t < 6, "act() is too slow: compute the field of view once per turn"
+'''
