@@ -1042,6 +1042,9 @@ func (e *Engine) Show(ctx context.Context, name string) (*ollama.ShowResponse, e
 		if strings.Contains(tpl, "enable_thinking") || strings.Contains(tpl, "<think>") || strings.Contains(tpl, "reasoning") || strings.Contains(tpl, "thinking") {
 			s.Capabilities = append(s.Capabilities, "thinking")
 		}
+		if strings.Contains(tpl, "reasoning_effort") {
+			s.Capabilities = append(s.Capabilities, "reasoning-effort")
+		}
 		switch {
 		case m.Projector != "" && m.options(nil)["vision"] == "off":
 			// Turned off in its settings: it can't see images, but the

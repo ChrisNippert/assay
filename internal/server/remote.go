@@ -28,10 +28,13 @@ func (s *Server) runAPIEvalItem(ctx context.Context, i int, set *evals.Set, redo
 	if !ok {
 		return errors.New("the API model is gone")
 	}
+	digest := m.Digest(ep) // of the model as configured: every mode is saved under it
 	if think == evals.ThinkOff {
 		m.Reasoning = "off"
+	} else if evals.IsLevel(think) {
+		m.Reasoning = think
 	}
-	return s.runEvalItemWith(ctx, i, set, redo, m.Digest(ep), apiEvalWorkers, func(ctx context.Context, q evals.Question, maxTok int) (evals.Answer, error) {
+	return s.runEvalItemWith(ctx, i, set, redo, digest, apiEvalWorkers, func(ctx context.Context, q evals.Question, maxTok int) (evals.Answer, error) {
 		system, user := set.Messages(q)
 		return s.askAPIMsgs(ctx, ep, m, chatMsgs(system, user), maxTok)
 	})

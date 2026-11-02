@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -52,7 +53,7 @@ func TestEvalRun(t *testing.T) {
 {"message":{"role":"assistant","content":"So:\nAnswer: 391"}}
 {"done":true,"done_reason":"stop","eval_count":12}
 `
-	st, err := s.startEvals(context.Background(), evalRunRequest{Models: []string{"small:q4", "embed:0.6b"}, Sets: []string{"two"}})
+	st, err := s.startEvalLevels(context.Background(), evalRunRequest{Models: []string{"small:q4", "embed:0.6b"}, Sets: []string{"two"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,11 +76,11 @@ func TestEvalRun(t *testing.T) {
 		t.Errorf("request %+v think %v", req.Options, req.Think)
 	}
 	// Done already: nothing to run unless asked to redo.
-	if _, err := s.startEvals(context.Background(), evalRunRequest{Models: []string{"small:q4"}, Sets: []string{"two"}}); err == nil {
+	if _, err := s.startEvalLevels(context.Background(), evalRunRequest{Models: []string{"small:q4"}, Sets: []string{"two"}}); err == nil {
 		t.Error("ran a finished set again")
 	}
 	// Thinking off is a separate result.
-	if _, err := s.startEvals(context.Background(), evalRunRequest{Models: []string{"small:q4"}, Sets: []string{"two"}, Think: "off"}); err != nil {
+	if _, err := s.startEvalLevels(context.Background(), evalRunRequest{Models: []string{"small:q4"}, Sets: []string{"two"}, Think: "off"}); err != nil {
 		t.Fatal(err)
 	}
 	waitEvals(t, s)
@@ -124,6 +125,61 @@ func TestEvalRun(t *testing.T) {
 	}
 }
 
+func TestEvalLevels(t *testing.T) {
+	s, fake, _ := newTestServer(t)
+	fake.tags = threeModels
+	lib, _ := evals.OpenLibrary(t.TempDir())
+	s.evalLib, s.evalRes = lib, evals.OpenResults(t.TempDir())
+	if _, err := lib.Save("two", []byte(twoQuestions)); err != nil {
+		t.Fatal(err)
+	}
+	fake.reply = `{"message":{"role":"assistant","content":"Answer: 391"}}
+{"done":true,"done_reason":"stop","eval_count":5}
+`
+	req := evalRunRequest{Models: []string{"small:q4"}, Sets: []string{"two"}}
+	req.Thinks = []string{"max"}
+	if _, err := s.startEvalLevels(context.Background(), req); err == nil {
+		t.Fatal("accepted an unknown level")
+	}
+	req.Thinks = []string{"low", "high"}
+	if _, err := s.startEvalLevels(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		_, lo := s.evalRes.Get("d1", "two", "low")
+		_, hi := s.evalRes.Get("d1", "two", "high")
+		if lo && hi {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("low %v high %v", lo, hi)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	fake.mu.Lock()
+	last := fake.chatReqs[len(fake.chatReqs)-1]
+	fake.mu.Unlock()
+	if last.Think != "high" {
+		t.Errorf("think %v, want high", last.Think)
+	}
+	// The table of every mode has a row per model and level with results.
+	out, err := s.evalResultsFor(context.Background(), thinkAll, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var titles []string
+	for _, r := range out.Rows {
+		if r.Name == "small:q4" {
+			titles = append(titles, r.Think)
+		}
+	}
+	slices.Sort(titles)
+	if !slices.Equal(titles, []string{"", "high", "low"}) {
+		t.Errorf("rows by mode: %q", titles)
+	}
+}
+
 func TestEvalResumes(t *testing.T) {
 	s, fake, _ := newTestServer(t)
 	fake.tags = threeModels
@@ -134,7 +190,7 @@ func TestEvalResumes(t *testing.T) {
 	fake.reply = `{"message":{"role":"assistant","content":"Answer: 7.5"}}
 {"done":true,"done_reason":"length","eval_count":100}
 `
-	if _, err := s.startEvals(context.Background(), evalRunRequest{Models: []string{"small:q4"}, Sets: []string{"two"}}); err != nil {
+	if _, err := s.startEvalLevels(context.Background(), evalRunRequest{Models: []string{"small:q4"}, Sets: []string{"two"}}); err != nil {
 		t.Fatal(err)
 	}
 	waitEvals(t, s)
@@ -225,7 +281,7 @@ func TestEvalCodeAndJudge(t *testing.T) {
 	}
 	// No judge: the proof waits.
 	fake.replies = []string{line("```python\ndef add(a, b):\n    return a + b\n```"), line("It's obvious.")}
-	if _, err := s.startEvals(context.Background(), evalRunRequest{Models: []string{"small:q4"}, Sets: []string{"mixed"}}); err != nil {
+	if _, err := s.startEvalLevels(context.Background(), evalRunRequest{Models: []string{"small:q4"}, Sets: []string{"mixed"}}); err != nil {
 		t.Fatal(err)
 	}
 	st := waitEvals(t, s)
@@ -241,7 +297,7 @@ func TestEvalCodeAndJudge(t *testing.T) {
 	asked := len(fake.chatReqs)
 	fake.replies = []string{line("A one-line claim, no proof.\nVerdict: FAIL")}
 	fake.mu.Unlock()
-	if _, err := s.startEvals(context.Background(), evalRunRequest{Models: []string{"small:q4"}, Sets: []string{"mixed"}, Judge: "mid:q4"}); err != nil {
+	if _, err := s.startEvalLevels(context.Background(), evalRunRequest{Models: []string{"small:q4"}, Sets: []string{"mixed"}, Judge: "mid:q4"}); err != nil {
 		t.Fatal(err)
 	}
 	waitEvals(t, s)
@@ -284,7 +340,7 @@ func TestEvalLean(t *testing.T) {
 	lib.Save("l", []byte(leanSet))
 	// Without Lean the run is refused up front.
 	s.leanInst = &lean.Installer{Dir: t.TempDir()}
-	if _, err := s.startEvals(context.Background(), evalRunRequest{Models: []string{"small:q4"}, Sets: []string{"l"}}); err == nil || !strings.Contains(err.Error(), "Lean") {
+	if _, err := s.startEvalLevels(context.Background(), evalRunRequest{Models: []string{"small:q4"}, Sets: []string{"l"}}); err == nil || !strings.Contains(err.Error(), "Lean") {
 		t.Fatalf("ran without Lean: %v", err)
 	}
 	if onPath, _ := exec.LookPath("lean"); onPath != "" {
@@ -295,7 +351,7 @@ func TestEvalLean(t *testing.T) {
 		line("Unfold and use omega.\n```lean\ntheorem goal : ∀ n : Nat, double n = 2 * n := by\n  intro n; unfold double; omega\n```"),
 		line("```lean\ntheorem goal : ∀ n : Nat, double n = 2 * n := by sorry\n```"),
 	}
-	if _, err := s.startEvals(context.Background(), evalRunRequest{Models: []string{"small:q4"}, Sets: []string{"l"}}); err != nil {
+	if _, err := s.startEvalLevels(context.Background(), evalRunRequest{Models: []string{"small:q4"}, Sets: []string{"l"}}); err != nil {
 		t.Fatal(err)
 	}
 	waitEvals(t, s)

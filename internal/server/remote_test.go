@@ -86,7 +86,7 @@ func TestAPIModelEval(t *testing.T) {
 		t.Errorf("model list: %s", rec.Body)
 	}
 
-	if _, err := s.startEvals(context.Background(), evalRunRequest{Models: []string{"api:b", "api:b-terse"}, Sets: []string{"two"}}); err != nil {
+	if _, err := s.startEvalLevels(context.Background(), evalRunRequest{Models: []string{"api:b", "api:b-terse"}, Sets: []string{"two"}}); err != nil {
 		t.Fatal(err)
 	}
 	st := waitEvals(t, s)
@@ -237,7 +237,7 @@ func TestTeamEval(t *testing.T) {
 	if rec := do(s, "PUT", "/api/teams/new", `{"title":"Bad","strategy":"loop","lead":"api:nope","worker":"api:m","size":2,"rounds":1}`); rec.Code != 400 {
 		t.Errorf("a team with a missing model saved: %d", rec.Code)
 	}
-	if _, err := s.startEvals(context.Background(), evalRunRequest{Models: []string{"team:pipe", "team:loop"}, Sets: []string{"two"}}); err != nil {
+	if _, err := s.startEvalLevels(context.Background(), evalRunRequest{Models: []string{"team:pipe", "team:loop"}, Sets: []string{"two"}}); err != nil {
 		t.Fatal(err)
 	}
 	for _, it := range waitEvals(t, s).Items {

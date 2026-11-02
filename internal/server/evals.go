@@ -27,6 +27,8 @@ import (
 // from a line fitted through the models that have a published score.
 
 // Reply limits per question.
+const thinkAll = "all" // the table of every mode, a row per model and mode
+
 const (
 	evalTokensThink   = 8192
 	evalTokensNoThink = 2048
@@ -57,6 +59,8 @@ type evalJob struct {
 	running   bool
 	Items     []evalItem
 	Think     string
+	Later     []string // modes still to run after this one
+	later     evalRunRequest
 	MaxTokens int
 	Judge     string
 	Waiting   string
@@ -107,6 +111,9 @@ type evalRunRequest struct {
 	Models []string `json:"models"`
 	Sets   []string `json:"sets"`
 	Think  string   `json:"think"`
+	// Thinks lists several modes to run one after another, as separate
+	// runs; it replaces Think when set.
+	Thinks []string `json:"thinks"`
 	// MaxTokens limits each reply; 0 picks by think mode.
 	MaxTokens int `json:"maxTokens"`
 	// Redo runs sets again that already have a finished result.
@@ -120,7 +127,7 @@ func (s *Server) handleEvalRunStart(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	st, err := s.startEvals(r.Context(), req)
+	st, err := s.startEvalLevels(r.Context(), req)
 	if err != nil {
 		var ce *conflictError
 		if errors.As(err, &ce) {
@@ -147,10 +154,42 @@ func (s *Server) handleEvalRunCancel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.evalJob.state())
 }
 
-func (s *Server) startEvals(ctx context.Context, req evalRunRequest) (evalState, error) {
-	if req.Think != evals.ThinkDefault && req.Think != evals.ThinkOff {
-		return evalState{}, errors.New(`think should be "" or "off"`)
+// startEvalLevels starts the first of the requested modes that has
+// something to run; the others follow, each as its own run.
+func (s *Server) startEvalLevels(ctx context.Context, req evalRunRequest) (evalState, error) {
+	levels := req.Thinks
+	if len(levels) == 0 {
+		levels = []string{req.Think}
 	}
+	for _, t := range levels {
+		if !evals.ValidThink(t) {
+			return evalState{}, errors.New(`think should be "", "off", "low", "medium" or "high"`)
+		}
+	}
+	for i, t := range levels {
+		r := req
+		r.Think, r.Thinks = t, nil
+		st, err := s.startEvals(ctx, r, levels[i+1:])
+		var ce *conflictError
+		if err != nil && errors.As(err, &ce) && i+1 < len(levels) && !s.evalJob.isRunning() {
+			continue // nothing to run at this level
+		}
+		return st, err
+	}
+	return evalState{}, errors.New("no mode to run")
+}
+
+func (j *evalJob) isRunning() bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.running
+}
+
+func (s *Server) startEvals(ctx context.Context, req evalRunRequest, later []string) (evalState, error) {
+	if !evals.ValidThink(req.Think) {
+		return evalState{}, errors.New(`think should be "", "off", "low", "medium" or "high"`)
+	}
+	orig := req
 	if len(req.Models) == 0 || len(req.Sets) == 0 {
 		return evalState{}, errors.New("pick at least one model and one set")
 	}
@@ -234,6 +273,8 @@ func (s *Server) startEvals(ctx context.Context, req evalRunRequest) (evalState,
 			it := s.evalItemFor(g.Primary.Name, title, g.Primary.Digest, set, req)
 			if isEmbeddingName(g.Primary.Name) {
 				it.State, it.Reason = itemSkipped, "It's an embedding model; it doesn't write text."
+			} else if evals.IsLevel(req.Think) && it.State == itemPending && !s.takesEffort(ctx, g.Primary.Name) {
+				it.State, it.Reason = itemSkipped, "Its chat template has no reasoning levels; use Default or Off."
 			}
 			items = append(items, it)
 		}
@@ -245,9 +286,17 @@ func (s *Server) startEvals(ctx context.Context, req evalRunRequest) (evalState,
 	j.mu.Lock()
 	j.running, j.Cancelled, j.Waiting, j.Items, j.cancel = true, false, "", items, cancel
 	j.Think, j.MaxTokens, j.Judge = req.Think, req.MaxTokens, req.Judge
+	j.Later, j.later = later, orig
 	j.mu.Unlock()
 	go s.runEvals(jctx, req.Redo)
 	return j.state(), nil
+}
+
+// takesEffort reports whether a local model's chat template takes a
+// reasoning effort; a model that can't be read gets the benefit of the doubt.
+func (s *Server) takesEffort(ctx context.Context, name string) bool {
+	sh, err := s.ollama.Show(ctx, name)
+	return err != nil || slices.Contains(sh.Capabilities, "reasoning-effort")
 }
 
 // evalItemFor makes the queue entry for one model and set, picking up a
@@ -277,7 +326,13 @@ func (s *Server) runEvals(ctx context.Context, redo bool) {
 		j.mu.Lock()
 		j.running, j.Waiting = false, ""
 		j.Cancelled = ctx.Err() != nil
+		later, req := j.Later, j.later
+		j.Later = nil
 		j.mu.Unlock()
+		if len(later) > 0 && ctx.Err() == nil {
+			req.Thinks = later
+			s.startEvalLevels(context.Background(), req)
+		}
 	}()
 	run := s.evalFn
 	if run == nil {
@@ -566,6 +621,8 @@ func (s *Server) askModelWith(ctx context.Context, model string, in []remote.Mes
 	req := ollama.ChatRequest{Model: model, Messages: msgs, Stream: &stream, Options: opts, KeepAlive: "10m"}
 	if think == evals.ThinkOff {
 		req.Think = false
+	} else if evals.IsLevel(think) {
+		req.Think = think
 	}
 	var content, thinking strings.Builder
 	var final ollama.ChatResponse
@@ -718,7 +775,10 @@ type evalRow struct {
 	Params float64             `json:"params,omitempty"` // billions
 	Cells  map[string]evalCell `json:"cells"`
 	// API marks an API model; System and Reasoning are how it's run.
-	API       bool   `json:"api,omitempty"`
+	API   bool   `json:"api,omitempty"`
+	Think string `json:"think,omitempty"` // the mode, on a table of all modes
+	// Levels is whether a local model's chat template takes a reasoning effort.
+	Levels    bool   `json:"levels,omitempty"`
 	Team      bool   `json:"team,omitempty"`
 	System    string `json:"system,omitempty"`
 	Reasoning string `json:"reasoning,omitempty"`
@@ -777,12 +837,49 @@ func (s *Server) evalResultsFor(ctx context.Context, think string, suite []strin
 	if err != nil {
 		return out, err
 	}
-	byDigest := map[string][]*evals.Result{}
-	for _, r := range s.evalRes.All() {
-		if r.Think == think {
-			byDigest[r.Digest] = append(byDigest[r.Digest], r)
+	modes := []string{think}
+	if think == thinkAll {
+		modes = evals.Thinks
+	}
+	all := s.evalRes.All()
+	for _, mode := range modes {
+		byDigest := map[string][]*evals.Result{}
+		for _, r := range all {
+			if r.Think == mode {
+				byDigest[r.Digest] = append(byDigest[r.Digest], r)
+			}
+		}
+		rows := s.resultRows(ctx, models, byDigest, hashes, suite)
+		for _, row := range rows {
+			if think == thinkAll {
+				if mode != evals.ThinkDefault && len(row.Cells) == 0 {
+					continue
+				}
+				row.Think = mode
+				if l := evals.ThinkLabel(mode); l != "" {
+					row.Title += " · " + l
+				}
+			}
+			out.Rows = append(out.Rows, row)
 		}
 	}
+	out.Fit = fitRows(out.Rows)
+	sort.SliceStable(out.Rows, func(a, b int) bool {
+		x, y := out.Rows[a], out.Rows[b]
+		if (x.Overall == nil) != (y.Overall == nil) {
+			return x.Overall != nil
+		}
+		if x.Overall != nil && *x.Overall != *y.Overall {
+			return *x.Overall > *y.Overall
+		}
+		return len(x.Cells) > len(y.Cells)
+	})
+	return out, nil
+}
+
+// resultRows builds one row per model and team from the runs of one mode.
+func (s *Server) resultRows(ctx context.Context, models []ollama.Model, byDigest map[string][]*evals.Result, hashes map[string]string, suite []string) []evalRow {
+	var rows []evalRow
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 4)
@@ -791,10 +888,13 @@ func (s *Server) evalResultsFor(ctx context.Context, think string, suite []strin
 			continue
 		}
 		row := evalRow{Name: g.Primary.Name, Title: groupTitle(g), Quant: quantOf(g), Digest: g.Primary.Digest, Params: float64(parseParams(g.Primary.Details.ParameterSize)) / 1e9}
+		if sh, err := s.ollama.Show(ctx, g.Primary.Name); err == nil {
+			row.Levels = slices.Contains(sh.Capabilities, "reasoning-effort")
+		}
 		fillRow(&row, byDigest[g.Primary.Digest], hashes, suite)
-		out.Rows = append(out.Rows, row)
+		rows = append(rows, row)
 		if g.HFRepo != "" && row.Overall != nil {
-			i := len(out.Rows) - 1
+			i := len(rows) - 1
 			wg.Add(1)
 			go func(repo string) {
 				defer wg.Done()
@@ -804,7 +904,7 @@ func (s *Server) evalResultsFor(ctx context.Context, think string, suite []strin
 				if ls.ok {
 					mu.Lock()
 					sc := ls.score
-					out.Rows[i].Index, out.Rows[i].Of = &sc, ls.of
+					rows[i].Index, rows[i].Of = &sc, ls.of
 					mu.Unlock()
 				}
 			}(g.HFRepo)
@@ -821,21 +921,10 @@ func (s *Server) evalResultsFor(ctx context.Context, think string, suite []strin
 			row.Quant += " · own prompt"
 		}
 		fillRow(&row, byDigest[row.Digest], hashes, suite)
-		out.Rows = append(out.Rows, row)
+		rows = append(rows, row)
 	}
-	out.Rows = append(out.Rows, s.teamRows(ctx, byDigest, hashes, suite)...)
-	out.Fit = fitRows(out.Rows)
-	sort.SliceStable(out.Rows, func(a, b int) bool {
-		x, y := out.Rows[a], out.Rows[b]
-		if (x.Overall == nil) != (y.Overall == nil) {
-			return x.Overall != nil
-		}
-		if x.Overall != nil && *x.Overall != *y.Overall {
-			return *x.Overall > *y.Overall
-		}
-		return len(x.Cells) > len(y.Cells)
-	})
-	return out, nil
+	rows = append(rows, s.teamRows(ctx, byDigest, hashes, suite)...)
+	return rows
 }
 
 // fillRow adds a row's cells from its results and its overall when every
@@ -883,6 +972,9 @@ func fitRows(rows []evalRow) evalFitJSON {
 	seen := map[string]bool{}
 	for i := range rows {
 		r := &rows[i]
+		if r.Think != "" {
+			continue // levels of one model don't each anchor the line
+		}
 		if r.Overall != nil && r.Index != nil {
 			r.Anchor = true
 			// Several quants of one base model share its published score;
@@ -893,7 +985,7 @@ func fitRows(rows []evalRow) evalFitJSON {
 			seen[r.Of] = true
 			x, n := 0.0, 0
 			for _, o := range rows {
-				if o.Overall != nil && o.Index != nil && o.Of == r.Of {
+				if o.Think == "" && o.Overall != nil && o.Index != nil && o.Of == r.Of {
 					x += *o.Overall
 					n++
 				}
