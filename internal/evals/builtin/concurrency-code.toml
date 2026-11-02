@@ -1,0 +1,2435 @@
+name = "Concurrent code"
+short = "Threads code"
+description = "Write thread-safe Python from a spec (a bounded blocking queue, a writer-preferring reader-writer lock, a parallel map, deadlock-free bank transfers, a cyclic barrier, an LRU cache that computes each key once, a future with callbacks, a token bucket); hidden tests hammer it from many threads with forced frequent thread switches to expose races, lost wake-ups and deadlocks. Needs Python 3."
+check = "code"
+max_tokens = 16384
+
+[[questions]]
+id = "bounded-queue"
+prompt = '''
+Write a thread-safe bounded FIFO queue for Python threads. Define everything exactly as below; hidden tests hammer it from many threads with forced frequent thread switches and check blocking, timeouts, closing, ordering and that nothing is lost, duplicated or deadlocked. Only the standard library is available. Reply with one Python code block.
+
+**Names.** An exception class `QueueClosed(Exception)` and a class `BoundedQueue`.
+
+**`BoundedQueue(capacity)`**: `capacity` is an int >= 1 (otherwise raise `ValueError`). Items can be any objects, including `None`. `len(q)` is the number of items currently queued. A queue is open until `close()` is called.
+
+**`put(item, timeout=None)`**: appends the item. If the queue is full, the caller blocks until there is room. `timeout=None` waits as long as needed; a number is the longest wait in seconds, after which `TimeoutError` is raised (the built-in one) and the item is not added; `timeout=0` never blocks (raises `TimeoutError` at once if full). If the queue is closed, or becomes closed while the caller is waiting, `put` raises `QueueClosed` and the item is not added (this check comes first, even when there would be room).
+
+**`get(timeout=None)`**: removes and returns the oldest item. If the queue is empty it blocks, with the same `timeout` meaning and the same `TimeoutError`. If the queue is closed, items that are still queued are returned normally (oldest first); once it is closed and empty, `get` raises `QueueClosed`, including for callers already blocked in `get` when `close()` is called.
+
+**`close()`**: marks the queue closed and wakes every blocked caller so they can react. Calling it again does nothing.
+
+**Guarantees.** Items come out in the order they went in (FIFO). The queue never holds more than `capacity` items, not even for a moment. Every item that a `put` accepted is returned by exactly one `get`. Many threads may call any method at the same time, and a blocked caller must never be left waiting when it could proceed (no lost wake-ups, no deadlocks). Blocked callers must not busy-wait.
+'''
+tests = '''
+import sys as _sys
+import threading as _th
+import time as _time
+
+_si_saved = _sys.getswitchinterval()
+
+
+def _run_threads(fns, timeout=10.0, what="threads"):
+    """Run each callable in its own daemon thread; fail on deadlock; re-raise the first error."""
+    errs = []
+
+    def wrap(f):
+        def g():
+            try:
+                f()
+            except BaseException as e:
+                errs.append(e)
+        return g
+
+    ts = [_th.Thread(target=wrap(f), daemon=True) for f in fns]
+    for t in ts:
+        t.start()
+    end = _time.monotonic() + timeout
+    for t in ts:
+        t.join(max(0.0, end - _time.monotonic()))
+    stuck = sum(t.is_alive() for t in ts)
+    assert not stuck, "DEADLOCK or lost wake-up: %d of %d %s still blocked after %.0f s" % (stuck, len(ts), what, timeout)
+    if errs:
+        raise errs[0]
+
+
+class _Bg:
+    """Runs f() in a daemon thread; .wait(t) joins; .alive, .res, .exc."""
+
+    def __init__(self, f):
+        self.res = None
+        self.exc = None
+
+        def g():
+            try:
+                self.res = f()
+            except BaseException as e:
+                self.exc = e
+        self._t = _th.Thread(target=g, daemon=True)
+        self._t.start()
+
+    def wait(self, t):
+        self._t.join(t)
+        return not self._t.is_alive()
+
+    @property
+    def alive(self):
+        return self._t.is_alive()
+
+    def finish(self, t=5.0, what="call"):
+        assert self.wait(t), "%s is still blocked after %.0f s (deadlock, lost wake-up or ignored wake-up)" % (what, t)
+        return self
+
+
+def _raises(exc, f, what="call"):
+    try:
+        f()
+    except exc as e:
+        return e
+    except BaseException as e:
+        raise AssertionError("%s raised %r, expected %s" % (what, e, exc.__name__))
+    raise AssertionError("%s did not raise %s" % (what, exc.__name__))
+
+
+def _hammer(suite):
+    _sys.setswitchinterval(1e-6)
+    _stack_saved = _th.stack_size()
+    try:
+        _th.stack_size(512 * 1024)  # many threads must fit in the 1 GB address-space limit
+    except (ValueError, RuntimeError):
+        pass
+    try:
+        suite()
+    finally:
+        _sys.setswitchinterval(_si_saved)
+        try:
+            _th.stack_size(_stack_saved)
+        except (ValueError, RuntimeError):
+            pass
+
+
+class _Noise:
+    """Context manager: n busy threads that compete for the interpreter, so thread switches happen at nearly every call."""
+
+    def __init__(self, n=2):
+        self.n = n
+        self.stop = False
+
+    def _spin(self):
+        while not self.stop:
+            pass
+
+    def __enter__(self):
+        for _ in range(self.n):
+            _th.Thread(target=self._spin, daemon=True).start()
+        return self
+
+    def __exit__(self, *a):
+        self.stop = True
+
+
+def _suite():
+    # ---- single-threaded behaviour ----
+    _raises(ValueError, lambda: BoundedQueue(0))
+    q = BoundedQueue(2)
+    assert len(q) == 0
+    q.put(1)
+    q.put(None)
+    assert len(q) == 2
+    _raises(TimeoutError, lambda: q.put(3, timeout=0), "put on a full queue with timeout=0")
+    t0 = _time.monotonic()
+    _raises(TimeoutError, lambda: q.put(3, timeout=0.15), "put on a full queue with timeout=0.15")
+    el = _time.monotonic() - t0
+    assert 0.12 <= el < 3, "put timeout took %.3f s for 0.15" % el
+    assert len(q) == 2, "a timed-out put must not add the item"
+    assert q.get() == 1 and q.get() is None
+    _raises(TimeoutError, lambda: q.get(timeout=0), "get on an empty queue with timeout=0")
+    t0 = _time.monotonic()
+    _raises(TimeoutError, lambda: q.get(timeout=0.15), "get on an empty queue with timeout=0.15")
+    el = _time.monotonic() - t0
+    assert 0.12 <= el < 3, "get timeout took %.3f s for 0.15" % el
+
+    # ---- blocking: a get really waits for a put; a put waits for room ----
+    q = BoundedQueue(1)
+    g = _Bg(lambda: q.get())
+    assert not g.wait(0.3), "get on an empty queue returned without any put"
+    q.put("x")
+    g.finish(5, "blocked get after a put")
+    assert g.res == "x" and g.exc is None
+    q.put("a")
+    p = _Bg(lambda: q.put("b"))
+    assert not p.wait(0.3), "put on a full queue returned without room"
+    assert len(q) == 1
+    assert q.get() == "a"
+    p.finish(5, "blocked put after a get")
+    assert p.exc is None and len(q) == 1 and q.get() == "b"
+
+    # blocked callers sleep: they must not burn CPU while waiting
+    q = BoundedQueue(1)
+    waiters = [_Bg(lambda: q.get()) for _ in range(6)]
+    _time.sleep(0.1)
+    c0 = _time.process_time()
+    _time.sleep(0.6)
+    spent = _time.process_time() - c0
+    assert spent < 0.06, "6 blocked get() calls used %.2f s of CPU in 0.6 s: they are busy-waiting" % spent
+    for _ in range(6):
+        q.put(0)
+    for w in waiters:
+        w.finish(5, "blocked get")
+
+    # timeouts while other threads are waiting still work, and a wait with a timeout is woken by a put
+    q = BoundedQueue(1)
+    g = _Bg(lambda: q.get(timeout=5))
+    _time.sleep(0.1)
+    q.put(7)
+    g.finish(3, "get(timeout=5) after a put")
+    assert g.res == 7
+
+    # ---- closing ----
+    q = BoundedQueue(1)
+    getters = [_Bg(lambda: q.get()) for _ in range(4)]
+    _time.sleep(0.2)
+    q.close()
+    for gb in getters:
+        gb.finish(5, "get blocked on an empty queue when close() was called")
+        assert isinstance(gb.exc, QueueClosed), "blocked get after close: %r" % (gb.exc,)
+    q = BoundedQueue(1)
+    q.put("full")
+    putters = [_Bg(lambda: q.put("late")) for _ in range(4)]
+    _time.sleep(0.2)
+    q.close()
+    for pb in putters:
+        pb.finish(5, "put blocked on a full queue when close() was called")
+        assert isinstance(pb.exc, QueueClosed), "blocked put after close: %r" % (pb.exc,)
+    assert len(q) == 1
+    assert q.get() == "full"
+    _raises(QueueClosed, lambda: q.get(), "get on a closed empty queue")
+    _raises(QueueClosed, lambda: q.get(timeout=0), "get(timeout=0) on a closed empty queue")
+    q = BoundedQueue(5)
+    for i in range(3):
+        q.put(i)
+    q.close()
+    q.close()
+    _raises(QueueClosed, lambda: q.put(9), "put on a closed queue with room")
+    assert [q.get(), q.get(), q.get()] == [0, 1, 2]
+    _raises(QueueClosed, lambda: q.get())
+
+    # ---- one producer, one consumer: exact FIFO order ----
+    q = BoundedQueue(2)
+    n = 1500
+    got = []
+
+    def prod():
+        for i in range(n):
+            q.put(i)
+        q.close()
+
+    def cons():
+        while True:
+            try:
+                got.append(q.get())
+            except QueueClosed:
+                return
+    _run_threads([prod, cons], what="producer/consumer threads")
+    assert got == list(range(n)), "items lost, duplicated or out of order"
+
+    # ---- many producers and consumers ----
+    def stress(cap, nprod, ncons, per):
+        q = BoundedQueue(cap)
+        stop = []
+        peak = [0]
+        results = [[] for _ in range(ncons)]
+        prods_left = [nprod]
+        m = _th.Lock()
+
+        def prod(pid):
+            for i in range(per):
+                q.put((pid, i))
+            with m:
+                prods_left[0] -= 1
+                if prods_left[0] == 0:
+                    q.close()
+
+        def cons(k):
+            out = results[k]
+            while True:
+                try:
+                    out.append(q.get())
+                except QueueClosed:
+                    return
+
+        def monitor():
+            while not stop:
+                n = len(q)
+                if n > peak[0]:
+                    peak[0] = n
+                _time.sleep(0)
+        mon = _th.Thread(target=monitor, daemon=True)
+        mon.start()
+        try:
+            _run_threads([lambda p=p: prod(p) for p in range(nprod)] + [lambda k=k: cons(k) for k in range(ncons)],
+                         what="producer/consumer threads")
+        finally:
+            stop.append(1)
+        assert peak[0] <= cap, "queue held %d items with capacity %d" % (peak[0], cap)
+        allitems = [x for r in results for x in r]
+        assert len(allitems) == nprod * per, "got %d items, expected %d (lost or duplicated)" % (len(allitems), nprod * per)
+        assert len(set(allitems)) == len(allitems), "an item was delivered twice"
+        for r in results:
+            last = {}
+            for pid, i in r:
+                assert last.get(pid, -1) < i, "FIFO order broken for producer %d" % pid
+                last[pid] = i
+        assert len(q) == 0
+
+    stress(3, 6, 6, 400)
+    stress(1, 4, 4, 300)
+    stress(8, 3, 9, 300)
+    stress(2, 9, 2, 200)
+    stress(1, 16, 2, 120)
+    stress(4, 2, 16, 150)
+
+    # ---- timeouts under load: items put with timeouts are never lost ----
+    q = BoundedQueue(2)
+    accepted = []
+    received = []
+    done = []
+    lock = _th.Lock()
+
+    def tprod(pid):
+        for i in range(150):
+            try:
+                q.put((pid, i), timeout=0.002)
+                with lock:
+                    accepted.append((pid, i))
+            except TimeoutError:
+                pass
+
+    def tcons():
+        while True:
+            try:
+                x = q.get(timeout=0.002)
+                with lock:
+                    received.append(x)
+            except TimeoutError:
+                if done:
+                    return
+    cs = [_Bg(tcons) for _ in range(3)]
+    _run_threads([lambda p=p: tprod(p) for p in range(5)], what="producers")
+    done.append(1)
+    for c in cs:
+        c.finish(10, "consumer")
+        assert c.exc is None, c.exc
+    while len(q):
+        received.append(q.get())
+    assert sorted(accepted) == sorted(received), "accepted %d items, received %d" % (len(accepted), len(received))
+
+
+_hammer(_suite)
+'''
+
+[[questions]]
+id = "rw-lock"
+prompt = '''
+Write a writer-preferring reader-writer lock for Python threads. Define everything exactly as below; hidden tests hammer it from many threads with forced frequent thread switches and check mutual exclusion, that readers really share the lock, writer preference, and that nothing deadlocks. Only the standard library is available. Reply with one Python code block.
+
+**`RWLock()`** has two methods, `read_lock()` and `write_lock()`. Each returns a context manager, used as `with lock.read_lock():` or `with lock.write_lock():`. Entering blocks until the lock is granted; leaving releases it, also when the body raised an exception (the exception then propagates as usual). A fresh context manager is returned by every call, and one `RWLock` is shared by many threads.
+
+**Rules.**
+- Any number of threads may hold the read lock at the same time.
+- The write lock is exclusive: while a thread holds it, no other thread holds the read lock or the write lock.
+- **Writers are preferred.** As soon as a writer is waiting for the lock, readers that arrive afterwards must wait, even though other readers are holding the lock right now. The waiting writer gets the lock as soon as the readers that already hold it have left. Readers get in again once no writer is waiting or writing.
+- No lock is re-entrant: a thread must not ask for the lock again while it holds it (the tests never do this).
+- Waiting threads must sleep, not spin, and every thread that can proceed must be woken (no lost wake-ups, no deadlocks).
+'''
+tests = '''
+import sys as _sys
+import threading as _th
+import time as _time
+
+_si_saved = _sys.getswitchinterval()
+
+
+def _run_threads(fns, timeout=10.0, what="threads"):
+    """Run each callable in its own daemon thread; fail on deadlock; re-raise the first error."""
+    errs = []
+
+    def wrap(f):
+        def g():
+            try:
+                f()
+            except BaseException as e:
+                errs.append(e)
+        return g
+
+    ts = [_th.Thread(target=wrap(f), daemon=True) for f in fns]
+    for t in ts:
+        t.start()
+    end = _time.monotonic() + timeout
+    for t in ts:
+        t.join(max(0.0, end - _time.monotonic()))
+    stuck = sum(t.is_alive() for t in ts)
+    assert not stuck, "DEADLOCK or lost wake-up: %d of %d %s still blocked after %.0f s" % (stuck, len(ts), what, timeout)
+    if errs:
+        raise errs[0]
+
+
+class _Bg:
+    """Runs f() in a daemon thread; .wait(t) joins; .alive, .res, .exc."""
+
+    def __init__(self, f):
+        self.res = None
+        self.exc = None
+
+        def g():
+            try:
+                self.res = f()
+            except BaseException as e:
+                self.exc = e
+        self._t = _th.Thread(target=g, daemon=True)
+        self._t.start()
+
+    def wait(self, t):
+        self._t.join(t)
+        return not self._t.is_alive()
+
+    @property
+    def alive(self):
+        return self._t.is_alive()
+
+    def finish(self, t=5.0, what="call"):
+        assert self.wait(t), "%s is still blocked after %.0f s (deadlock, lost wake-up or ignored wake-up)" % (what, t)
+        return self
+
+
+def _raises(exc, f, what="call"):
+    try:
+        f()
+    except exc as e:
+        return e
+    except BaseException as e:
+        raise AssertionError("%s raised %r, expected %s" % (what, e, exc.__name__))
+    raise AssertionError("%s did not raise %s" % (what, exc.__name__))
+
+
+def _hammer(suite):
+    _sys.setswitchinterval(1e-6)
+    _stack_saved = _th.stack_size()
+    try:
+        _th.stack_size(512 * 1024)  # many threads must fit in the 1 GB address-space limit
+    except (ValueError, RuntimeError):
+        pass
+    try:
+        suite()
+    finally:
+        _sys.setswitchinterval(_si_saved)
+        try:
+            _th.stack_size(_stack_saved)
+        except (ValueError, RuntimeError):
+            pass
+
+
+class _Noise:
+    """Context manager: n busy threads that compete for the interpreter, so thread switches happen at nearly every call."""
+
+    def __init__(self, n=2):
+        self.n = n
+        self.stop = False
+
+    def _spin(self):
+        while not self.stop:
+            pass
+
+    def __enter__(self):
+        for _ in range(self.n):
+            _th.Thread(target=self._spin, daemon=True).start()
+        return self
+
+    def __exit__(self, *a):
+        self.stop = True
+
+
+def _suite():
+    # ---- readers really share the lock ----
+    lk = RWLock()
+    bar = _th.Barrier(5, timeout=5)
+
+    def reader_meet():
+        with lk.read_lock():
+            bar.wait()
+    try:
+        _run_threads([reader_meet] * 5, what="readers")
+    except _th.BrokenBarrierError:
+        raise AssertionError("5 readers could not hold the read lock at the same time")
+
+    # ---- a writer waits for the readers that hold the lock, then is exclusive ----
+    lk = RWLock()
+    ev = []
+    rel = _th.Event()
+
+    def r1():
+        with lk.read_lock():
+            ev.append("r1 in")
+            rel.wait(10)
+            ev.append("r1 out")
+
+    def w1():
+        ev.append("w try")
+        with lk.write_lock():
+            ev.append("w in")
+            _time.sleep(0.05)
+            ev.append("w out")
+    a = _Bg(r1)
+    for _ in range(200):
+        if "r1 in" in ev:
+            break
+        _time.sleep(0.01)
+    assert "r1 in" in ev
+    w = _Bg(w1)
+    _time.sleep(0.3)
+    assert "w in" not in ev, "writer entered while a reader held the lock"
+    # ---- writer preference: a reader arriving now must queue behind the waiting writer ----
+    def r2fn():
+        with lk.read_lock():
+            ev.append("r2 in")
+    r2 = _Bg(r2fn)
+    _time.sleep(0.3)
+    assert "r2 in" not in ev, "a new reader got in although a writer was waiting (not writer-preferring)"
+    assert "w in" not in ev
+    rel.set()
+    a.finish(5, "first reader")
+    w.finish(5, "writer")
+    r2.finish(5, "late reader")
+    assert ev.index("w out") < ev.index("r2 in"), "the waiting writer must run before the late reader: %r" % (ev,)
+    assert ev.index("r1 out") < ev.index("w in")
+
+    # a new lock is free again afterwards
+    lk = RWLock()
+    with lk.write_lock():
+        pass
+    with lk.read_lock():
+        pass
+
+    # ---- readers held back by a waiting writer all get in together once it is done ----
+    lk = RWLock()
+    rel = _th.Event()
+    inside = _th.Event()
+
+    def holder():
+        with lk.write_lock():
+            inside.set()
+            rel.wait(10)
+    h = _Bg(holder)
+    assert inside.wait(5)
+    bar = _th.Barrier(4, timeout=5)
+
+    def meet():
+        with lk.read_lock():
+            bar.wait()
+    rs = [_Bg(meet) for _ in range(4)]
+    _time.sleep(0.3)
+    assert not bar.n_waiting, "readers entered while a writer held the lock"
+    rel.set()
+    h.finish(5, "writer")
+    for r in rs:
+        r.finish(8, "reader released by the writer")
+        assert r.exc is None, "readers released by a finished writer must be able to share the lock: %r" % (r.exc,)
+
+    # ---- an exception in the body releases the lock ----
+    for kind in ("read_lock", "write_lock"):
+        lk = RWLock()
+        try:
+            with getattr(lk, kind)():
+                raise KeyError("boom")
+        except KeyError:
+            pass
+
+        def grab():
+            with lk.write_lock():
+                return 1
+        g = _Bg(grab)
+        g.finish(3, "write lock after an exception left the body of a %s block" % kind)
+        assert g.res == 1
+
+    # ---- stress: mutual exclusion and consistent data ----
+    lk = RWLock()
+    m = _th.Lock()
+    st = {"r": 0, "w": 0, "a": 0, "b": 0, "maxr": 0, "reads": 0, "writes": 0}
+
+    def reader(n):
+        for _ in range(n):
+            with lk.read_lock():
+                with m:
+                    st["r"] += 1
+                    st["maxr"] = max(st["maxr"], st["r"])
+                    assert st["w"] == 0, "a reader and a writer were inside at the same time"
+                a = st["a"]
+                _time.sleep(0)
+                b = st["b"]
+                assert a == b,"reader saw a half-finished write"
+                with m:
+                    assert st["w"] == 0, "a writer entered while a reader was inside"
+                    st["r"] -= 1
+                    st["reads"] += 1
+
+    def writer(n):
+        for _ in range(n):
+            with lk.write_lock():
+                with m:
+                    assert st["r"] == 0, "a writer entered while %d reader(s) were inside" % st["r"]
+                    assert st["w"] == 0, "two writers were inside at the same time"
+                    st["w"] += 1
+                st["a"] += 1
+                _time.sleep(0)
+                st["b"] += 1
+                with m:
+                    assert st["r"] == 0, "a reader entered while a writer was inside"
+                    st["w"] -= 1
+                    st["writes"] += 1
+    _run_threads([lambda: reader(250) for _ in range(8)] + [lambda: writer(80) for _ in range(4)], what="reader/writer threads")
+    assert st["reads"] == 2000 and st["writes"] == 320
+    assert st["a"] == st["b"] == 320
+    assert st["maxr"] > 1, "readers never overlapped"
+
+    # ---- lean stress (no helper lock in the way): flags set inside the critical sections ----
+    lk = RWLock()
+    wflag = [0]
+    inr = [0] * 12  # one slot per reader: 1 while inside (plain stores; the lock under test is the only guard)
+    bad = []
+
+    def lean_reader(k, n):
+        for _ in range(n):
+            with lk.read_lock():
+                inr[k] = 1
+                if wflag[0]:
+                    bad.append("a reader and a writer were inside together")
+                if wflag[0]:
+                    bad.append("a reader and a writer were inside together")
+                inr[k] = 0
+
+    def lean_writer(n):
+        for _ in range(n):
+            with lk.write_lock():
+                if wflag[0]:
+                    bad.append("two writers inside")
+                wflag[0] = 1
+                for _ in range(3):
+                    if any(inr):
+                        bad.append("a writer was inside with a reader inside")
+                wflag[0] = 0
+    _run_threads([lambda k=k: lean_reader(k, 1500) for k in range(12)] + [lambda: lean_writer(500) for _ in range(4)], what="threads")
+    assert not bad, bad[0]
+
+    # ---- barrier-synchronised rounds: one writer and several readers arrive at the very same moment ----
+    lk = RWLock()
+    R = 800
+    gate = _th.Barrier(9, timeout=8)
+    wflag = [0]
+    inr = [0] * 8
+    bad = []
+
+    def round_reader(k):
+        for _ in range(R):
+            gate.wait()
+            with lk.read_lock():
+                inr[k] = 1
+                if wflag[0]:
+                    bad.append("a reader and a writer were inside together")
+                _time.sleep(0)
+                if wflag[0]:
+                    bad.append("a writer entered while a reader was inside")
+                inr[k] = 0
+
+    def round_writer():
+        for _ in range(R):
+            gate.wait()
+            with lk.write_lock():
+                wflag[0] = 1
+                if any(inr):
+                    bad.append("a writer was inside with a reader inside")
+                _time.sleep(0)
+                if any(inr):
+                    bad.append("a reader came in while a writer was inside")
+                wflag[0] = 0
+    _run_threads([lambda k=k: round_reader(k) for k in range(8)] + [round_writer], timeout=10, what="round threads")
+    assert not bad, bad[0]
+
+    # ---- a steady stream of readers cannot starve a writer ----
+    lk = RWLock()
+    stop = []
+    got = []
+
+    def streamer():
+        while not stop:
+            with lk.read_lock():
+                _time.sleep(0.002)
+
+    def one_write():
+        with lk.write_lock():
+            got.append(1)
+    rs = [_Bg(streamer) for _ in range(5)]
+    _time.sleep(0.1)
+    wb = _Bg(one_write)
+    wb.wait(5)
+    stop.append(1)
+    for r in rs:
+        r.finish(5, "streaming reader")
+    assert got, "writer starved for 5 s by a stream of readers"
+    wb.finish(2, "writer")
+
+    # ---- many writers and readers with mixed bursts: nobody gets stuck ----
+    lk = RWLock()
+    cnt = [0]
+
+    def mixed(k):
+        for i in range(150):
+            if (i + k) % 5 == 0:
+                with lk.write_lock():
+                    c = cnt[0]
+                    _time.sleep(0)
+                    cnt[0] = c + 1
+            else:
+                with lk.read_lock():
+                    _ = cnt[0]
+    _run_threads([lambda k=k: mixed(k) for k in range(16)], what="mixed threads")
+    assert cnt[0] == 16 * 30, "lost updates under the write lock: %d" % cnt[0]
+
+
+_hammer(_suite)
+'''
+
+[[questions]]
+id = "parallel-map"
+prompt = '''
+Write an order-preserving parallel map for Python threads. Define everything exactly as below; hidden tests run it with many workers and many items, with forced frequent thread switches, and check ordering, the worker limit, that every item is processed exactly once, error handling, and that no threads are left behind. Only the standard library is available. Don't use `concurrent.futures` or `multiprocessing.pool.ThreadPool`: build it from `threading` yourself. Reply with one Python code block.
+
+**`parallel_map(func, items, workers=4)`** calls `func(item)` for every item of the iterable `items` (a list, tuple, generator… read it once, from start to end) using at most `workers` threads, and returns a list of the results in the same order as `items`. `workers` is an int >= 1 (otherwise raise `ValueError` before doing anything). An empty `items` returns `[]`. Every call of `func` runs in a worker thread, never in the caller's thread.
+
+**Limit.** At no moment may more than `workers` calls of `func` be running at once, and when there is enough work, `workers` calls must really run at the same time (the tests make the calls wait for each other).
+
+**Exactly once.** Each item is passed to `func` exactly once (no skipped and no duplicated items), as long as no call fails.
+
+**Failures.** If a call of `func` raises, `parallel_map` stops starting new calls as soon as the failure is noticed, waits until every call that is already running has finished, and then raises the exception object from the failed call with the lowest item index (if several calls failed, that is the one for the item that comes first in `items`). When `parallel_map` returns or raises, no call of `func` is running any more, and none starts later.
+
+**No leftovers.** `parallel_map` must not leave threads behind: shortly after it returns or raises, the threads it started must have ended (no pool that outlives the call). Threads must not be left blocked forever, whatever `func` raises. Calls to `parallel_map` can come from several threads at once, each with its own workers.
+'''
+tests = '''
+import sys as _sys
+import threading as _th
+import time as _time
+
+_si_saved = _sys.getswitchinterval()
+
+
+def _run_threads(fns, timeout=10.0, what="threads"):
+    """Run each callable in its own daemon thread; fail on deadlock; re-raise the first error."""
+    errs = []
+
+    def wrap(f):
+        def g():
+            try:
+                f()
+            except BaseException as e:
+                errs.append(e)
+        return g
+
+    ts = [_th.Thread(target=wrap(f), daemon=True) for f in fns]
+    for t in ts:
+        t.start()
+    end = _time.monotonic() + timeout
+    for t in ts:
+        t.join(max(0.0, end - _time.monotonic()))
+    stuck = sum(t.is_alive() for t in ts)
+    assert not stuck, "DEADLOCK or lost wake-up: %d of %d %s still blocked after %.0f s" % (stuck, len(ts), what, timeout)
+    if errs:
+        raise errs[0]
+
+
+class _Bg:
+    """Runs f() in a daemon thread; .wait(t) joins; .alive, .res, .exc."""
+
+    def __init__(self, f):
+        self.res = None
+        self.exc = None
+
+        def g():
+            try:
+                self.res = f()
+            except BaseException as e:
+                self.exc = e
+        self._t = _th.Thread(target=g, daemon=True)
+        self._t.start()
+
+    def wait(self, t):
+        self._t.join(t)
+        return not self._t.is_alive()
+
+    @property
+    def alive(self):
+        return self._t.is_alive()
+
+    def finish(self, t=5.0, what="call"):
+        assert self.wait(t), "%s is still blocked after %.0f s (deadlock, lost wake-up or ignored wake-up)" % (what, t)
+        return self
+
+
+def _raises(exc, f, what="call"):
+    try:
+        f()
+    except exc as e:
+        return e
+    except BaseException as e:
+        raise AssertionError("%s raised %r, expected %s" % (what, e, exc.__name__))
+    raise AssertionError("%s did not raise %s" % (what, exc.__name__))
+
+
+def _hammer(suite):
+    _sys.setswitchinterval(1e-6)
+    _stack_saved = _th.stack_size()
+    try:
+        _th.stack_size(512 * 1024)  # many threads must fit in the 1 GB address-space limit
+    except (ValueError, RuntimeError):
+        pass
+    try:
+        suite()
+    finally:
+        _sys.setswitchinterval(_si_saved)
+        try:
+            _th.stack_size(_stack_saved)
+        except (ValueError, RuntimeError):
+            pass
+
+
+class _Noise:
+    """Context manager: n busy threads that compete for the interpreter, so thread switches happen at nearly every call."""
+
+    def __init__(self, n=2):
+        self.n = n
+        self.stop = False
+
+    def _spin(self):
+        while not self.stop:
+            pass
+
+    def __enter__(self):
+        for _ in range(self.n):
+            _th.Thread(target=self._spin, daemon=True).start()
+        return self
+
+    def __exit__(self, *a):
+        self.stop = True
+
+
+def _suite():
+    main_thread = _th.main_thread()
+
+    def pm(*a, **k):
+        b = _Bg(lambda: parallel_map(*a, **k))
+        b.finish(10, "parallel_map")
+        if b.exc is not None:
+            raise b.exc
+        return b.res
+
+    def slow_gen(n):
+        for i in range(n):
+            _time.sleep(0)
+            yield i
+
+    # ---- basics ----
+    assert pm(lambda x: x * x, range(30), 4) == [x * x for x in range(30)]
+    assert pm(lambda x: x, [], 3) == []
+    assert pm(lambda x: x + 1, (5,), 8) == [6]
+    assert pm(lambda x: x, iter("abc"), workers=2) == ["a", "b", "c"]
+    assert pm(str, [1, 2, 3]) == ["1", "2", "3"]
+    for bad in (0, -1):
+        called = []
+        _raises(ValueError, lambda: parallel_map(called.append, [1, 2], workers=bad), "parallel_map with workers=%d" % bad)
+        assert not called
+    where = []
+    pm(lambda x: where.append(_th.current_thread()), range(10), 3)
+    assert len(where) == 10 and all(t is not main_thread for t in where), "func must run in worker threads, not the caller's thread"
+
+    # ---- the limit, and really that many at once ----
+    for workers, nitems in ((4, 4), (3, 9), (6, 6)):
+        bar = _th.Barrier(workers, timeout=5)
+
+        def meet(x):
+            if x < workers:
+                bar.wait()
+            return x
+        try:
+            out = pm(meet, range(nitems), workers)
+        except _th.BrokenBarrierError:
+            raise AssertionError("fewer than %d calls ran at the same time with workers=%d" % (workers, workers))
+        assert out == list(range(nitems))
+    m = _th.Lock()
+    cur = [0]
+    peak = [0]
+
+    def watch(x):
+        with m:
+            cur[0] += 1
+            peak[0] = max(peak[0], cur[0])
+            assert cur[0] <= 5, "%d calls of func at once with workers=5" % cur[0]
+        _time.sleep(0.001)
+        with m:
+            cur[0] -= 1
+        return x * 2
+    assert pm(watch, range(150), 5) == [x * 2 for x in range(150)]
+    assert peak[0] == 5, "peak concurrency was %d, expected 5" % peak[0]
+
+    # ---- order is the input order, not the completion order ----
+    def jitter(i):
+        _time.sleep(((i * 7919) % 5) * 0.001)
+        return -i
+    assert pm(jitter, range(120), 8) == [-i for i in range(120)]
+    # the first item finishes last
+    assert pm(lambda i: (_time.sleep(0.2) if i == 0 else None) or i, range(12), 4) == list(range(12))
+
+    # ---- each item exactly once, also from a generator being read by many threads ----
+    for rep in range(4):
+        n = 1500
+        calls = [0] * n
+
+        def count(i):
+            calls[i] += 1
+            return i
+        src = slow_gen(n) if rep % 2 else range(n)
+        out = pm(count, src, 12)
+        assert out == list(range(n)), "wrong results (items skipped, duplicated or reordered)"
+        assert calls == [1] * n, "an item was passed to func %d times" % max(calls)
+
+    # ---- failures ----
+    started = [0]
+    running = [0]
+    mm = _th.Lock()
+
+    def failing(i):
+        with mm:
+            started[0] += 1
+            running[0] += 1
+        try:
+            if i == 3:
+                raise ValueError("bad item 3")
+            _time.sleep(0.005)
+            return i
+        finally:
+            with mm:
+                running[0] -= 1
+    e = _raises(ValueError, lambda: pm(failing, range(400), 4), "parallel_map with a failing item")
+    assert str(e) == "bad item 3"
+    assert running[0] == 0, "parallel_map raised while %d calls of func were still running" % running[0]
+    s1 = started[0]
+    _time.sleep(0.15)
+    assert started[0] == s1, "func calls were started after parallel_map had raised"
+    assert s1 < 80, "%d of 400 items were still started after a failure (no new calls should start once a failure is noticed)" % s1
+
+    # the failing item with the lowest index wins, even if another failure arrives first
+    for slow_first in (False, True):
+        errA, errB = KeyError("A"), IndexError("B")
+        bar = _th.Barrier(2, timeout=5)
+
+        def two(i):
+            if i in (0, 1):
+                bar.wait()
+                if i == 0:
+                    if slow_first:
+                        _time.sleep(0.15)
+                    raise errA
+                raise errB
+            return i
+        try:
+            got = _raises(BaseException, lambda: pm(two, range(6), 2), "parallel_map with two failures")
+        except AssertionError:
+            raise
+        assert got is errA, "expected the exception of the lowest failing index (0), got %r" % (got,)
+
+    # a failure in a generator-fed run
+    e = _raises(ZeroDivisionError, lambda: pm(lambda x: 1 // (x - 40), slow_gen(100), 6))
+    # everything still works afterwards
+    assert pm(lambda x: x, range(20), 6) == list(range(20))
+
+    # ---- no threads left behind ----
+    base = _th.active_count()
+    for k in range(40):
+        if k % 4 == 3:
+            _raises(RuntimeError, lambda: pm(lambda x: (_ for _ in ()).throw(RuntimeError("x")) if x == 2 else x, range(10), 5))
+        else:
+            pm(lambda x: x, range(10), 5)
+        for _ in range(100):
+            if _th.active_count() <= base:
+                break
+            _time.sleep(0.01)
+        assert _th.active_count() <= base, "threads left behind after call %d: %d alive, %d before" % (k, _th.active_count(), base)
+
+    # ---- several callers at once ----
+    results = {}
+
+    def caller(c):
+        for r in range(15):
+            data = list(range(c, c + 40))
+            out = parallel_map(lambda x: x * 3 + c, data, workers=3)
+            assert out == [x * 3 + c for x in data], "caller %d got wrong results" % c
+        results[c] = True
+    _run_threads([lambda c=c: caller(c) for c in range(6)], timeout=15, what="callers")
+    assert len(results) == 6
+
+    # ---- many small maps with many workers: nothing is lost ----
+    def small():
+        for r in range(60):
+            xs = list(range(r % 17))
+            assert parallel_map(lambda x: x + 1, xs, workers=16) == [x + 1 for x in xs]
+    _run_threads([small, small, small], timeout=15, what="threads")
+
+
+_hammer(_suite)
+'''
+
+[[questions]]
+id = "bank-transfer"
+prompt = '''
+Write a thread-safe in-memory bank for Python threads. Define everything exactly as below; hidden tests run thousands of transfers between the same few accounts from many threads, in both directions at once, with forced frequent thread switches, and check that the money is conserved, no balance goes negative, a total taken in the middle of the traffic is consistent, and nothing deadlocks. Only the standard library is available. Reply with one Python code block.
+
+**Names.** An exception class `InsufficientFunds(Exception)` and a class `Bank`.
+
+**`Bank(balances)`**: `balances` is a dict mapping account names (strings) to starting balances (ints >= 0). The bank keeps its own copy.
+
+**`balance(name)`** returns the account's current balance. **`total()`** returns the sum of all balances. `balance` raises `KeyError` for an unknown name. `total()` must be consistent: whatever transfers are going on, it always equals the sum the bank was created with (it never sees money that has left one account and not yet arrived in the other).
+
+**`transfer(src, dst, amount)`** moves `amount` from account `src` to account `dst` as one atomic step and returns `None`. Checks, in this order:
+1. `amount` must be an int > 0, otherwise `ValueError`.
+2. `src` and `dst` must both exist, otherwise `KeyError` (nothing changes).
+3. If `src` holds less than `amount`, raise `InsufficientFunds` (nothing changes).
+4. If `src == dst` nothing changes (but the checks above still apply, including the funds check).
+
+**Guarantees.** All amounts are ints. A balance is never negative, not even for a moment, and the sum of all balances never changes. Transfers between different pairs of accounts need not run in parallel with each other, but any mix of concurrent `transfer`, `balance` and `total` calls from any number of threads must complete: the classic trap is two threads moving money in opposite directions between the same two accounts at the same time, which must not deadlock. A transfer that fails for lack of funds must not block other transfers for long and must not leave anything locked.
+'''
+tests = '''
+import sys as _sys
+import threading as _th
+import time as _time
+
+_si_saved = _sys.getswitchinterval()
+
+
+def _run_threads(fns, timeout=10.0, what="threads"):
+    """Run each callable in its own daemon thread; fail on deadlock; re-raise the first error."""
+    errs = []
+
+    def wrap(f):
+        def g():
+            try:
+                f()
+            except BaseException as e:
+                errs.append(e)
+        return g
+
+    ts = [_th.Thread(target=wrap(f), daemon=True) for f in fns]
+    for t in ts:
+        t.start()
+    end = _time.monotonic() + timeout
+    for t in ts:
+        t.join(max(0.0, end - _time.monotonic()))
+    stuck = sum(t.is_alive() for t in ts)
+    assert not stuck, "DEADLOCK or lost wake-up: %d of %d %s still blocked after %.0f s" % (stuck, len(ts), what, timeout)
+    if errs:
+        raise errs[0]
+
+
+class _Bg:
+    """Runs f() in a daemon thread; .wait(t) joins; .alive, .res, .exc."""
+
+    def __init__(self, f):
+        self.res = None
+        self.exc = None
+
+        def g():
+            try:
+                self.res = f()
+            except BaseException as e:
+                self.exc = e
+        self._t = _th.Thread(target=g, daemon=True)
+        self._t.start()
+
+    def wait(self, t):
+        self._t.join(t)
+        return not self._t.is_alive()
+
+    @property
+    def alive(self):
+        return self._t.is_alive()
+
+    def finish(self, t=5.0, what="call"):
+        assert self.wait(t), "%s is still blocked after %.0f s (deadlock, lost wake-up or ignored wake-up)" % (what, t)
+        return self
+
+
+def _raises(exc, f, what="call"):
+    try:
+        f()
+    except exc as e:
+        return e
+    except BaseException as e:
+        raise AssertionError("%s raised %r, expected %s" % (what, e, exc.__name__))
+    raise AssertionError("%s did not raise %s" % (what, exc.__name__))
+
+
+def _hammer(suite):
+    _sys.setswitchinterval(1e-6)
+    _stack_saved = _th.stack_size()
+    try:
+        _th.stack_size(512 * 1024)  # many threads must fit in the 1 GB address-space limit
+    except (ValueError, RuntimeError):
+        pass
+    try:
+        suite()
+    finally:
+        _sys.setswitchinterval(_si_saved)
+        try:
+            _th.stack_size(_stack_saved)
+        except (ValueError, RuntimeError):
+            pass
+
+
+class _Noise:
+    """Context manager: n busy threads that compete for the interpreter, so thread switches happen at nearly every call."""
+
+    def __init__(self, n=2):
+        self.n = n
+        self.stop = False
+
+    def _spin(self):
+        while not self.stop:
+            pass
+
+    def __enter__(self):
+        for _ in range(self.n):
+            _th.Thread(target=self._spin, daemon=True).start()
+        return self
+
+    def __exit__(self, *a):
+        self.stop = True
+
+
+def _suite():
+    import random as _rnd
+
+    # ---- single-threaded behaviour ----
+    b = Bank({"a": 100, "b": 50, "c": 0})
+    assert b.total() == 150 and b.balance("a") == 100
+    assert b.transfer("a", "b", 30) is None
+    assert (b.balance("a"), b.balance("b"), b.balance("c")) == (70, 80, 0)
+    _raises(InsufficientFunds, lambda: b.transfer("c", "a", 1))
+    _raises(InsufficientFunds, lambda: b.transfer("a", "b", 71))
+    assert b.transfer("a", "c", 70) is None and b.balance("a") == 0
+    for amt in (0, -5):
+        _raises(ValueError, lambda: b.transfer("b", "c", amt))
+    _raises(ValueError, lambda: b.transfer("b", "c", 1.5))
+    _raises(KeyError, lambda: b.transfer("zz", "c", 1))
+    _raises(KeyError, lambda: b.transfer("b", "zz", 1))
+    _raises(KeyError, lambda: b.balance("zz"))
+    assert b.transfer("b", "b", 10) is None and b.balance("b") == 80
+    _raises(InsufficientFunds, lambda: b.transfer("b", "b", 81))
+    assert b.total() == 150 and (b.balance("a"), b.balance("b"), b.balance("c")) == (0, 80, 70)
+    src = {"x": 5}
+    b2 = Bank(src)
+    src["x"] = 99
+    assert b2.balance("x") == 5, "the bank must keep its own copy of the balances"
+
+    # ---- opposite directions between two accounts must not deadlock ----
+    b = Bank({"alice": 1000, "bob": 1000})
+
+    def ab():
+        for _ in range(1500):
+            try:
+                b.transfer("alice", "bob", 1)
+            except InsufficientFunds:
+                pass
+
+    def ba():
+        for _ in range(1500):
+            try:
+                b.transfer("bob", "alice", 1)
+            except InsufficientFunds:
+                pass
+    _run_threads([ab, ba, ab, ba, ab, ba], what="transfer threads")
+    assert b.total() == 2000 and b.balance("alice") >= 0 and b.balance("bob") >= 0
+
+    # ---- a cycle of transfers over several accounts ----
+    names = ["n%d" % i for i in range(6)]
+    b = Bank({n: 500 for n in names})
+
+    def ring(k):
+        r = _rnd.Random(k)
+        for i in range(1200):
+            s = names[(i + k) % 6]
+            d = names[(i + k + 1) % 6] if i % 3 else names[(i + k - 1) % 6]
+            try:
+                b.transfer(s, d, r.randint(1, 20))
+            except InsufficientFunds:
+                pass
+    _run_threads([lambda k=k: ring(k) for k in range(12)], what="ring transfer threads")
+    assert b.total() == 3000, "money was created or destroyed: total is %d" % b.total()
+    assert all(b.balance(n) >= 0 for n in names)
+
+    # ---- heavy random traffic with a watcher: totals are always consistent, balances never negative ----
+    names = ["acct%d" % i for i in range(5)]
+    start = {n: 300 for n in names}
+    b = Bank(start)
+    stop = []
+    problems = []
+    okcount = [0]
+    failcount = [0]
+
+    def watcher():
+        n = 0
+        while not stop:
+            t = b.total()
+            if t != 1500:
+                problems.append("total() returned %d while the bank holds 1500" % t)
+                return
+            for nm in names:
+                v = b.balance(nm)
+                if v < 0:
+                    problems.append("balance of %s was %d" % (nm, v))
+                    return
+            n += 1
+        okcount.append(n)
+
+    def trader(k):
+        r = _rnd.Random(1000 + k)
+        for _ in range(3000):
+            s, d = r.sample(names, 2)
+            try:
+                b.transfer(s, d, r.randint(1, 120))
+                okcount[0] += 1
+            except InsufficientFunds:
+                failcount[0] += 1
+    ws = [_th.Thread(target=watcher, daemon=True) for _ in range(3)]
+    for w in ws:
+        w.start()
+    try:
+        _run_threads([lambda k=k: trader(k) for k in range(16)], what="trader threads")
+    finally:
+        stop.append(1)
+    for w in ws:
+        w.join(5)
+        assert not w.is_alive(), "total()/balance() never returned (deadlock)"
+    assert not problems, problems[0]
+    assert b.total() == 1500, "money was created or destroyed: total is %d" % b.total()
+    vals = [b.balance(n) for n in names]
+    assert min(vals) >= 0, "negative balance: %r" % (vals,)
+    assert sum(vals) == 1500
+    assert failcount[0] > 0 and okcount[0] > 0
+
+    # ---- overdraft race: ten threads try to spend the same 100 coins ----
+    for rep in range(8):
+        b = Bank({"src": 100, "dst": 0, "other": 0})
+        wins = []
+        gate = _th.Barrier(10, timeout=5)
+
+        def spend():
+            gate.wait()
+            for _ in range(30):
+                try:
+                    b.transfer("src", "dst", 1)
+                    wins.append(1)
+                except InsufficientFunds:
+                    pass
+        _run_threads([spend] * 10, what="spenders")
+        assert b.balance("src") == 0 and b.balance("dst") == 100, "after spending 100 coins: src=%d dst=%d" % (b.balance("src"), b.balance("dst"))
+        assert len(wins) == 100, "%d transfers succeeded from an account holding exactly 100 (one per coin)" % len(wins)
+
+    # ---- failed transfers leave nothing locked ----
+    b = Bank({"p": 1, "q": 1})
+
+    def failer():
+        for _ in range(500):
+            _raises(InsufficientFunds, lambda: b.transfer("p", "q", 5))
+            _raises(ValueError, lambda: b.transfer("p", "q", 0))
+            _raises(KeyError, lambda: b.transfer("p", "nope", 1))
+    _run_threads([failer] * 4, what="failing threads")
+    g = _Bg(lambda: (b.transfer("p", "q", 1), b.transfer("q", "p", 2), b.total())[-1])
+    g.finish(5, "transfer after failed transfers")
+    assert g.res == 2 and g.exc is None, g.exc
+
+
+_hammer(_suite)
+'''
+
+[[questions]]
+id = "cyclic-barrier"
+prompt = '''
+Write a reusable (cyclic) barrier for Python threads. Define everything exactly as below; hidden tests run many threads through hundreds of rounds with forced frequent thread switches and check that nobody ever gets through early, that every round is complete before anyone leaves it, that the action runs once per round at the right moment, and that nothing deadlocks. Only the standard library is available. Do not use `threading.Barrier`: build the barrier yourself from locks, conditions or semaphores. Reply with one Python code block.
+
+**`CyclicBarrier(parties, action=None)`**: `parties` is an int >= 1 (otherwise `ValueError`); `action` is `None` or a function with no arguments.
+
+**`wait()`** blocks the calling thread until `parties` threads (counting this one) are waiting at the barrier. Then all of them are released together and the barrier is immediately ready for the next round, with no reset call, so the same threads can come back at once and wait again. A thread that is released and races straight into the next `wait()` must count for the *next* round only, and must never be mixed up with threads that have not yet left the previous round.
+
+`wait()` returns an int to each thread: the order in which that thread arrived in its round, from `0` for the first arrival to `parties - 1` for the last. Every round hands out each of the numbers `0 … parties-1` exactly once.
+
+**The action.** If `action` is given, it is called exactly once per round, with no arguments, by the *last* thread to arrive (the one whose `wait()` returns `parties - 1`), after all parties have arrived and *before* any of them is released. So everything the action does is visible to all threads when their `wait()` returns, and the action never runs while a party of that round is still on its way. If the action raises, the barrier does not need to handle it (the tests never do this).
+
+**Other.** With `parties == 1`, `wait()` runs the action (if any) and returns `0` at once. A `CyclicBarrier` also has a read-only property `parties`. There are no timeouts.
+'''
+tests = '''
+import sys as _sys
+import threading as _th
+import time as _time
+
+_si_saved = _sys.getswitchinterval()
+
+
+def _run_threads(fns, timeout=10.0, what="threads"):
+    """Run each callable in its own daemon thread; fail on deadlock; re-raise the first error."""
+    errs = []
+
+    def wrap(f):
+        def g():
+            try:
+                f()
+            except BaseException as e:
+                errs.append(e)
+        return g
+
+    ts = [_th.Thread(target=wrap(f), daemon=True) for f in fns]
+    for t in ts:
+        t.start()
+    end = _time.monotonic() + timeout
+    for t in ts:
+        t.join(max(0.0, end - _time.monotonic()))
+    stuck = sum(t.is_alive() for t in ts)
+    assert not stuck, "DEADLOCK or lost wake-up: %d of %d %s still blocked after %.0f s" % (stuck, len(ts), what, timeout)
+    if errs:
+        raise errs[0]
+
+
+class _Bg:
+    """Runs f() in a daemon thread; .wait(t) joins; .alive, .res, .exc."""
+
+    def __init__(self, f):
+        self.res = None
+        self.exc = None
+
+        def g():
+            try:
+                self.res = f()
+            except BaseException as e:
+                self.exc = e
+        self._t = _th.Thread(target=g, daemon=True)
+        self._t.start()
+
+    def wait(self, t):
+        self._t.join(t)
+        return not self._t.is_alive()
+
+    @property
+    def alive(self):
+        return self._t.is_alive()
+
+    def finish(self, t=5.0, what="call"):
+        assert self.wait(t), "%s is still blocked after %.0f s (deadlock, lost wake-up or ignored wake-up)" % (what, t)
+        return self
+
+
+def _raises(exc, f, what="call"):
+    try:
+        f()
+    except exc as e:
+        return e
+    except BaseException as e:
+        raise AssertionError("%s raised %r, expected %s" % (what, e, exc.__name__))
+    raise AssertionError("%s did not raise %s" % (what, exc.__name__))
+
+
+def _hammer(suite):
+    _sys.setswitchinterval(1e-6)
+    _stack_saved = _th.stack_size()
+    try:
+        _th.stack_size(512 * 1024)  # many threads must fit in the 1 GB address-space limit
+    except (ValueError, RuntimeError):
+        pass
+    try:
+        suite()
+    finally:
+        _sys.setswitchinterval(_si_saved)
+        try:
+            _th.stack_size(_stack_saved)
+        except (ValueError, RuntimeError):
+            pass
+
+
+class _Noise:
+    """Context manager: n busy threads that compete for the interpreter, so thread switches happen at nearly every call."""
+
+    def __init__(self, n=2):
+        self.n = n
+        self.stop = False
+
+    def _spin(self):
+        while not self.stop:
+            pass
+
+    def __enter__(self):
+        for _ in range(self.n):
+            _th.Thread(target=self._spin, daemon=True).start()
+        return self
+
+    def __exit__(self, *a):
+        self.stop = True
+
+
+def _suite():
+    # ---- construction ----
+    for bad in (0, -2):
+        _raises(ValueError, lambda: CyclicBarrier(bad), "CyclicBarrier(%d)" % bad)
+    assert CyclicBarrier(5).parties == 5
+
+    # ---- parties == 1 ----
+    acts = []
+    b1 = CyclicBarrier(1, lambda: acts.append(1))
+    assert b1.wait() == 0 and b1.wait() == 0 and acts == [1, 1]
+    assert CyclicBarrier(1).wait() == 0
+
+    # ---- it really blocks until the last party arrives, and the last one gets the highest number ----
+    acts = []
+    b = CyclicBarrier(3, lambda: acts.append("act"))
+    w1, w2 = _Bg(b.wait), _Bg(b.wait)
+    assert not w1.wait(0.3) and not w2.wait(0.1), "wait() returned before all parties had arrived"
+    assert acts == []
+    last = b.wait()
+    assert last == 2, "last arrival got %r, expected 2" % (last,)
+    w1.finish(5, "waiting thread"), w2.finish(5, "waiting thread")
+    assert sorted([w1.res, w2.res]) == [0, 1] and acts == ["act"]
+    # and again, at once, without any reset
+    w1, w2 = _Bg(b.wait), _Bg(b.wait)
+    assert not w1.wait(0.2)
+    assert b.wait() == 2
+    w1.finish(5), w2.finish(5)
+    assert acts == ["act", "act"]
+
+    # ---- many threads, many rounds ----
+    def run(P, R, slow):
+        marks = [[0] * R for _ in range(P)]    # thread t arrived at round r
+        passed = [[0] * R for _ in range(P)]   # thread t came out of wait() of round r
+        idx = [[None] * R for _ in range(P)]
+        acts_seen = []                         # (round, thread ident of action)
+        last_thread = {}
+        counter = [0]
+
+        def action():
+            r = counter[0]
+            counter[0] += 1
+            for t in range(P):
+                assert marks[t][r], "action ran before thread %d had arrived in round %d" % (t, r)
+                assert not passed[t][r], "action ran after thread %d had already been released from round %d" % (t, r)
+            acts_seen.append((r, _th.get_ident()))
+        bar = CyclicBarrier(P, action)
+
+        def worker(t):
+            me = _th.get_ident()
+            for r in range(R):
+                if slow and t == slow[0] and r % slow[1] == 0:
+                    _time.sleep(0.001)
+                marks[t][r] = 1
+                i = bar.wait()
+                idx[t][r] = i
+                if i == P - 1:
+                    last_thread[r] = me
+                passed[t][r] = 1
+                # everybody must have arrived in this round before anyone gets out of it
+                for u in range(P):
+                    assert marks[u][r], "thread %d left round %d before thread %d arrived" % (t, r, u)
+                assert counter[0] > r, "wait() returned in round %d before the action ran" % r
+        _run_threads([lambda t=t: worker(t) for t in range(P)], timeout=9, what="barrier threads")
+        assert counter[0] == R, "action ran %d times for %d rounds" % (counter[0], R)
+        assert [r for r, _ in acts_seen] == list(range(R))
+        for r, ident in acts_seen:
+            assert last_thread[r] == ident, "the action of round %d was not run by the last thread to arrive" % r
+        for r in range(R):
+            got = sorted(idx[t][r] for t in range(P))
+            assert got == list(range(P)), "round %d handed out arrival numbers %r" % (r, got)
+
+    run(8, 250, None)
+    run(3, 1200, None)
+    run(2, 1500, None)
+    run(5, 200, (2, 7))
+    run(16, 60, (0, 3))
+
+    # ---- a barrier without an action; threads that lap each other ----
+    P, R = 4, 800
+    bar = CyclicBarrier(P)
+    seen = [[0] * R for _ in range(P)]
+    errs = []
+
+    def lapper(t):
+        for r in range(R):
+            seen[t][r] = 1
+            bar.wait()
+            if not all(seen[u][r] for u in range(P)):
+                errs.append("round %d released early" % r)
+                return
+    _run_threads([lambda t=t: lapper(t) for t in range(P)], what="lapping threads")
+    assert not errs, errs[0]
+
+
+_hammer(_suite)
+'''
+
+[[questions]]
+id = "lru-compute"
+prompt = '''
+Write a thread-safe LRU cache whose `get_or_compute` computes each missing key only once, even when many threads miss on it at the same moment. Define everything exactly as below; hidden tests hammer it from many threads with forced frequent thread switches and check the eviction order, that each key is computed exactly once, that different keys are computed in parallel, and that nothing deadlocks. Only the standard library is available. Reply with one Python code block.
+
+**`LRUCache(capacity)`**: `capacity` is an int >= 1 (otherwise `ValueError`). The cache holds at most `capacity` entries; values can be any objects, including `None`.
+
+**`get(key, default=None)`** returns the cached value, or `default` if the key is absent. A hit makes the key the most recently used.
+
+**`put(key, value)`** stores the value (replacing an existing one) and makes the key the most recently used. If the cache now holds more than `capacity` entries, the least recently used entry is removed.
+
+**`len(cache)`** is the number of entries; **`keys()`** returns a list of the keys from the least recently used to the most recently used.
+
+**`get_or_compute(key, fn)`**: if the key is cached, return its value (and it becomes the most recently used). Otherwise call `fn(key)`, store the result as by `put`, and return it. The rules for the miss case:
+- **Once.** If several threads call `get_or_compute` for the same missing key at the same time, `fn` runs in only one of them; the others wait for that computation and all return the same value. (If the entry is evicted later and requested again, it is computed again; that is fine.)
+- **In parallel.** Computations for different keys must be able to run at the same time: a slow `fn` for one key must not block `fn` for another key, nor `get` / `put` / `get_or_compute` hits on other keys, and the cache must not be locked while `fn` runs. In particular `fn` itself may call methods of the same cache (for example `get_or_compute` of another key) without deadlocking.
+- **Failures.** If `fn` raises, that exception object is raised in the thread that ran `fn` and in every thread that was waiting for that computation; nothing is stored, and the next call for the key calls `fn` again. Waiting threads must never be left hanging.
+
+**Guarantees.** Many threads may call any method at the same time. The cache never exceeds its capacity, not even for a moment, and its internal state is never corrupted: no exceptions from the cache's own bookkeeping, no wrong values.
+'''
+tests = '''
+import sys as _sys
+import threading as _th
+import time as _time
+
+_si_saved = _sys.getswitchinterval()
+
+
+def _run_threads(fns, timeout=10.0, what="threads"):
+    """Run each callable in its own daemon thread; fail on deadlock; re-raise the first error."""
+    errs = []
+
+    def wrap(f):
+        def g():
+            try:
+                f()
+            except BaseException as e:
+                errs.append(e)
+        return g
+
+    ts = [_th.Thread(target=wrap(f), daemon=True) for f in fns]
+    for t in ts:
+        t.start()
+    end = _time.monotonic() + timeout
+    for t in ts:
+        t.join(max(0.0, end - _time.monotonic()))
+    stuck = sum(t.is_alive() for t in ts)
+    assert not stuck, "DEADLOCK or lost wake-up: %d of %d %s still blocked after %.0f s" % (stuck, len(ts), what, timeout)
+    if errs:
+        raise errs[0]
+
+
+class _Bg:
+    """Runs f() in a daemon thread; .wait(t) joins; .alive, .res, .exc."""
+
+    def __init__(self, f):
+        self.res = None
+        self.exc = None
+
+        def g():
+            try:
+                self.res = f()
+            except BaseException as e:
+                self.exc = e
+        self._t = _th.Thread(target=g, daemon=True)
+        self._t.start()
+
+    def wait(self, t):
+        self._t.join(t)
+        return not self._t.is_alive()
+
+    @property
+    def alive(self):
+        return self._t.is_alive()
+
+    def finish(self, t=5.0, what="call"):
+        assert self.wait(t), "%s is still blocked after %.0f s (deadlock, lost wake-up or ignored wake-up)" % (what, t)
+        return self
+
+
+def _raises(exc, f, what="call"):
+    try:
+        f()
+    except exc as e:
+        return e
+    except BaseException as e:
+        raise AssertionError("%s raised %r, expected %s" % (what, e, exc.__name__))
+    raise AssertionError("%s did not raise %s" % (what, exc.__name__))
+
+
+def _hammer(suite):
+    _sys.setswitchinterval(1e-6)
+    _stack_saved = _th.stack_size()
+    try:
+        _th.stack_size(512 * 1024)  # many threads must fit in the 1 GB address-space limit
+    except (ValueError, RuntimeError):
+        pass
+    try:
+        suite()
+    finally:
+        _sys.setswitchinterval(_si_saved)
+        try:
+            _th.stack_size(_stack_saved)
+        except (ValueError, RuntimeError):
+            pass
+
+
+class _Noise:
+    """Context manager: n busy threads that compete for the interpreter, so thread switches happen at nearly every call."""
+
+    def __init__(self, n=2):
+        self.n = n
+        self.stop = False
+
+    def _spin(self):
+        while not self.stop:
+            pass
+
+    def __enter__(self):
+        for _ in range(self.n):
+            _th.Thread(target=self._spin, daemon=True).start()
+        return self
+
+    def __exit__(self, *a):
+        self.stop = True
+
+
+def _suite():
+    import random as _rnd
+
+    # ---- single-threaded LRU behaviour ----
+    _raises(ValueError, lambda: LRUCache(0))
+    c = LRUCache(3)
+    assert len(c) == 0 and c.keys() == [] and c.get("x") is None and c.get("x", 5) == 5
+    c.put("a", 1)
+    c.put("b", 2)
+    c.put("c", 3)
+    assert c.keys() == ["a", "b", "c"]
+    assert c.get("a") == 1 and c.keys() == ["b", "c", "a"]
+    c.put("d", 4)
+    assert c.keys() == ["c", "a", "d"] and c.get("b", "gone") == "gone" and len(c) == 3
+    c.put("c", 30)
+    assert c.keys() == ["a", "d", "c"] and c.get("c") == 30
+    c.put("n", None)
+    assert c.get("n", "missing") is None and len(c) == 3 and c.keys() == ["d", "c", "n"]
+    assert c.get("a", "missing") == "missing"
+    c1 = LRUCache(1)
+    c1.put(1, 1)
+    c1.put(2, 2)
+    assert c1.keys() == [2] and c1.get(1) is None
+
+    # ---- get_or_compute, single-threaded ----
+    c = LRUCache(2)
+    calls = []
+
+    def f(k):
+        calls.append(k)
+        return k * 10
+    assert c.get_or_compute(1, f) == 10 and c.get_or_compute(1, f) == 10 and calls == [1]
+    assert c.get_or_compute(2, f) == 20 and c.get_or_compute(1, f) == 10
+    assert c.keys() == [2, 1]
+    assert c.get_or_compute(3, f) == 30 and c.keys() == [1, 3] and calls == [1, 2, 3]
+    assert c.get_or_compute(2, f) == 20 and calls == [1, 2, 3, 2]
+    c = LRUCache(2)
+    nn = []
+    assert c.get_or_compute("k", lambda k: nn.append(1)) is None and c.get_or_compute("k", lambda k: nn.append(1)) is None and nn == [1], "None is a value that can be cached"
+    boom = []
+
+    def flaky(k):
+        boom.append(k)
+        if len(boom) == 1:
+            raise KeyError("first")
+        return "ok"
+    e = _raises(KeyError, lambda: c.get_or_compute("z", flaky))
+    assert len(c) == 1 and c.get("z") is None
+    assert c.get_or_compute("z", flaky) == "ok" and boom == ["z", "z"]
+
+    # ---- many threads miss on the same key at once: one computation ----
+    for nthreads in (32, 8):
+        c = LRUCache(10)
+        count = [0]
+        gate = _th.Barrier(nthreads, timeout=5)
+        out = []
+
+        def slow(k):
+            count[0] += 1
+            _time.sleep(0.05)
+            return ["value", k]
+
+        def miss():
+            gate.wait()
+            out.append(c.get_or_compute("k", slow))
+        _run_threads([miss] * nthreads, what="threads missing on one key")
+        assert count[0] == 1, "fn ran %d times for one key" % count[0]
+        assert len(out) == nthreads and all(o == ["value", "k"] for o in out)
+        assert all(o is out[0] for o in out), "waiting threads must get the same object"
+
+    # ---- many keys, many threads, no eviction: each key exactly once ----
+    nkeys = 150
+    c = LRUCache(1000)
+    counts = [0] * nkeys
+
+    def work(k):
+        counts[k] += 1
+        _time.sleep(0)
+        return k * k
+
+    def hitter(seed):
+        r = _rnd.Random(seed)
+        order = list(range(nkeys))
+        r.shuffle(order)
+        for k in order:
+            v = c.get_or_compute(k, work)
+            assert v == k * k, "wrong value %r for key %d" % (v, k)
+    _run_threads([lambda s=s: hitter(s) for s in range(16)], what="threads")
+    assert counts == [1] * nkeys, "keys computed more than once: %r" % ([(k, n) for k, n in enumerate(counts) if n != 1][:5],)
+    assert len(c) == nkeys
+
+    # ---- different keys are computed in parallel ----
+    c = LRUCache(5)
+    b_started = _th.Event()
+    a_started = _th.Event()
+    res = {}
+
+    def fn(k):
+        if k == "A":
+            a_started.set()
+            res["A saw B"] = b_started.wait(5)
+        else:
+            b_started.set()
+            res["B saw A"] = a_started.wait(5)
+        return k
+    ta = _Bg(lambda: c.get_or_compute("A", fn))
+    tb = _Bg(lambda: c.get_or_compute("B", fn))
+    ta.finish(8, "get_or_compute('A')")
+    tb.finish(8, "get_or_compute('B')")
+    assert res.get("A saw B") and res.get("B saw A"), "computations for different keys did not run at the same time"
+    assert ta.res == "A" and tb.res == "B"
+
+    # ... and other operations are not blocked while a computation runs
+    c = LRUCache(5)
+    c.put("fast", 1)
+    release = _th.Event()
+    started = _th.Event()
+
+    def slowfn(k):
+        started.set()
+        release.wait(10)
+        return 99
+    s = _Bg(lambda: c.get_or_compute("slow", slowfn))
+    assert started.wait(5)
+    op = _Bg(lambda: (c.get("fast"), c.put("other", 2), c.get_or_compute("fast", lambda k: 0), c.get_or_compute("third", lambda k: 3), len(c), c.keys()))
+    op.finish(3, "cache operations while another key is being computed")
+    assert op.exc is None, op.exc
+    release.set()
+    s.finish(5, "slow computation")
+    assert s.res == 99 and c.get("slow") == 99
+
+    # ---- fn may use the cache itself ----
+    c = LRUCache(10)
+
+    def outer(k):
+        inner = c.get_or_compute("inner", lambda kk: 5)
+        c.put("side", 1)
+        return inner + c.get("side")
+    r = _Bg(lambda: c.get_or_compute("outer", outer))
+    r.finish(5, "get_or_compute whose fn calls the cache")
+    assert r.exc is None and r.res == 6, r.exc
+
+    # ---- a failing computation reaches every waiter, and is retried later ----
+    c = LRUCache(4)
+    attempts = [0]
+    err = ValueError("computation failed")
+    gate = _th.Barrier(9, timeout=5)
+
+    def failing(k):
+        attempts[0] += 1
+        _time.sleep(0.1)
+        raise err
+    got = []
+
+    def waiter():
+        gate.wait()
+        try:
+            c.get_or_compute("bad", failing)
+            got.append("no error")
+        except BaseException as e:
+            got.append(e)
+    _run_threads([waiter] * 9, timeout=8, what="waiters of a failing computation")
+    assert attempts[0] == 1, "fn ran %d times" % attempts[0]
+    assert len(got) == 9 and all(g is err for g in got), "every thread must see the exception of the failed computation: %r" % (got,)
+    assert len(c) == 0
+    assert c.get_or_compute("bad", lambda k: "fine") == "fine"
+
+    # ---- barrier-synchronised rounds of concurrent puts: the cache must end up full, never over- or under-full ----
+    cap = 4
+    c = LRUCache(cap)
+    P, R = 8, 150
+    gate = _th.Barrier(P + 1, timeout=8)
+    lens = []
+
+    def putter(t):
+        for r in range(R):
+            gate.wait()
+            c.put((r, t), r)
+            if t % 2:
+                c.get_or_compute((r, t, "x"), lambda k: 1)
+            gate.wait()
+
+    def judge():
+        for r in range(R):
+            gate.wait()
+            gate.wait()
+            lens.append(len(c))
+    with _Noise(3):
+        _run_threads([lambda t=t: putter(t) for t in range(P)] + [judge], timeout=10, what="putters")
+    assert all(n == cap for n in lens), "after concurrent puts the cache held %r entries, expected exactly %d" % (sorted(set(lens)), cap)
+
+    # ---- eviction stress: capacity never exceeded, no wrong values, no internal errors ----
+    cap = 12
+    c = LRUCache(cap)
+    stop = []
+    bad = []
+
+    def watch():
+        while not stop:
+            n = len(c)
+            ks = c.keys()
+            if n > cap or len(ks) > cap or len(set(ks)) != len(ks):
+                bad.append("%d entries / keys %r with capacity %d" % (n, ks, cap))
+                return
+
+
+    def mixed(seed):
+        r = _rnd.Random(seed)
+        for _ in range(2000):
+            k = r.randrange(40)
+            op = r.random()
+            if op < 0.4:
+                v = c.get_or_compute(k, lambda kk: kk * 2)
+                assert v == k * 2, "get_or_compute(%d) returned %r" % (k, v)
+            elif op < 0.8:
+                c.put(k, k * 2)
+            else:
+                v = c.get(k, "none")
+                assert v == "none" or v == k * 2, "get(%d) returned %r" % (k, v)
+    wts = [_th.Thread(target=watch, daemon=True) for _ in range(3)]
+    for wt in wts:
+        wt.start()
+    try:
+        with _Noise(2):
+            _run_threads([lambda s=s: mixed(s) for s in range(12)], what="mixed threads")
+    finally:
+        stop.append(1)
+    for wt in wts:
+        wt.join(5)
+    assert not bad, bad[0]
+    assert len(c) <= cap
+    # the cache still behaves as an LRU afterwards
+    for k in range(100, 100 + cap):
+        c.put(k, k)
+    assert c.keys() == list(range(100, 100 + cap))
+
+
+_hammer(_suite)
+'''
+
+[[questions]]
+id = "future-callbacks"
+prompt = '''
+Write a small thread-safe future (a result that one thread supplies and others wait for) with completion callbacks. Define everything exactly as below; hidden tests hammer it from many threads with forced frequent thread switches and check blocking, timeouts, that a future is completed only once, that every callback runs exactly once even when it is registered at the very moment the future completes, and that callbacks which use the future themselves never deadlock. Only the standard library is available. Do not use `concurrent.futures`. Reply with one Python code block.
+
+**Names.** An exception class `InvalidStateError(Exception)` and a class `Future`.
+
+**`Future()`** starts pending. It is completed once, either with a value or with an exception.
+
+**`set_result(value)`** and **`set_exception(exc)`** complete the future (`exc` is an exception object) and wake every thread that is waiting for it. If the future is already complete (either way), they raise `InvalidStateError` and change nothing. When several threads try to complete the same future at the same time, exactly one succeeds and the others get `InvalidStateError`.
+
+**`done()`** is `True` once the future is complete.
+
+**`result(timeout=None)`** blocks until the future is complete, then returns the value, or raises the stored exception (the very same exception object) if it was completed with `set_exception`. `timeout` is `None` (wait as long as needed) or a number of seconds, after which the built-in `TimeoutError` is raised; `timeout=0` never blocks. **`exception(timeout=None)`** waits in the same way and returns the stored exception object, or `None` if the future has a value.
+
+**`add_done_callback(fn)`** registers `fn`, to be called as `fn(future)` exactly once, after the future is complete:
+- If the future is already complete, `fn(future)` is called at once, in the calling thread, before `add_done_callback` returns.
+- Otherwise `fn` is called by the thread that completes the future, after the result is stored (so `future.done()` and `future.result()` work inside the callback), before `set_result` / `set_exception` returns, and callbacks registered earlier run before those registered later.
+- A callback registered at the same moment the future is completed, from any thread, is still called exactly once, never zero times and never twice.
+- If a callback raises, the exception is swallowed: the remaining callbacks still run, and `set_result` / `set_exception` / `add_done_callback` do not raise because of it.
+- Callbacks may do anything with the future: call `result()` or `done()` on it, call `add_done_callback` on it again, complete other futures, and so on. Nothing may deadlock, so no internal lock may be held while a callback runs.
+
+**Guarantees.** Many threads may call any method at the same time. Waiting threads must sleep, not spin, and every waiter is woken when the future completes.
+'''
+tests = '''
+import sys as _sys
+import threading as _th
+import time as _time
+
+_si_saved = _sys.getswitchinterval()
+
+
+def _run_threads(fns, timeout=10.0, what="threads"):
+    """Run each callable in its own daemon thread; fail on deadlock; re-raise the first error."""
+    errs = []
+
+    def wrap(f):
+        def g():
+            try:
+                f()
+            except BaseException as e:
+                errs.append(e)
+        return g
+
+    ts = [_th.Thread(target=wrap(f), daemon=True) for f in fns]
+    for t in ts:
+        t.start()
+    end = _time.monotonic() + timeout
+    for t in ts:
+        t.join(max(0.0, end - _time.monotonic()))
+    stuck = sum(t.is_alive() for t in ts)
+    assert not stuck, "DEADLOCK or lost wake-up: %d of %d %s still blocked after %.0f s" % (stuck, len(ts), what, timeout)
+    if errs:
+        raise errs[0]
+
+
+class _Bg:
+    """Runs f() in a daemon thread; .wait(t) joins; .alive, .res, .exc."""
+
+    def __init__(self, f):
+        self.res = None
+        self.exc = None
+
+        def g():
+            try:
+                self.res = f()
+            except BaseException as e:
+                self.exc = e
+        self._t = _th.Thread(target=g, daemon=True)
+        self._t.start()
+
+    def wait(self, t):
+        self._t.join(t)
+        return not self._t.is_alive()
+
+    @property
+    def alive(self):
+        return self._t.is_alive()
+
+    def finish(self, t=5.0, what="call"):
+        assert self.wait(t), "%s is still blocked after %.0f s (deadlock, lost wake-up or ignored wake-up)" % (what, t)
+        return self
+
+
+def _raises(exc, f, what="call"):
+    try:
+        f()
+    except exc as e:
+        return e
+    except BaseException as e:
+        raise AssertionError("%s raised %r, expected %s" % (what, e, exc.__name__))
+    raise AssertionError("%s did not raise %s" % (what, exc.__name__))
+
+
+def _hammer(suite):
+    _sys.setswitchinterval(1e-6)
+    _stack_saved = _th.stack_size()
+    try:
+        _th.stack_size(512 * 1024)  # many threads must fit in the 1 GB address-space limit
+    except (ValueError, RuntimeError):
+        pass
+    try:
+        suite()
+    finally:
+        _sys.setswitchinterval(_si_saved)
+        try:
+            _th.stack_size(_stack_saved)
+        except (ValueError, RuntimeError):
+            pass
+
+
+class _Noise:
+    """Context manager: n busy threads that compete for the interpreter, so thread switches happen at nearly every call."""
+
+    def __init__(self, n=2):
+        self.n = n
+        self.stop = False
+
+    def _spin(self):
+        while not self.stop:
+            pass
+
+    def __enter__(self):
+        for _ in range(self.n):
+            _th.Thread(target=self._spin, daemon=True).start()
+        return self
+
+    def __exit__(self, *a):
+        self.stop = True
+
+
+def _suite():
+    # ---- single-threaded behaviour ----
+    f = Future()
+    assert not f.done()
+    _raises(TimeoutError, lambda: f.result(timeout=0), "result(timeout=0) on a pending future")
+    _raises(TimeoutError, lambda: f.exception(timeout=0), "exception(timeout=0) on a pending future")
+    t0 = _time.monotonic()
+    _raises(TimeoutError, lambda: f.result(timeout=0.15), "result(timeout=0.15)")
+    el = _time.monotonic() - t0
+    assert 0.12 <= el < 3, "result(timeout=0.15) took %.3f s" % el
+    assert f.set_result(5) is None and f.done()
+    assert f.result() == 5 and f.result(timeout=0) == 5 and f.exception() is None
+    _raises(InvalidStateError, lambda: f.set_result(6))
+    _raises(InvalidStateError, lambda: f.set_exception(ValueError()))
+    assert f.result() == 5
+    g = Future()
+    err = KeyError("nope")
+    g.set_exception(err)
+    assert g.done() and g.exception() is err
+    assert _raises(KeyError, lambda: g.result()) is err
+    _raises(InvalidStateError, lambda: g.set_result(1))
+    assert _raises(KeyError, lambda: g.result()) is err
+
+    # ---- callbacks, single-threaded ----
+    log = []
+    f = Future()
+    me = _th.get_ident()
+    for i in range(5):
+        f.add_done_callback(lambda fut, i=i: log.append((i, fut is f, fut.done(), fut.result(), _th.get_ident())))
+    assert log == []
+    f.set_result("v")
+    assert [x[0] for x in log] == [0, 1, 2, 3, 4], "callbacks must run in registration order, before set_result returns"
+    assert all(x[1:4] == (True, True, "v") for x in log)
+    f.add_done_callback(lambda fut: log.append(("late", _th.get_ident())))
+    assert log[-1] == ("late", me), "a callback added to a finished future must run at once, in the caller"
+    # callbacks run in the completing thread
+    f = Future()
+    ids = []
+    f.add_done_callback(lambda fut: ids.append(_th.get_ident()))
+    b = _Bg(lambda: f.set_result(1))
+    b.finish(5)
+    assert ids == [b._t.ident], "callback must run in the thread that completed the future"
+    # a raising callback
+    f = Future()
+    calls = []
+
+    def bad(fut):
+        calls.append("bad")
+        raise RuntimeError("callback failed")
+    f.add_done_callback(lambda fut: calls.append(1))
+    f.add_done_callback(bad)
+    f.add_done_callback(lambda fut: calls.append(2))
+    f.set_result(0)
+    assert calls == [1, "bad", 2], "a raising callback must not stop the others or propagate: %r" % (calls,)
+    f.add_done_callback(bad)
+    assert calls[-1] == "bad"
+    f = Future()
+    f.set_exception(ValueError("x"))
+    f.add_done_callback(lambda fut: calls.append(fut.exception()))
+    assert isinstance(calls[-1], ValueError)
+
+    # ---- callbacks may use the future: no lock held while they run ----
+    f = Future()
+    seen = []
+
+    def reenter(fut):
+        seen.append(fut.result())
+        seen.append(fut.done())
+        fut.add_done_callback(lambda x: seen.append("inner"))
+        seen.append(fut.exception())
+    f.add_done_callback(reenter)
+    s = _Bg(lambda: f.set_result(42))
+    s.finish(5, "set_result with a callback that calls back into the future")
+    assert s.exc is None and seen == [42, True, "inner", None], seen
+    # a chain of futures, each completed from the previous one's callback
+    fs = [Future() for _ in range(300)]
+    for i in range(299):
+        fs[i].add_done_callback(lambda fut, i=i: fs[i + 1].set_result(fut.result() + 1))
+    s = _Bg(lambda: fs[0].set_result(0))
+    s.finish(5, "chain of futures")
+    assert s.exc is None and fs[-1].result(timeout=1) == 299
+
+    # ---- waiters: all of them wake up, with the value ----
+    f = Future()
+    ws = [_Bg(lambda: f.result()) for _ in range(12)] + [_Bg(lambda: f.exception()) for _ in range(4)]
+    _time.sleep(0.25)
+    assert all(w.alive for w in ws), "result() returned before the future was complete"
+    f.set_result("go")
+    for w in ws:
+        w.finish(5, "waiter of a completed future")
+    assert [w.res for w in ws] == ["go"] * 12 + [None] * 4
+    f = Future()
+    ws = [_Bg(lambda: f.result()) for _ in range(6)]
+    _time.sleep(0.15)
+    f.set_exception(err)
+    for w in ws:
+        w.finish(5, "waiter of a failed future")
+        assert w.exc is err
+    f = Future()
+    w = _Bg(lambda: f.result(timeout=5))
+    _time.sleep(0.1)
+    f.set_result(3)
+    w.finish(3, "waiter with a timeout")
+    assert w.res == 3
+
+    # ---- completion races: exactly one winner ----
+    def race(i):
+        f = Future()
+        gate = _th.Barrier(8, timeout=5)
+        outcome = []
+
+        def setter(k):
+            gate.wait()
+            try:
+                if k % 3 == 0:
+                    f.set_exception(ValueError(k))
+                else:
+                    f.set_result(k)
+                outcome.append(("ok", k))
+            except InvalidStateError:
+                outcome.append(("late", k))
+        _run_threads([lambda k=k: setter(k) for k in range(8)], timeout=8, what="setters")
+        wins = [k for s, k in outcome if s == "ok"]
+        assert len(wins) == 1, "%d threads completed the same future: %r" % (len(wins), wins)
+        k = wins[0]
+        if k % 3 == 0:
+            assert isinstance(f.exception(), ValueError) and f.exception().args == (k,)
+        else:
+            assert f.result() == k
+    for i in range(400):
+        race(i)
+
+    # ---- callbacks registered while the future completes: exactly once each ----
+    def _registered_while_completing():
+        N = 250
+        futs = [Future() for _ in range(N)]
+        counts = [[0] * 5 for _ in range(N)]
+        oks = [True] * N
+        gate = _th.Barrier(5, timeout=8)
+
+        def mk(i, j):
+            def cb(fut):
+                counts[i][j] += 1
+                if not (fut.done() and fut.result() == i):
+                    oks[i] = False
+            return cb
+
+        def completer():
+            for i in range(N):
+                gate.wait()
+                futs[i].set_result(i)
+
+        def adder(j):
+            for i in range(N):
+                gate.wait()
+                if j % 2:
+                    _time.sleep(0)
+                futs[i].add_done_callback(mk(i, j))
+        _run_threads([completer] + [lambda j=j: adder(j) for j in range(1, 5)], timeout=9, what="completer and adders")
+        for i in range(N):
+            assert counts[i][1:] == [1, 1, 1, 1], "callbacks of future %d ran %r times (should be once each)" % (i, counts[i][1:])
+            assert oks[i], "a callback ran before the result was visible"
+
+    for _round in range(4):
+        _registered_while_completing()
+
+    # ---- lots of waiters, completers and callbacks mixed ----
+    M = 80
+    futs = [Future() for _ in range(M)]
+    total = [0] * M
+    got = [[] for _ in range(M)]
+
+    def waiter(k):
+        for i in range(M):
+            got[i].append(futs[i].result(timeout=8))
+
+    def cbadd():
+        for i in range(M):
+            futs[i].add_done_callback(lambda fut, i=i: total.__setitem__(i, total[i] + 1))
+
+    def comp():
+        for i in range(M):
+            futs[i].set_result(i * 7)
+    _run_threads([lambda k=k: waiter(k) for k in range(10)] + [cbadd, cbadd, comp], timeout=10, what="mixed threads")
+    assert all(g == [i * 7] * 10 for i, g in enumerate(got))
+    assert total == [2] * M, "callbacks counted %r" % (total[:6],)
+
+
+_hammer(_suite)
+'''
+
+[[questions]]
+id = "token-bucket"
+prompt = '''
+Write a thread-safe token-bucket rate limiter whose clock can be replaced, so that it can be tested without sleeping. Define everything exactly as below; hidden tests drive it with a fake clock, first one thread at a time and then from many threads with forced frequent thread switches, and check that exactly the right number of tokens is ever handed out. Only the standard library is available. Reply with one Python code block.
+
+**`TokenBucket(rate, capacity, clock=time.monotonic)`**: `rate` is the number of tokens added per second (a number > 0), `capacity` is the most tokens the bucket can hold (a number > 0), and `clock` is a function with no arguments that returns the current time in seconds as a float (the tests pass their own). Anything else raises `ValueError`. The bucket starts full, and reads `clock()` once in the constructor to learn the starting time.
+
+**Refilling.** Tokens accrue continuously and fractionally: when the clock has advanced by `dt` seconds since the last reading that counted, `rate * dt` tokens are added, never above `capacity`. Fractions are kept (at rate 2 per second, four steps of 0.25 s add up to exactly one token), and nothing is lost when a step is too small to give a whole token. The bucket only ever reads the clock to refill (so every method below calls `clock()` at least once, and always before looking at the token count). If the clock reads earlier than the latest time seen so far, no time has passed: no tokens are added or removed, and the latest time seen is not moved backwards.
+
+**`try_acquire(n=1)`** takes `n` tokens if the bucket holds at least `n` (after refilling) and returns `True`; otherwise it takes nothing, returns `False` and never blocks. All or nothing: `try_acquire(3)` with 2.5 tokens leaves 2.5 tokens. `n` must be a number with `0 < n <= capacity`, otherwise `ValueError` (before anything else happens).
+
+**`available()`** returns the current number of tokens as a float (after refilling). **`wait_time(n=1)`** returns how many seconds from now until `n` tokens will be available if nothing else is taken, as a float: `0.0` if they are available now. (`n` is checked as in `try_acquire`.)
+
+**Guarantees.** Many threads may call any method at the same time. Tokens are never handed out twice and never created from nothing: if the bucket is empty at time `t0` and the clock then runs to `t1`, all threads together can take at most `rate * (t1 - t0)` tokens (up to the capacity), and every token that has accrued and was not handed out is still in the bucket. Calls from several threads may read the clock in a different order than they take effect; the clock must still never make tokens appear twice.
+'''
+tests = '''
+import sys as _sys
+import threading as _th
+import time as _time
+
+_si_saved = _sys.getswitchinterval()
+
+
+def _run_threads(fns, timeout=10.0, what="threads"):
+    """Run each callable in its own daemon thread; fail on deadlock; re-raise the first error."""
+    errs = []
+
+    def wrap(f):
+        def g():
+            try:
+                f()
+            except BaseException as e:
+                errs.append(e)
+        return g
+
+    ts = [_th.Thread(target=wrap(f), daemon=True) for f in fns]
+    for t in ts:
+        t.start()
+    end = _time.monotonic() + timeout
+    for t in ts:
+        t.join(max(0.0, end - _time.monotonic()))
+    stuck = sum(t.is_alive() for t in ts)
+    assert not stuck, "DEADLOCK or lost wake-up: %d of %d %s still blocked after %.0f s" % (stuck, len(ts), what, timeout)
+    if errs:
+        raise errs[0]
+
+
+class _Bg:
+    """Runs f() in a daemon thread; .wait(t) joins; .alive, .res, .exc."""
+
+    def __init__(self, f):
+        self.res = None
+        self.exc = None
+
+        def g():
+            try:
+                self.res = f()
+            except BaseException as e:
+                self.exc = e
+        self._t = _th.Thread(target=g, daemon=True)
+        self._t.start()
+
+    def wait(self, t):
+        self._t.join(t)
+        return not self._t.is_alive()
+
+    @property
+    def alive(self):
+        return self._t.is_alive()
+
+    def finish(self, t=5.0, what="call"):
+        assert self.wait(t), "%s is still blocked after %.0f s (deadlock, lost wake-up or ignored wake-up)" % (what, t)
+        return self
+
+
+def _raises(exc, f, what="call"):
+    try:
+        f()
+    except exc as e:
+        return e
+    except BaseException as e:
+        raise AssertionError("%s raised %r, expected %s" % (what, e, exc.__name__))
+    raise AssertionError("%s did not raise %s" % (what, exc.__name__))
+
+
+def _hammer(suite):
+    _sys.setswitchinterval(1e-6)
+    _stack_saved = _th.stack_size()
+    try:
+        _th.stack_size(512 * 1024)  # many threads must fit in the 1 GB address-space limit
+    except (ValueError, RuntimeError):
+        pass
+    try:
+        suite()
+    finally:
+        _sys.setswitchinterval(_si_saved)
+        try:
+            _th.stack_size(_stack_saved)
+        except (ValueError, RuntimeError):
+            pass
+
+
+class _Noise:
+    """Context manager: n busy threads that compete for the interpreter, so thread switches happen at nearly every call."""
+
+    def __init__(self, n=2):
+        self.n = n
+        self.stop = False
+
+    def _spin(self):
+        while not self.stop:
+            pass
+
+    def __enter__(self):
+        for _ in range(self.n):
+            _th.Thread(target=self._spin, daemon=True).start()
+        return self
+
+    def __exit__(self, *a):
+        self.stop = True
+
+
+def _suite():
+    import random as _rnd
+
+    class Clock:
+        """A fake clock; thread-safe; optionally moves forward by `step` on every reading."""
+
+        def __init__(self, t=1000.0, step=0.0):
+            self.t = t
+            self.step = step
+            self.reads = 0
+            self._m = _th.Lock()
+
+        def __call__(self):
+            with self._m:
+                self.reads += 1
+                v = self.t
+                self.t += self.step
+                return v
+
+        def advance(self, dt):
+            with self._m:
+                self.t += dt
+
+    # ---- construction ----
+    ck = Clock()
+    for args in ((0, 5), (-1, 5), (2, 0), (2, -3), ("x", 5)):
+        _raises(ValueError, lambda: TokenBucket(*args, clock=ck), "TokenBucket%r" % (args,))
+    tb = TokenBucket(2, 10, ck)
+    assert ck.reads == 1, "the constructor must read the clock once"
+    for n in (0, -1, 11):
+        _raises(ValueError, lambda: tb.try_acquire(n), "try_acquire(%r)" % n)
+        _raises(ValueError, lambda: tb.wait_time(n), "wait_time(%r)" % n)
+
+    # ---- single-threaded arithmetic (all numbers exact in binary floating point) ----
+    ck = Clock()
+    tb = TokenBucket(2, 10, ck)
+    assert tb.available() == 10.0 and isinstance(tb.available(), float)
+    assert tb.try_acquire(4) is True and tb.available() == 6.0
+    assert tb.try_acquire(7) is False and tb.available() == 6.0, "a refused try_acquire must take nothing"
+    assert tb.try_acquire(6) is True and tb.available() == 0.0
+    assert tb.try_acquire() is False
+    assert tb.wait_time() == 0.5 and tb.wait_time(3) == 1.5 and tb.wait_time(10) == 5.0
+    ck.advance(1.0)
+    assert tb.available() == 2.0
+    assert tb.try_acquire(2) is True and tb.try_acquire(1) is False
+    for _ in range(4):
+        ck.advance(0.25)
+    assert tb.available() == 2.0, "fractions of a token must not be lost: %r" % tb.available()
+    assert tb.wait_time(2) == 0.0 and tb.wait_time(3) == 0.5
+    ck.advance(100)
+    assert tb.available() == 10.0, "the bucket must not hold more than its capacity"
+    assert tb.wait_time(10) == 0.0
+    # fractional tokens and all-or-nothing
+    ck = Clock()
+    tb = TokenBucket(4, 3, ck)
+    assert tb.try_acquire(3) is True
+    ck.advance(0.625)  # 2.5 tokens
+    assert tb.try_acquire(3) is False and tb.available() == 2.5
+    assert tb.try_acquire(2.5) is True and tb.available() == 0.0
+    # the clock going backwards
+    ck = Clock(500.0)
+    tb = TokenBucket(2, 10, ck)
+    assert tb.try_acquire(10)
+    ck.t = 400.0
+    assert tb.available() == 0.0, "a clock that went backwards must not add or remove tokens"
+    ck.t = 500.5
+    assert tb.available() == 1.0, "the latest time seen (500) must stay the reference: got %r" % tb.available()
+    ck.t = 450.0
+    assert tb.available() == 1.0
+    ck.t = 501.0
+    assert tb.available() == 2.0
+    # every method reads the clock
+    ck = Clock()
+    tb = TokenBucket(1, 5, ck)
+    r0 = ck.reads
+    tb.available()
+    tb.try_acquire()
+    tb.wait_time()
+    assert ck.reads >= r0 + 3
+
+    # ---- a frozen clock, many threads: exactly `capacity` tokens are handed out ----
+    def hammer_frozen(nthreads, sizes, per):
+        ck = Clock()
+        tb = TokenBucket(4, 100, ck)
+        granted = [0] * nthreads
+        gate = _th.Barrier(nthreads, timeout=6)
+
+        def worker(k):
+            r = _rnd.Random(k)
+            gate.wait()
+            for _ in range(per):
+                n = r.choice(sizes)
+                if tb.try_acquire(n):
+                    granted[k] += n
+        total = 0
+        for phase, add in enumerate((0.0, 12.5, 6.25)):
+            ck.advance(add)
+            granted[:] = [0] * nthreads
+            gate.reset()
+            _run_threads([lambda k=k: worker(k) for k in range(nthreads)], timeout=9, what="threads")
+            total = sum(granted)
+            while tb.try_acquire(1):  # drain the leftovers (all asks above were refused, so < max(sizes) tokens are left)
+                total += 1
+            expect = (100, 50, 25)[phase]
+            assert total == expect, "phase %d: %d tokens were handed out, the bucket held exactly %d" % (phase, total, expect)
+            assert tb.available() < 1
+
+    hammer_frozen(32, (1,), 40)
+    hammer_frozen(24, (1, 2, 3), 60)
+    hammer_frozen(16, (1,), 120)
+
+    # ---- a clock that moves on every reading: tokens are conserved ----
+    for rep in range(3):
+        ck = Clock(2000.0, step=0.25)
+        tb = TokenBucket(4, 1000, ck)  # 4/s * 0.25 s = one token per clock reading
+        assert tb.try_acquire(1000)
+        base = ck.t - 0.25  # the time of the latest reading so far
+        granted = [0] * 24
+        gate = _th.Barrier(24, timeout=6)
+
+        def spend(k):
+            gate.wait()
+            for _ in range(250):
+                if tb.try_acquire(1):
+                    granted[k] += 1
+        _run_threads([lambda k=k: spend(k) for k in range(24)], timeout=9, what="threads")
+        left = tb.available()
+        credited = (ck.t - 0.25 - base) * 4  # the final available() read the clock at ck.t - 0.25 (== the latest time seen)
+        total = sum(granted)
+        assert total + left == credited, "tokens were not conserved: %d handed out + %.2f left, but %.2f accrued" % (total, left, credited)
+        assert total <= credited
+
+    # ---- wait_time is consistent with try_acquire ----
+    ck = Clock()
+    tb = TokenBucket(5, 20, ck)
+    assert tb.try_acquire(20)
+    w = tb.wait_time(7)
+    assert w == 1.4
+    ck.advance(w - 0.1)
+    assert not tb.try_acquire(7)
+    ck.advance(0.11)
+    assert tb.try_acquire(7)
+
+
+_hammer(_suite)
+'''

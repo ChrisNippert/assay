@@ -522,7 +522,7 @@
   const CATS = [
     ['Math', ['math', 'math-medium', 'math-hard', 'calculus']],
     ['Science', ['physics']],
-    ['Code', ['code', 'coding', 'formulas']],
+    ['Code', ['code', 'coding', 'formulas', 'concurrency-code']],
     ['Projects', ['projects-games', 'projects-sims']],
     ['Reasoning', ['logic']],
     ['Knowledge', ['knowledge']],

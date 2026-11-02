@@ -528,3 +528,43 @@ func TestProjectsGamesReferences(t *testing.T) {
 		})
 	}
 }
+
+// Every Concurrent code question has a reference solution in
+// testdata/concurrency-code/<id>.py; the hidden tests (which hammer it from
+// many threads with a 1 µs switch interval) must pass against it, through
+// the real harness. The broken variants they were checked against (no lock,
+// check-then-act, lock-ordering deadlock, notify instead of notify_all,
+// ignored timeouts…) are not kept: each failed its tests every time.
+func TestConcurrencyCodeReferences(t *testing.T) {
+	if !HavePython() {
+		t.Skip("no python3")
+	}
+	l, _ := OpenLibrary("")
+	s, err := l.Get("concurrency-code")
+	if err != nil || s == nil {
+		t.Fatalf("concurrency-code set: %v", err)
+	}
+	if s.MaxTokens < 16384 || len(s.Questions) < 6 || len(s.Questions) > 8 {
+		t.Errorf("max_tokens %d, questions %d", s.MaxTokens, len(s.Questions))
+	}
+	for _, q := range s.Questions {
+		t.Run(q.ID, func(t *testing.T) {
+			ref, err := os.ReadFile(filepath.Join("testdata", "concurrency-code", q.ID+".py"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			ok, out, err := RunCode(context.Background(), string(ref), q.Tests)
+			if err != nil || !ok {
+				t.Errorf("reference fails its tests: %v\n%s", err, out)
+			}
+			code, found := ExtractCode("Here you go.\n```python\n" + string(ref) + "```\n")
+			if !found || strings.TrimSpace(code) != strings.TrimSpace(string(ref)) {
+				t.Errorf("reference not extracted from a reply")
+			}
+			// a missing solution must fail the tests, not pass or hang
+			if ok, _, _ := RunCode(context.Background(), "x = 1\n", q.Tests); ok {
+				t.Errorf("tests pass without a solution")
+			}
+		})
+	}
+}
