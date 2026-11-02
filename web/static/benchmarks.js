@@ -519,6 +519,7 @@
     ['Math', ['math', 'math-medium', 'math-hard', 'calculus']],
     ['Science', ['physics']],
     ['Code', ['code', 'coding', 'formulas']],
+    ['Projects', ['projects-games', 'projects-sims']],
     ['Reasoning', ['logic']],
     ['Knowledge', ['knowledge']],
     ['Instructions', ['instructions']],
