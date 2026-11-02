@@ -117,7 +117,7 @@
     $('st-sets').innerHTML = '';
     $('st-sets').append(String(data.sets.length), ' ', el('span', 'lib-unit', `${q} questions`));
     $('st-sets-note').textContent = `${data.sets.filter((s) => !s.builtIn).length} of your own`;
-    const tested = data.rows.filter((r) => r.overall != null).length;
+    const tested = data.rows.filter((r) => Object.values(r.cells).some(finished)).length;
     $('st-tested').innerHTML = '';
     $('st-tested').append(String(tested), ' ', el('span', 'lib-unit', `of ${data.rows.length}`));
     $('st-tested-bar').style.width = (data.rows.length ? (tested / data.rows.length) * 100 : 0) + '%';
@@ -679,7 +679,7 @@
     const head = el('tr');
     head.append(el('th', 'bm-rank-n', '#'), el('th', 'bm-rank-model', 'Model'));
     for (const k of BOARD_COLS) {
-      const th = el('th', 'bm-rank-num');
+      const th = el('th', 'bm-rank-num' + (k === metric ? ' on' : '') + (k === 'score' ? ' k-score' : ''));
       const hb = el('button', 'bm-rank-sort' + (k === metric ? ' on' : ''), k === 'score' ? 'Score' : METRICS[k].name);
       hb.type = 'button';
       hb.title = `Rank by ${METRIC_NOTE[k].toLowerCase()}`;
@@ -701,7 +701,7 @@
       nb.onclick = () => pick(r.name);
       nameCell.append(nb);
       tr.append(el('td', 'bm-rank-n', String(i + 1)), nameCell);
-      for (const k of BOARD_COLS) tr.append(el('td', 'bm-rank-num' + (k === metric ? ' on' : ''), fmtMetric(k, v[k])));
+      for (const k of BOARD_COLS) tr.append(el('td', 'bm-rank-num' + (k === metric ? ' on' : '') + (k === 'score' ? ' k-score' : ''), fmtMetric(k, v[k])));
       tbody.append(tr);
     });
     t.append(thead, tbody);
@@ -1373,6 +1373,7 @@ answer = "7.5"
       reload();
     };
   });
+  $('bm-chart-note').onclick = () => $('bm-chart-note').classList.toggle('open');
   root.querySelectorAll('[data-view]').forEach((b) => {
     b.onclick = () => { view = b.dataset.view; store.set('bm-view', view); render(); };
   });
