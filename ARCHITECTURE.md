@@ -884,6 +884,27 @@ the .tar.zst is smaller but needs zstd, which Go's stdlib lacks) into
 installed. The 16 built-in theorems' reference proofs (in `answer`) are
 checked by `TestBuiltinLeanReferences`; `TestCheck` covers the cheats.
 
+**Project sets (builtin/projects-games.toml, projects-sims.toml).** Asked
+for 2026-11-01 because rankings built on short puzzles didn't match how
+models do when asked to build something real, like a game or a simulation.
+Each question asks for a 100–300 line program with a headless API whose
+spec fixes every convention, tie-break and update order; `max_tokens =
+16384`. Games: a maze chase (BFS chasers, fright mode, combo scoring),
+falling sand, integer-pixel platformer physics, a match-three board with
+cascades, and a turn-based dungeon with Bresenham field of view; the hidden
+tests play scripted games against golden traces from the reference. Sims:
+Schwarzschild light bending and a black hole's shadow, symplectic N-body,
+a ray tracer with shadows, an RK4 double pendulum, event-driven elastic
+discs and Kepler orbits; the tests check exact values (30-digit mpmath),
+conserved quantities and symmetries with tolerances any correct method
+passes. Reference solutions live in `internal/evals/testdata/projects-*/`
+and `TestProjectsGamesReferences` / `TestProjectsSimsReferences` run every
+question's tests against them; each question was also tried against
+deliberately wrong variants (Euler instead of symplectic, Newtonian
+bending, reversed tie orders…), all caught except two that behave the
+same as correct code. The leaderboard groups both under Projects.
+Pass/fail per program, so a nearly working game scores 0.
+
 **Running.** `POST /api/evals/run` takes models × sets, a think mode
 (`""` = the model's default, `off`) and a token limit per reply (8192 with
 thinking, 2048 without; a set's `max_tokens` raises it). Sampling is
