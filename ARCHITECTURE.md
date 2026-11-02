@@ -898,6 +898,24 @@ recomputes the answers with its own BFS interpreter, so it also catches the
 prompt and answer disagreeing. The `set` check ignores order, spacing,
 braces and quotes and fails a missing or extra value.
 
+**Concurrent code (builtin/concurrency-code.toml, 2026-11-02).** Eight
+`code` questions where the model writes thread-safe Python from a spec: a
+bounded blocking queue, a writer-preferring reader–writer lock, an
+order-preserving parallel map, deadlock-free bank transfers, a cyclic
+barrier, an LRU cache computing each key once, a future with callbacks and
+a token bucket with an injectable clock. The hidden tests set
+`sys.setswitchinterval(1e-6)` and a 512 KB thread stack (so dozens of
+threads fit under the harness's 1 GB limit), both restored afterwards, and
+check invariants from many daemon threads: nothing lost, duplicated or
+created, ordering kept, at most N holders inside a critical section, each
+key computed once; deadlocks are caught with `join(timeout)`. CPython only
+switches threads at calls and backward jumps, so the strongest race tests
+release every thread at once with a barrier each round. References in
+`testdata/concurrency-code/` pass 20 of 20 under load
+(`TestConcurrencyCodeReferences`); about 60 broken variants (no lock,
+check-then-act, lock-order deadlock, notify instead of notify_all, ignored
+timeouts…) each failed 10 of 10 runs.
+
 **Project sets (builtin/projects-games.toml, projects-sims.toml).** Asked
 for 2026-11-01 because rankings built on short puzzles didn't match how
 models do when asked to build something real, like a game or a simulation.
