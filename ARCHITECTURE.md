@@ -924,6 +924,26 @@ retried once without sampling options and with `max_completion_tokens`, for
 APIs that refuse them. A refused key or an empty balance stops the item
 instead of failing every question. Their tokens/s include network time.
 
+**Teams (server/team.go, 2026-11-01).** An orchestrator–worker setup run
+as one benchmark entry (`team:<id>`), to measure whether planning and
+delegating beats the lead alone. A team has a lead and a worker (any
+benchmark model, local or API), workers per round (1–8) and optional notes
+for the lead; stored with the API models in `remote.json`. Two strategies:
+*pipeline* is always plan → work → combine (the lead returns a JSON array
+of parts, falling back to a bulleted list; each worker sees the whole
+question plus its part; the lead answers from the results, told to check
+them); *loop* lets the lead write `<task>` blocks, gets `<result>` blocks
+back, and may delegate again for up to N rounds (workers see only the task
+text) before answering, and is told when its last round is up. The final
+reply is graded like any other; tokens and cost are summed over every
+call, time is wall time, and the plan and every worker reply are saved as
+the answer's thinking, which the answers browser opens as "The team's
+work". Local calls take turns on the GPU behind one lock and a local model
+is only reloaded when the team switches models; a team with any local
+member answers one question at a time, an all-API team four. Results are
+keyed by a hash of the strategy, sizes, notes, the members' own digests and
+a prompt version (`teamPrompts`), so changing any of them starts fresh.
+
 **Running.** `POST /api/evals/run` takes models × sets, a think mode
 (`""` = the model's default, `off`) and a token limit per reply (8192 with
 thinking, 2048 without; a set's `max_tokens` raises it). Sampling is

@@ -19,12 +19,11 @@ import (
 const apiEvalWorkers = 4
 
 // runAPIEvalItem asks an API model every question of one set, a few at a
-// time, saving after each answer like runEvalItem.
+// time.
 func (s *Server) runAPIEvalItem(ctx context.Context, i int, set *evals.Set, redo bool) error {
-	j := &s.evalJob
-	j.mu.Lock()
-	it, think, maxTok, judge := j.Items[i], j.Think, j.MaxTokens, j.Judge
-	j.mu.Unlock()
+	s.evalJob.mu.Lock()
+	it, think := s.evalJob.Items[i], s.evalJob.Think
+	s.evalJob.mu.Unlock()
 	m, ep, ok := s.remote.Lookup(it.Model)
 	if !ok {
 		return errors.New("the API model is gone")
@@ -32,8 +31,22 @@ func (s *Server) runAPIEvalItem(ctx context.Context, i int, set *evals.Set, redo
 	if think == evals.ThinkOff {
 		m.Reasoning = "off"
 	}
+	return s.runEvalItemWith(ctx, i, set, redo, m.Digest(ep), apiEvalWorkers, func(ctx context.Context, q evals.Question, maxTok int) (evals.Answer, error) {
+		system, user := set.Messages(q)
+		return askAPIMsgs(ctx, ep, m, chatMsgs(system, user), maxTok)
+	})
+}
+
+// runEvalItemWith asks every question of one set through ask, up to
+// workers at a time, grading and saving after each answer like
+// runEvalItem so a stopped run picks up where it left off.
+func (s *Server) runEvalItemWith(ctx context.Context, i int, set *evals.Set, redo bool, digest string, workers int, ask func(ctx context.Context, q evals.Question, maxTok int) (evals.Answer, error)) error {
+	j := &s.evalJob
+	j.mu.Lock()
+	it, think, maxTok, judge := j.Items[i], j.Think, j.MaxTokens, j.Judge
+	j.mu.Unlock()
 	maxTok = min(max(maxTok, set.MaxTokens), 65536)
-	res := &evals.Result{Model: it.Model, Digest: m.Digest(ep), Set: set.ID, SetHash: set.Hash, Sampling: evals.Sampling, Think: think, MaxTokens: maxTok, Total: len(set.Questions)}
+	res := &evals.Result{Model: it.Model, Digest: digest, Set: set.ID, SetHash: set.Hash, Sampling: evals.Sampling, Think: think, MaxTokens: maxTok, Total: len(set.Questions)}
 	if old, ok := s.evalRes.Get(res.Digest, set.ID, think); ok && old.Current(set.Hash) && !redo {
 		res.Answers = old.Answers
 		if old.MaxTokens > 0 {
@@ -60,13 +73,12 @@ func (s *Server) runAPIEvalItem(ctx context.Context, i int, set *evals.Set, redo
 		stop()
 	}
 	var wg sync.WaitGroup
-	for range apiEvalWorkers {
+	for range workers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for q := range todo {
-				system, user := set.Messages(q)
-				a, err := askAPI(ctx, ep, m, system, user, res.MaxTokens)
+				a, err := ask(ctx, q, res.MaxTokens)
 				a.ID = q.ID
 				if ctx.Err() != nil {
 					return
@@ -124,12 +136,20 @@ feed:
 // askAPI sends one prompt to an API model with the eval sampling, the
 // model's own system prompt first.
 func askAPI(ctx context.Context, ep remote.Endpoint, m remote.Model, system, user string, maxTok int) (evals.Answer, error) {
+	return askAPIMsgs(ctx, ep, m, chatMsgs(system, user), maxTok)
+}
+
+// askAPIMsgs is askAPI with a whole conversation; the model's own system
+// prompt goes first.
+func askAPIMsgs(ctx context.Context, ep remote.Endpoint, m remote.Model, msgs []remote.Message, maxTok int) (evals.Answer, error) {
 	var a evals.Answer
-	var msgs []remote.Message
-	if sys := strings.TrimSpace(m.System + "\n\n" + system); sys != "" {
-		msgs = append(msgs, remote.Message{Role: "system", Content: sys})
+	if m.System != "" {
+		if len(msgs) > 0 && msgs[0].Role == "system" {
+			msgs = append([]remote.Message{{Role: "system", Content: m.System + "\n\n" + msgs[0].Content}}, msgs[1:]...)
+		} else {
+			msgs = append([]remote.Message{{Role: "system", Content: m.System}}, msgs...)
+		}
 	}
-	msgs = append(msgs, remote.Message{Role: "user", Content: user})
 	sampling := evals.SamplingOptions()
 	delete(sampling, "min_p") // few APIs take it
 	var content, thinking strings.Builder

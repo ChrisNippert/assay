@@ -112,6 +112,36 @@
     <div class="bm-api-eps" id="api-eps"></div>
   </section>
 
+  <section id="bm-teams" class="bm-section">
+    <div class="bm-h-row"><h2 class="bm-h">Teams</h2><button type="button" class="btn" id="team-add">New team</button></div>
+    <p class="muted small">A lead model plans and hands parts of each question to worker models, then writes the answer. A team runs on the benchmarks as one entry, so you can see whether it beats the lead alone, and at what cost in tokens and time. Its answers show the plan and every worker's reply.</p>
+    <div class="boxed-list" id="team-list"></div>
+  </section>
+
+  <dialog class="bm-dialog" id="team-dlg" aria-labelledby="team-title">
+    <form method="dialog" class="bm-dlg-body" id="team-form">
+      <div class="bm-dlg-head"><h2 class="bm-dlg-title" id="team-title">Team</h2><button type="button" class="icon-btn" data-close aria-label="Close">×</button></div>
+      <label class="bm-field"><span>Name</span><input type="text" id="team-name" required autocomplete="off" placeholder="Gemma 12B leads, E4B ×3"></label>
+      <label class="bm-field"><span>How it works</span><select id="team-strategy">
+        <option value="pipeline">Plan, work, combine</option>
+        <option value="loop">Free loop</option>
+      </select></label>
+      <p class="muted small" id="team-how"></p>
+      <div class="bm-field-row">
+        <label class="bm-field"><span>Lead</span><select id="team-lead" required></select></label>
+        <label class="bm-field"><span>Workers</span><select id="team-worker" required></select></label>
+      </div>
+      <div class="bm-field-row">
+        <label class="bm-field"><span>Workers at once <span class="muted small">(1–8)</span></span><input type="number" id="team-size" min="1" max="8" value="3" required></label>
+        <label class="bm-field" id="team-rounds-row"><span>Rounds <span class="muted small">(1–5)</span></span><input type="number" id="team-rounds" min="1" max="5" value="2"></label>
+      </div>
+      <label class="bm-field"><span>Extra instructions for the lead <span class="muted small">(optional)</span></span><textarea id="team-notes" rows="3" spellcheck="false"></textarea></label>
+      <p class="muted small" id="team-gpu-note" hidden>Two different local models swap on the GPU for every question, which is slow. A local model with an API partner, or the same local model in both roles, avoids that.</p>
+      <p class="bm-edit-err" id="team-err" role="alert" hidden></p>
+      <div class="bm-dlg-actions"><button type="button" class="btn danger" id="team-delete" hidden>Remove</button><span class="grow"></span><button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" class="btn primary">Save</button></div>
+    </form>
+  </dialog>
+
   <dialog class="bm-dialog" id="api-ep-dlg" aria-labelledby="api-ep-title">
     <form method="dialog" class="bm-dlg-body" id="api-ep-form">
       <div class="bm-dlg-head"><h2 class="bm-dlg-title" id="api-ep-title">API endpoint</h2><button type="button" class="icon-btn" data-close aria-label="Close">×</button></div>

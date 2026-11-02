@@ -5,6 +5,7 @@
   if (!root) return;
   const init = window.assayBench || {};
   let data = init.results || { sets: [], rows: [], suite: [], fit: {} };
+  window.assayBenchRows = data.rows; // remote.js offers them as team members
   let run = init.run || { running: false, items: [] };
   let leanSt = init.lean || {};
   const params = new URLSearchParams(location.search);
@@ -85,6 +86,7 @@
     (suite || []).forEach((s) => q.append('suite', s));
     try {
       data = await api('GET', '/api/evals/results?' + q);
+      window.assayBenchRows = data.rows;
       render();
     } catch (e) {
       status(e.message, true);
@@ -1204,8 +1206,10 @@
     if (a.thinking) {
       const d = el('details', 'bm-tdet');
       const words = a.thinking.split(/\s+/).length;
-      d.append(el('summary', null, `Thinking · about ${words.toLocaleString()} words`));
+      const team = ansFor && ansFor.row && ansFor.row.team;
+      d.append(el('summary', null, `${team ? "The team's work: plan and every worker's reply" : 'Thinking'} · about ${words.toLocaleString()} words`));
       d.addEventListener('toggle', () => { if (d.open && d.children.length === 1) d.append(md(a.thinking)); }, { once: false });
+      if (team) d.open = true;
       box.append(d);
     }
     box.append(section('Answer', a.reply ? md(a.reply) : el('p', 'muted', '(no answer written)')));

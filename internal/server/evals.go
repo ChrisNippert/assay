@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"math"
@@ -194,6 +195,21 @@ func (s *Server) startEvals(ctx context.Context, req evalRunRequest) (evalState,
 	}
 	var items []evalItem
 	for _, name := range req.Models {
+		if t, ok := s.remote.Team(name); ok {
+			lead, err1 := s.member(ctx, t.Lead)
+			worker, err2 := s.member(ctx, t.Worker)
+			if err := errors.Join(err1, err2); err != nil {
+				return evalState{}, fmt.Errorf("team %s: %w", t.Title, err)
+			}
+			for _, set := range sets {
+				if !slices.ContainsFunc(items, func(it evalItem) bool { return it.Model == name && it.Set == set.ID }) {
+					items = append(items, s.evalItemFor(name, t.Title, teamDigest(t, lead, worker), set, req))
+				}
+			}
+			continue
+		} else if strings.HasPrefix(name, remote.TeamPrefix) {
+			return evalState{}, errors.New("no such team: " + name)
+		}
 		if m, ep, ok := s.remote.Lookup(name); ok {
 			for _, set := range sets {
 				if !slices.ContainsFunc(items, func(it evalItem) bool { return it.Model == name && it.Set == set.ID }) {
@@ -326,6 +342,9 @@ func (s *Server) runEvalItem(ctx context.Context, i int, redo bool) error {
 	}
 	if strings.HasPrefix(it.Model, remote.Prefix) {
 		return s.runAPIEvalItem(ctx, i, set, redo)
+	}
+	if strings.HasPrefix(it.Model, remote.TeamPrefix) {
+		return s.runTeamEvalItem(ctx, i, set, redo)
 	}
 	models, err := s.ollama.List(ctx)
 	if err != nil {
@@ -511,12 +530,25 @@ func (s *Server) askEval(ctx context.Context, model string, set *evals.Set, q ev
 // askModel sends one prompt with the eval sampling (evals.SamplingOptions)
 // and collects the reply, stopping it early if the model loops.
 func (s *Server) askModel(ctx context.Context, model, system, user, think string, maxTok, numCtx int) (evals.Answer, error) {
-	var a evals.Answer
-	var msgs []ollama.Message
+	return s.askModelMsgs(ctx, model, chatMsgs(system, user), think, maxTok, numCtx)
+}
+
+// chatMsgs is a system message (if any) and a user message.
+func chatMsgs(system, user string) []remote.Message {
+	var msgs []remote.Message
 	if system != "" {
-		msgs = append(msgs, ollama.Message{Role: "system", Content: system})
+		msgs = append(msgs, remote.Message{Role: "system", Content: system})
 	}
-	msgs = append(msgs, ollama.Message{Role: "user", Content: user})
+	return append(msgs, remote.Message{Role: "user", Content: user})
+}
+
+// askModelMsgs is askModel with a whole conversation.
+func (s *Server) askModelMsgs(ctx context.Context, model string, in []remote.Message, think string, maxTok, numCtx int) (evals.Answer, error) {
+	var a evals.Answer
+	msgs := make([]ollama.Message, len(in))
+	for i, m := range in {
+		msgs[i] = ollama.Message{Role: m.Role, Content: m.Content}
+	}
 	opts := evals.SamplingOptions()
 	opts["num_predict"] = maxTok
 	if numCtx > 0 {
@@ -679,6 +711,7 @@ type evalRow struct {
 	Cells  map[string]evalCell `json:"cells"`
 	// API marks an API model; System and Reasoning are how it's run.
 	API       bool   `json:"api,omitempty"`
+	Team      bool   `json:"team,omitempty"`
 	System    string `json:"system,omitempty"`
 	Reasoning string `json:"reasoning,omitempty"`
 	// Overall is the mean score over the suite, when every suite set is done.
@@ -782,6 +815,7 @@ func (s *Server) evalResultsFor(ctx context.Context, think string, suite []strin
 		fillRow(&row, byDigest[row.Digest], hashes, suite)
 		out.Rows = append(out.Rows, row)
 	}
+	out.Rows = append(out.Rows, s.teamRows(ctx, byDigest, hashes, suite)...)
 	out.Fit = fitRows(out.Rows)
 	sort.SliceStable(out.Rows, func(a, b int) bool {
 		x, y := out.Rows[a], out.Rows[b]

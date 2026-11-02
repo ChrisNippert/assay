@@ -96,9 +96,65 @@ func (m Model) validate() error {
 	return nil
 }
 
+// Team is an orchestrator–worker setup the benchmarks run as one entry:
+// the Lead plans and answers, Workers (up to Size at a time) do the parts.
+// Lead and Worker are benchmark model names, local or "api:…".
+type Team struct {
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Strategy string `json:"strategy"` // Pipeline or Loop
+	Lead     string `json:"lead"`
+	Worker   string `json:"worker"`
+	// Size is the most workers per round (1–8); Rounds the most rounds of
+	// delegation in a Loop (1–5).
+	Size   int `json:"size"`
+	Rounds int `json:"rounds,omitempty"`
+	// Notes are extra instructions for the lead.
+	Notes string `json:"notes,omitempty"`
+}
+
+// Team strategies.
+const (
+	// Pipeline: the lead splits the task, the workers each do a part, the
+	// lead writes the answer from their results. Always three steps.
+	Pipeline = "pipeline"
+	// Loop: the lead hands out tasks when it wants, reads the results and
+	// may hand out more, for up to Rounds rounds, then answers.
+	Loop = "loop"
+)
+
+// TeamPrefix marks team names.
+const TeamPrefix = "team:"
+
+// Name is how the benchmarks name the team.
+func (t Team) Name() string { return TeamPrefix + t.ID }
+
+func (t Team) validate() error {
+	if !idRe.MatchString(t.ID) {
+		return errors.New("team id: lowercase letters, digits and dashes")
+	}
+	if t.Strategy != Pipeline && t.Strategy != Loop {
+		return errors.New("strategy should be pipeline or loop")
+	}
+	if t.Lead == "" || t.Worker == "" {
+		return errors.New("pick a lead and a worker model")
+	}
+	if strings.HasPrefix(t.Lead, TeamPrefix) || strings.HasPrefix(t.Worker, TeamPrefix) {
+		return errors.New("a team can't be a member of a team")
+	}
+	if t.Size < 1 || t.Size > 8 {
+		return errors.New("workers per round: 1 to 8")
+	}
+	if t.Strategy == Loop && (t.Rounds < 1 || t.Rounds > 5) {
+		return errors.New("rounds: 1 to 5")
+	}
+	return nil
+}
+
 type file struct {
 	Endpoints []Endpoint `json:"endpoints"`
 	Models    []Model    `json:"models"`
+	Teams     []Team     `json:"teams,omitempty"`
 }
 
 // Store keeps endpoints and models in a JSON file readable only by the
@@ -265,4 +321,58 @@ func Slug(name string, taken func(string) bool) string {
 		id = fmt.Sprintf("%s-%d", s, n)
 	}
 	return id
+}
+
+// Teams returns the teams.
+func (st *Store) Teams() []Team {
+	if st == nil {
+		return nil
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return slices.Clone(st.f.Teams)
+}
+
+// Team finds a team by its benchmark name ("team:id").
+func (st *Store) Team(name string) (Team, bool) {
+	id, ok := strings.CutPrefix(name, TeamPrefix)
+	if !ok {
+		return Team{}, false
+	}
+	for _, t := range st.Teams() {
+		if t.ID == id {
+			return t, true
+		}
+	}
+	return Team{}, false
+}
+
+// PutTeam adds or replaces a team.
+func (st *Store) PutTeam(t Team) error {
+	t.Title, t.Notes = strings.TrimSpace(t.Title), strings.TrimSpace(t.Notes)
+	if t.Strategy == Pipeline {
+		t.Rounds = 0
+	}
+	if err := t.validate(); err != nil {
+		return err
+	}
+	if t.Title == "" {
+		return errors.New("give the team a name")
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if i := slices.IndexFunc(st.f.Teams, func(x Team) bool { return x.ID == t.ID }); i >= 0 {
+		st.f.Teams[i] = t
+	} else {
+		st.f.Teams = append(st.f.Teams, t)
+	}
+	return st.save()
+}
+
+// DeleteTeam removes a team (its results stay on disk).
+func (st *Store) DeleteTeam(id string) error {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.f.Teams = slices.DeleteFunc(st.f.Teams, func(x Team) bool { return x.ID == id })
+	return st.save()
 }

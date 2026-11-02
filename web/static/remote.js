@@ -1,5 +1,6 @@
-// Benchmarks › API models: endpoints (OpenRouter or any OpenAI-compatible
-// API) and the ways of running their models. After a change it fires
+// Benchmarks › API models and teams: endpoints (OpenRouter or any
+// OpenAI-compatible API), the ways of running their models, and teams of a
+// lead and workers. After a change it fires
 // "assay:remote" so the leaderboard reloads.
 (() => {
   const box = document.getElementById('bm-api');
@@ -25,7 +26,7 @@
   const REASON = { off: 'reasoning off', low: 'low effort', medium: 'medium effort', high: 'high effort' };
   let st = { endpoints: [], models: [], defaultUrl: 'https://openrouter.ai/api/v1' };
   const lists = {}; // endpoint id → its model list (a promise)
-  const changed = () => document.dispatchEvent(new CustomEvent('assay:remote'));
+  const changed = () => { document.dispatchEvent(new CustomEvent('assay:remote')); document.dispatchEvent(new CustomEvent('assay:remote-done')); };
 
   async function load() {
     try { st = await api('GET', '/api/remote'); } catch { return; }
@@ -175,6 +176,89 @@
     changed();
   };
   $('api-add-model').onclick = () => openModel(null);
+
+  // Teams.
+  let teams = [];
+  let editingT = null;
+  async function loadTeams() {
+    try { teams = await api('GET', '/api/teams'); } catch { return; }
+    const list = $('team-list');
+    list.innerHTML = '';
+    for (const t of teams) {
+      const row = el('button', 'row bm-api-row');
+      row.type = 'button';
+      const txt = el('div', 'row-text');
+      txt.append(el('div', 'row-title', t.title), el('div', 'row-sub', t.error ? `Can't run: ${t.error}` : t.quant));
+      if (t.notes) txt.append(el('div', 'row-sub bm-api-prompt', `Lead: ${t.notes}`));
+      row.append(txt, el('span', 'muted small', 'Edit'));
+      row.onclick = () => openTeam(t);
+      list.append(row);
+    }
+  }
+  function members() {
+    return (window.assayBenchRows || []).filter((r) => !r.team);
+  }
+  function openTeam(t) {
+    editingT = t;
+    const ms = members();
+    for (const id of ['team-lead', 'team-worker']) {
+      const sel = $(id);
+      sel.innerHTML = '';
+      const local = el('optgroup');
+      local.label = 'On this computer';
+      const remote = el('optgroup');
+      remote.label = 'API';
+      for (const r of ms) (r.api ? remote : local).append(new Option(`${r.title}${r.quant ? ' · ' + r.quant : ''}`, r.name));
+      if (local.children.length) sel.append(local);
+      if (remote.children.length) sel.append(remote);
+    }
+    $('team-title').textContent = t ? 'Edit team' : 'New team';
+    $('team-name').value = t ? t.title : '';
+    $('team-strategy').value = t ? t.strategy : 'pipeline';
+    if (t) { $('team-lead').value = t.lead; $('team-worker').value = t.worker; }
+    $('team-size').value = t ? t.size : 3;
+    $('team-rounds').value = t && t.rounds ? t.rounds : 2;
+    $('team-notes').value = t ? t.notes || '' : '';
+    $('team-delete').hidden = !t;
+    $('team-err').hidden = true;
+    teamForm();
+    $('team-dlg').showModal();
+  }
+  function teamForm() {
+    const loop = $('team-strategy').value === 'loop';
+    $('team-rounds-row').hidden = !loop;
+    $('team-how').textContent = loop
+      ? 'The lead hands out tasks when it wants, reads the results, may hand out more for a few rounds, then answers. Workers see only the task the lead writes.'
+      : 'Always three steps: the lead splits the question into parts, the workers each do one at the same time, and the lead answers from their results. Workers see the whole question and their part.';
+    const l = $('team-lead').value, w = $('team-worker').value;
+    $('team-gpu-note').hidden = !l || !w || l === w || l.startsWith('api:') || w.startsWith('api:');
+  }
+  for (const id of ['team-strategy', 'team-lead', 'team-worker']) $(id).onchange = teamForm;
+  $('team-form').onsubmit = async (ev) => {
+    ev.preventDefault();
+    const loop = $('team-strategy').value === 'loop';
+    const body = { title: $('team-name').value, strategy: $('team-strategy').value, lead: $('team-lead').value, worker: $('team-worker').value, size: Number($('team-size').value), rounds: loop ? Number($('team-rounds').value) : 0, notes: $('team-notes').value };
+    try {
+      await api('PUT', `/api/teams/${editingT ? editingT.id : 'new'}`, body);
+      $('team-dlg').close();
+      await loadTeams();
+      changed();
+    } catch (e) {
+      $('team-err').textContent = e.message;
+      $('team-err').hidden = false;
+    }
+  };
+  $('team-delete').onclick = async () => {
+    if (!confirm(`Remove ${editingT.title}? Its results stay saved.`)) return;
+    await api('DELETE', `/api/teams/${editingT.id}`);
+    $('team-dlg').close();
+    await loadTeams();
+    changed();
+  };
+  $('team-add').onclick = () => openTeam(null);
+  $('team-dlg').querySelectorAll('[data-close]').forEach((b) => { b.onclick = () => $('team-dlg').close(); });
+  document.addEventListener('assay:remote-done', loadTeams);
+  loadTeams();
   for (const d of [$('api-ep-dlg'), $('api-m-dlg')]) d.querySelectorAll('[data-close]').forEach((b) => { b.onclick = () => d.close(); });
   load();
 })();

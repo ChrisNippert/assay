@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -169,5 +170,128 @@ func TestRemoteKeyStaysWithURL(t *testing.T) {
 	st.PutEndpoint(remote.Endpoint{ID: "o", Name: "O", URL: "https://evil.example/v1"})
 	if e, _ := st.Endpoint("o"); e.Key != "" {
 		t.Errorf("the key followed a new URL: %+v", e)
+	}
+}
+
+// teamAPI plays every team role: it plans, helps and answers depending on
+// the prompt it gets, and records each call's last message.
+type teamAPI struct {
+	mu    sync.Mutex
+	calls []string
+}
+
+func (f *teamAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Messages []remote.Message `json:"messages"`
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+	sys, last := "", body.Messages[len(body.Messages)-1].Content
+	if body.Messages[0].Role == "system" {
+		sys = body.Messages[0].Content
+	}
+	f.mu.Lock()
+	f.calls = append(f.calls, last)
+	f.mu.Unlock()
+	var reply string
+	switch {
+	case strings.Contains(sys, "JSON array"):
+		reply = `Here: ["multiply 17 by 20", "multiply 17 by 3", "unused third part"]`
+	case strings.Contains(sys, "one of several helpers"):
+		reply = "part done: " + last[strings.LastIndex(last, "\n")+1:]
+	case strings.Contains(sys, "<task>") && !strings.Contains(last, "Results of your tasks"):
+		reply = "Let me delegate.\n<task>compute 17*20</task>\n<task>compute 17*3</task>"
+	case strings.Contains(sys, "helper doing one task"):
+		reply = "result for " + last
+	default:
+		reply = "Adding the parts: Answer: 391"
+	}
+	b, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"delta": map[string]string{"content": reply}, "finish_reason": "stop"}}})
+	fmt.Fprintf(w, "data: %s\n\ndata: {\"choices\":[],\"usage\":{\"completion_tokens\":5,\"cost\":0.001}}\n\ndata: [DONE]\n\n", b)
+}
+
+func TestTeamEval(t *testing.T) {
+	s, fake, _ := newTestServer(t)
+	fake.tags = threeModels
+	lib, _ := evals.OpenLibrary(t.TempDir())
+	s.evalLib, s.evalRes = lib, evals.OpenResults(t.TempDir())
+	if _, err := lib.Save("two", []byte(twoQuestions)); err != nil {
+		t.Fatal(err)
+	}
+	api := &teamAPI{}
+	ts := httptest.NewServer(api)
+	defer ts.Close()
+	do(s, "PUT", "/api/remote/endpoints/new", `{"name":"Fake","url":"`+ts.URL+`"}`)
+	do(s, "PUT", "/api/remote/models/new", `{"endpoint":"fake","model":"m","title":"M"}`)
+	for _, body := range []string{
+		`{"title":"Pipe","strategy":"pipeline","lead":"api:m","worker":"api:m","size":2}`,
+		`{"title":"Loop","strategy":"loop","lead":"api:m","worker":"api:m","size":4,"rounds":2}`,
+	} {
+		if rec := do(s, "PUT", "/api/teams/new", body); rec.Code != 200 {
+			t.Fatalf("team: %d %s", rec.Code, rec.Body)
+		}
+	}
+	if rec := do(s, "PUT", "/api/teams/new", `{"title":"Bad","strategy":"loop","lead":"api:nope","worker":"api:m","size":2,"rounds":1}`); rec.Code != 400 {
+		t.Errorf("a team with a missing model saved: %d", rec.Code)
+	}
+	if _, err := s.startEvals(context.Background(), evalRunRequest{Models: []string{"team:pipe", "team:loop"}, Sets: []string{"two"}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range waitEvals(t, s).Items {
+		if it.State != itemDone || it.Answered != 2 || it.Correct != 1 {
+			t.Fatalf("item %+v", it)
+		}
+	}
+	res, _ := s.evalResultsFor(context.Background(), "", []string{"two"})
+	rows := map[string]evalRow{}
+	for _, row := range res.Rows {
+		rows[row.Name] = row
+	}
+	pipe, loop := rows["team:pipe"], rows["team:loop"]
+	if !pipe.Team || !strings.Contains(pipe.Quant, "M → M ×2") || !strings.Contains(loop.Quant, "Free loop, 2 rounds") {
+		t.Fatalf("rows %+v / %+v", pipe, loop)
+	}
+	// Pipeline: plan, 2 parts (the third is dropped), combine = 4 calls of 5 tokens.
+	if c := pipe.Cells["two"]; c.Tokens != 2*4*5 || math.Abs(c.Cost-2*4*0.001) > 1e-9 {
+		t.Errorf("pipeline cell %+v", c)
+	}
+	// Loop: hand out 2 tasks, then answer = 4 calls.
+	if c := loop.Cells["two"]; c.Tokens != 2*4*5 {
+		t.Errorf("loop cell %+v", c)
+	}
+	r, _ := s.evalRes.Get(pipe.Digest, "two", "")
+	tr := r.Answers[0].Thinking
+	if !strings.Contains(tr, "## Plan (M)") || !strings.Contains(tr, "## Part 2 (M): multiply 17 by 3") || strings.Contains(tr, "## Part 3") {
+		t.Errorf("pipeline transcript:\n%s", tr)
+	}
+	r, _ = s.evalRes.Get(loop.Digest, "two", "")
+	if tr := r.Answers[0].Thinking; !strings.Contains(tr, "## Round 1, task 2 (M)") || !strings.Contains(tr, "result for compute 17*3") {
+		t.Errorf("loop transcript:\n%s", tr)
+	}
+	// The lead saw the helpers' results before answering.
+	api.mu.Lock()
+	defer api.mu.Unlock()
+	var sawParts, sawResults bool
+	for _, c := range api.calls {
+		sawParts = sawParts || strings.Contains(c, "### Part 1: multiply 17 by 20\n\npart done")
+		sawResults = sawResults || strings.Contains(c, "<result task=\"2\">\nresult for compute 17*3")
+	}
+	if !sawParts || !sawResults {
+		t.Errorf("lead never saw the results: %v %v", sawParts, sawResults)
+	}
+}
+
+func TestParts(t *testing.T) {
+	for _, c := range []struct {
+		in   string
+		want []string
+	}{
+		{`["a", "b", "c"]`, []string{"a", "b"}},
+		{"Plan:\n1. first thing\n2) second thing\n", []string{"first thing", "second thing"}},
+		{"- one\n- two", []string{"one", "two"}},
+		{"just do it", nil},
+	} {
+		if got := parts(c.in, 2); strings.Join(got, "|") != strings.Join(c.want, "|") {
+			t.Errorf("parts(%q) = %q", c.in, got)
+		}
 	}
 }
