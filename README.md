@@ -123,4 +123,4 @@ and the rest.
 
 ## License
 
-See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
